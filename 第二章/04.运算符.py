@@ -54,3 +54,18 @@ print('100 >= 100?', 100 >= 100) #True
 print('100 <= 100?', 100 <= 100) #True
 
 #逻辑运算符
+#尝试1
+# num = input('请输入一个整数:')
+# n = int(num)
+# if n >=10 and n<=20:
+#     print('True')
+# else:
+#     print('False')
+
+#尝试2
+num = input('请输入一个整数：')
+n = int(num)
+if n <10 or n>20:
+    print('True')
+else:
+    print('False')
