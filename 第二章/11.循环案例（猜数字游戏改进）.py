@@ -1,3 +1,4 @@
+#猜数字游戏改进
 import random
 
 while True:  # 外层循环：控制是否开始新一局

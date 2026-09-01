@@ -7,9 +7,9 @@ while True:
 
     num = int(input('请输入你猜的数字：'))
 
-    if num > randon_num:
+    if num > random_num:
         print('猜大了')
-    elif num < randon_num:
+    elif num < random_num:
         print('猜小了')
     else:
         print('恭喜！猜对了')
