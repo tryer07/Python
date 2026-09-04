@@ -57,10 +57,10 @@ def print_group(title, condition):
             print(f"{item[0]:<6}{item[1]:<6}{item[2]:>6}{item[3]:>6}{item[4]:>6}{item[5]:>6}{item[6]:>8.1f}")
 
 # 光荣榜：平均分 > 90
-print_group("光荣榜（平均分 > 90）", lambda avg: avg > 90)
+print_group("光荣榜（平均分 > 90）", lambda avg1: avg1 > 90)
 
 # 普通学生：60 < 平均分 <= 90
-print_group("普通学生（60 < 平均分 ≤ 90）", lambda avg: 60 < avg <= 90)
+print_group("普通学生（60 < 平均分 ≤ 90）", lambda avg1: 60 < avg <= 90)
 
 # 重点关注：平均分 <= 60
-print_group("重点关注学生（平均分 ≤ 60）", lambda avg: avg <= 60)
+print_group("重点关注学生（平均分 ≤ 60）", lambda avg1: avg <= 60)
