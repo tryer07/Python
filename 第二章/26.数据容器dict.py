@@ -47,5 +47,5 @@ del dict1['jessika']
 print(dict1)
 
 #遍历字典
-for item in dict1.item():
+for item in dict1.items():
     print(item)
