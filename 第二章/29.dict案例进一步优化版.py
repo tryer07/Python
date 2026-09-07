@@ -1,4 +1,4 @@
-# 购物车系统（带确认机制 + 历史记录）
+# 购物车系统（带确认机制 + 历史记录 + 输入容错）
 
 shopping_cart = {}
 history = []  # 用于保存操作历史
@@ -24,6 +24,22 @@ def confirm_action(prompt="确定执行该操作吗？(y/n)：") -> bool:
         else:
             print('输入无效，请输入 y 或 n。')
 
+def get_float(prompt):
+    """安全获取浮点数，输入非法时重新提示"""
+    while True:
+        try:
+            return float(input(prompt))
+        except ValueError:
+            print('输入无效，请输入数字（例如 5.5）。')
+
+def get_int(prompt):
+    """安全获取整数，输入非法时重新提示"""
+    while True:
+        try:
+            return int(input(prompt))
+        except ValueError:
+            print('输入无效，请输入整数（例如 3）。')
+
 while True:
     print(menu)
     try:
@@ -35,8 +51,8 @@ while True:
     match choice:
         case 1:  # 添加购物车
             goods_name = input('请输入商品的名称：')
-            goods_price = float(input('请输入商品的价格：'))
-            goods_num = int(input('请输入商品的数量：'))
+            goods_price = get_float('请输入商品的价格：')
+            goods_num = get_int('请输入商品的数量：')
 
             if goods_name in shopping_cart:
                 print('您输入的商品已经储存过名称信息了')
@@ -56,11 +72,11 @@ while True:
                 print('您输入的商品不存在，请重新输入')
                 continue
 
-            goods_price = float(input('请输入新的商品价格：'))
-            goods_num = int(input('请输入新的商品数量：'))
+            goods_price = get_float('请输入新的商品价格：')
+            goods_num = get_int('请输入新的商品数量：')
 
             if confirm_action('确定要修改该商品信息吗？(y/n)：'):
-                old_info = shopping_cart[goods_name]  # 保存旧信息用于记录
+                old_info = shopping_cart[goods_name]
                 shopping_cart[goods_name] = {'price': goods_price, 'num': goods_num}
                 # 记录历史
                 history.append(f"修改商品：{goods_name}，价格由 {old_info['price']} 改为 {goods_price}，数量由 {old_info['num']} 改为 {goods_num}")
