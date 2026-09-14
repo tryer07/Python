@@ -29,7 +29,7 @@ def calculate_order_cost(*args,coupon = 0,score = 0,express = 0.0):
     #3.扣减积分抵扣
 
     if total_cost >= 5000 and score // 100 < total_cost:
-        total_cost -= score // 1000
+        total_cost -= score // 100
 
     #4.添加运费
 
