@@ -1,0 +1,14 @@
+CREATE DATABASE IF NOT EXISTS study_db DEFAULT CHARACTER SET utf8mb4;
+
+USE study_db;
+
+CREATE TABLE tb_employee (
+    id INT UNSIGNED PRIMARY KEY COMMENT '编号',
+    emp_no VARCHAR(10) NOT NULL UNIQUE COMMENT '员工工号',
+    name VARCHAR(10) NOT NULL COMMENT '员工姓名',
+    nickname VARCHAR(20) COMMENT '昵称',
+    gender CHAR(1) NOT NULL COMMENT '性别',
+    age TINYINT UNSIGNED NOT NULL COMMENT '年龄',
+    id_card CHAR(18) NOT NULL COMMENT '身份证号',
+    hire_date DATE NOT NULL COMMENT '入职时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='员工信息表';
