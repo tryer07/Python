@@ -7,7 +7,7 @@ def log_separator2():
     print('+' * 10)
 
 def log_separator3():
-    print('-' * 10)
+    print('/' * 10)
 
 def log_separator4():
     print('*' * 10)

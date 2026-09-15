@@ -2,3 +2,5 @@
 __version__ = '1.0.0'
 __author__ = '外收内放'
 __email__ = '1839632447@qq.com'
+
+__all__ = ['my_function','my_varchar']
