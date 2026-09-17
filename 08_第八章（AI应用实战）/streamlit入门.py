@@ -1,6 +1,17 @@
+from pathlib import Path
+
+# 获取当前代码文件（streamlit入门.py）所在的文件夹路径
+BASE_DIR = Path(__file__).parent
+
+# 定义一个辅助函数，专门用来拼接资源路径
+def get_resource_path(filename):
+    return str(BASE_DIR / 'resources' / filename)
+
 #引入streamlit
 
 import streamlit as st
+
+#怎么进入网页，在控制台最稳妥的输入格式：streamlit run ".\08_第八章（AI应用实战）\streamlit入门.py"
 
 #大标题
 
@@ -14,7 +25,7 @@ st.title('Streamlit 二级标题')
 
 #logo
 
-st.logo('./resources/作品页_12-2-1_楼体发光招牌.png ')
+st.logo(get_resource_path('作品页_12-2-1_楼体发光招牌.png'))
 
 #段落文字
 
@@ -39,9 +50,9 @@ st.write('\n')
 #图片
 
 st.write('下面展示一些我自己比较喜欢的图片：')
-st.image('./resources/单车少年 (1).png')
-st.image('./resources/地铁站的女孩.png')
-st.image('./resources/少女心事2.png')
+st.image(get_resource_path('单车少年 (1).png'))
+st.image(get_resource_path('地铁站的女孩.png'))
+st.image(get_resource_path('少女心事2.png'))
 st.write('\n')
 st.write('\n')
 st.write('\n')
@@ -49,7 +60,7 @@ st.write('\n')
 #音频
 
 st.write('下面是一段六级真题的听力~')
-st.audio('./resources/2025年6月六级音频1.MP3')
+st.audio(get_resource_path('2025年6月六级音频1.MP3'))
 st.write('\n')
 st.write('\n')
 st.write('\n')
