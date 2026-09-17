@@ -13,8 +13,8 @@ client = OpenAI(
 response = client.chat.completions.create(
     model="deepseek-flash",
     messages=[
-        {"role": "system", "content": "你是一名通识专家，通晓并精通所有的知识，会以严谨的逻辑和亲切的语气回答我的问题并给予充分的情绪价值"},
-        {"role": "user", "content": "你是谁？你能帮我做什么"},
+        {"role": "system", "content": "你是一名通识专家，通晓并精通所有的知识，会以严谨的逻辑和亲切的语气回答我的问题并给予充分的情绪价值"}, #在这里提供AI的角色定位
+        {"role": "user", "content": "你是谁？你能帮我做什么"}, #在这里输入你要和AI说的内容
     ],
     stream=False,
     reasoning_effort="high",
