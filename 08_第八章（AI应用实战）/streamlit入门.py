@@ -7,9 +7,24 @@ BASE_DIR = Path(__file__).parent
 def get_resource_path(filename):
     return str(BASE_DIR / 'resources' / filename)
 
+
 #引入streamlit
 
 import streamlit as st
+
+#设置页面的配置项(这段代码是在streamlit官网的docs界面选择develop后选择configuration再点击st.set_page_config下划找到的代码，并不是手敲，而是直接复制粘贴过来的)
+
+st.set_page_config(
+    page_title="外收内放的个人空间", #这里用来设置网页的标签名字
+    page_icon="🧊",
+    layout="wide", #控制网页布局，可以设置centered(只占用中间区域)和wide(布满整个页面)
+    initial_sidebar_state="expanded", #用于控制侧边栏的语句
+    menu_items={
+        'Get Help': 'https://www.xiaohongshu.com/user/profile/6a9300930000000013031800', #控制网页的跳转，点击右上角的三个点后点击Get help就会跳转到指定页面
+        'Report a bug': "https://www.xiaohongshu.com/user/profile/6a9300930000000013031800", #控制网页的跳转，点击右上角的三个点后点击Report a bug就会跳转到指定页面
+        'About': "# 这是一个关于streamlit的入门程序"
+    }
+)
 
 #怎么进入网页，在控制台最稳妥的输入格式：streamlit run ".\08_第八章（AI应用实战）\streamlit入门.py"
 
@@ -51,8 +66,8 @@ st.write('\n')
 
 st.write('下面展示一些我自己比较喜欢的图片：')
 st.image(get_resource_path('单车少年 (1).png'))
-st.image(get_resource_path('地铁站的女孩.png'))
 st.image(get_resource_path('少女心事2.png'))
+st.image(get_resource_path('地铁站的女孩.png'))
 st.write('\n')
 st.write('\n')
 st.write('\n')
