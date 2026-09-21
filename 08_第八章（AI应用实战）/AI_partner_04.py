@@ -131,6 +131,7 @@ with st.sidebar:
 
     new_session_name = st.text_input('新建会话', placeholder='输入会话名称后点击创建')
     if st.button('➕ 创建新会话'):
+        # noinspection unresolved-references
         if not new_session_name.strip():
             st.warning('请输入会话名称')
         elif new_session_name in st.session_state.sessions:
