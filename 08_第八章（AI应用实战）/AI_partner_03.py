@@ -119,8 +119,7 @@ if prompt: #这里字符串会自动转化成布尔值
     # st.chat_message('assistant').write(response.choices[0].message.content)
 
     #流式输出的代码
-
-    response_message = st.empty() #创建一个新的组件，用于显示AI的返回结果
+    response_message = st.empty()  #创建一个新的组件，用于显示AI的返回结果
     full_response = ''
     for chunk in response:
         if chunk.choices[0].delta.content is not None:
