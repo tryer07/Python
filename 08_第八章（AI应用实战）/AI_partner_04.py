@@ -108,11 +108,20 @@ if st.session_state.current_session and st.session_state.current_session in st.s
 
 with st.sidebar:
     st.subheader("AI智能伴侣")
-    nick_name = st.text_input('昵称', placeholder='请输入昵称', value=st.session_state.nick_name)
-    if nick_name and nick_name != st.session_state.nick_name:
-        st.session_state.nick_name = nick_name
-        save_current()
-    nature = st.text_area('性格', placeholder='请输入性格', value=st.session_state.nature)
+
+    has_active_session = (st.session_state.current_session is not None
+                          and st.session_state.current_session in st.session_state.sessions)
+
+    if has_active_session:
+        st.text_input('昵称', value=st.session_state.nick_name, disabled=True,
+                      help='会话创建后昵称不可修改')
+    else:
+        nick_name = st.text_input('昵称', placeholder='请输入昵称', value=st.session_state.nick_name)
+        if nick_name:
+            st.session_state.nick_name = nick_name
+
+    nature = st.text_area('性格', placeholder='请输入性格', value=st.session_state.nature,
+                          help='可随时修改性格，下一次对话立即生效')
     if nature and nature != st.session_state.nature:
         st.session_state.nature = nature
         save_current()
@@ -122,7 +131,6 @@ with st.sidebar:
 
     new_session_name = st.text_input('新建会话', placeholder='输入会话名称后点击创建')
     if st.button('➕ 创建新会话'):
-        # noinspection unresolved-references
         if not new_session_name.strip():
             st.warning('请输入会话名称')
         elif new_session_name in st.session_state.sessions:
