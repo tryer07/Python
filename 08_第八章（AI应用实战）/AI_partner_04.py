@@ -63,7 +63,8 @@ def save_session(session_name, session_data):
 def load_all_sessions():
     sessions = {}
     for file in sorted(SAVE_DIR.glob('*.json'), key=lambda f: f.stat().st_mtime):
-        sessions[file.stem] = json.load(open(file, 'r', encoding='utf-8'))
+        with open(file, 'r', encoding='utf-8') as f:
+            sessions[file.stem] = json.load(f)
     return sessions
 
 def delete_session_file(session_name):
@@ -72,11 +73,12 @@ def delete_session_file(session_name):
         file_path.unlink()
 
 def save_current():
-    if st.session_state.current_session:
-        session_data = st.session_state.sessions[st.session_state.current_session]
+    current = st.session_state.current_session
+    if current and current in st.session_state.sessions:
+        session_data = st.session_state.sessions[current]
         session_data['nick_name'] = st.session_state.nick_name
         session_data['nature'] = st.session_state.nature
-        save_session(st.session_state.current_session, session_data)
+        save_session(current, session_data)
 
 # ========== 初始化客户端 ==========
 
@@ -108,30 +110,21 @@ if st.session_state.current_session and st.session_state.current_session in st.s
 
 with st.sidebar:
     st.subheader("AI智能伴侣")
-
-    has_active_session = (st.session_state.current_session is not None
-                          and st.session_state.current_session in st.session_state.sessions)
-
-    if has_active_session:
-        st.text_input('昵称', value=st.session_state.nick_name, disabled=True,
-                      help='会话创建后昵称不可修改')
-        st.text_area('性格', value=st.session_state.nature, disabled=True,
-                     help='会话创建后性格不可修改，如需更改请新建会话')
-    else:
-        nick_name = st.text_input('昵称', placeholder='请输入昵称', value=st.session_state.nick_name)
-        if nick_name:
-            st.session_state.nick_name = nick_name
-        nature = st.text_area('性格', placeholder='请输入性格', value=st.session_state.nature)
-        if nature:
-            st.session_state.nature = nature
+    nick_name = st.text_input('昵称', placeholder='请输入昵称', value=st.session_state.nick_name)
+    if nick_name != st.session_state.nick_name:
+        st.session_state.nick_name = nick_name
+        save_current()
+    nature = st.text_area('性格', placeholder='请输入性格', value=st.session_state.nature)
+    if nature != st.session_state.nature:
+        st.session_state.nature = nature
+        save_current()
 
     st.divider()
     st.subheader("历史会话")
 
     new_session_name = st.text_input('新建会话', placeholder='输入会话名称后点击创建')
     if st.button('➕ 创建新会话'):
-        # noinspection unresolved-references
-        if not new_session_name.strip():
+        if not new_session_name or not new_session_name.strip():
             st.warning('请输入会话名称')
         elif new_session_name in st.session_state.sessions:
             st.warning('该会话已存在，请直接切换')
@@ -179,14 +172,13 @@ else:
 for message in current_messages:
     st.chat_message(message["role"]).write(message["content"])
 
-prompt = st.chat_input('请输入您要交互的内容') if current_messages is not None else None
+prompt = st.chat_input('请输入您要交互的内容')
 if prompt:
     st.chat_message('user').write(prompt)
     print('调用AI大模型，提示词：', prompt)
-    # noinspection unresolved-references
     current_messages.append({"role": "user", "content": prompt})
 
-    # noinspection bad-argument-type,not-iterable
+    # noinspection PyTypeChecker
     response = client.chat.completions.create(
         model="deepseek-flash",
         messages=[
@@ -205,7 +197,6 @@ if prompt:
         if chunk.choices[0].delta.content is not None:
             full_response += chunk.choices[0].delta.content
             response_message.chat_message('assistant').write(full_response)
-    # noinspection unresolved-references
     current_messages.append({"role": "assistant", "content": full_response})
 
     save_current()
