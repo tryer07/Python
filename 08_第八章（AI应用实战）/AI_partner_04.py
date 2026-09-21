@@ -115,16 +115,15 @@ with st.sidebar:
     if has_active_session:
         st.text_input('昵称', value=st.session_state.nick_name, disabled=True,
                       help='会话创建后昵称不可修改')
+        st.text_area('性格', value=st.session_state.nature, disabled=True,
+                     help='会话创建后性格不可修改，如需更改请新建会话')
     else:
         nick_name = st.text_input('昵称', placeholder='请输入昵称', value=st.session_state.nick_name)
         if nick_name:
             st.session_state.nick_name = nick_name
-
-    nature = st.text_area('性格', placeholder='请输入性格', value=st.session_state.nature,
-                          help='可随时修改性格，下一次对话立即生效')
-    if nature and nature != st.session_state.nature:
-        st.session_state.nature = nature
-        save_current()
+        nature = st.text_area('性格', placeholder='请输入性格', value=st.session_state.nature)
+        if nature:
+            st.session_state.nature = nature
 
     st.divider()
     st.subheader("历史会话")
