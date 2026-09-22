@@ -1,5 +1,4 @@
 #打印一个99乘法表
-from click.globals import push_context
 
 #打印行数
 
