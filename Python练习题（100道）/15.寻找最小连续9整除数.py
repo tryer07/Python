@@ -14,7 +14,7 @@ while True:
 
     #构建由n个连续9组成的数
 
-    num_9 = int(9 * count)
+    num_9 = int('9' * count)
 
     #判断这个数是否能被用户输入的奇数整除
 
