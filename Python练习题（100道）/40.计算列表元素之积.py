@@ -33,5 +33,3 @@ def multiply_list(lst):
 #
 # def multiply_list(lst):
 #     return reduce(lambda x, y: x * y, lst)
-
-
