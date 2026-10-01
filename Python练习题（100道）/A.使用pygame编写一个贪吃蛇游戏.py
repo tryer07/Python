@@ -3,6 +3,7 @@
 import pygame
 import random
 import sys
+import ctypes
 
 # 初始化pygame
 pygame.init()
@@ -38,6 +39,11 @@ RIGHT = (1, 0)
 screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
 pygame.display.set_caption("贪吃蛇游戏")
 clock = pygame.time.Clock()
+
+# 禁用窗口的输入法关联（解决中文输入法拦截按键的问题）
+hwnd = pygame.display.get_wm_info()["window"]
+# noinspection PyUnresolvedReferences
+ctypes.windll.imm32.ImmAssociateContext(hwnd, None)
 
 # 字体设置
 font_title = pygame.font.SysFont("Microsoft YaHei", 40, bold=True)
