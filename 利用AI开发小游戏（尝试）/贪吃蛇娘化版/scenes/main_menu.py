@@ -8,7 +8,6 @@ import pygame
 from core.scene import Scene
 from ui.button import Button
 from settings import (
-    RENDER_WIDTH, RENDER_HEIGHT,
     COLOR_BG, COLOR_ACCENT, COLOR_TEXT, COLOR_TEXT_DIM,
     FONT_SIZE_TITLE, FONT_SIZE_SUBTITLE, FONT_SIZE_BODY, FONT_SIZE_SMALL
 )
@@ -19,15 +18,15 @@ class MainMenuScene(Scene):
 
     def enter(self):
         self.assets = self.game.assets
-        self.font_title = self.assets.get_font(FONT_SIZE_TITLE, bold=True)
-        self.font_subtitle = self.assets.get_font(FONT_SIZE_SUBTITLE)
-        self.font_body = self.assets.get_font(FONT_SIZE_BODY)
-        self.font_small = self.assets.get_font(FONT_SIZE_SMALL)
+        self.font_title = self.assets.get_font(self.s(FONT_SIZE_TITLE), bold=True)
+        self.font_subtitle = self.assets.get_font(self.s(FONT_SIZE_SUBTITLE))
+        self.font_body = self.assets.get_font(self.s(FONT_SIZE_BODY))
+        self.font_small = self.assets.get_font(self.s(FONT_SIZE_SMALL))
 
-        cx = RENDER_WIDTH // 2
-        btn_w, btn_h = 320, 64
-        start_y = 400
-        gap = 82
+        cx = self.W // 2
+        btn_w, btn_h = self.s(320), self.s(64)
+        start_y = self.s(400)
+        gap = self.s(82)
 
         self.buttons = [
             Button("开始战斗", cx - btn_w // 2, start_y,
@@ -65,26 +64,27 @@ class MainMenuScene(Scene):
         screen.fill(COLOR_BG)
         self._draw_background(screen)
 
-        cx = RENDER_WIDTH // 2
+        cx = self.W // 2
 
         title = self.font_title.render("贪吃蛇娘化版", True, COLOR_ACCENT)
-        self._shadowed(screen, title, title.get_rect(center=(cx, 168)))
+        self._shadowed(screen, title, title.get_rect(center=(cx, self.s(168))))
 
         subtitle = self.font_subtitle.render("娘化贪吃蛇 · 成长对战", True, COLOR_TEXT_DIM)
-        screen.blit(subtitle, subtitle.get_rect(center=(cx, 244)))
+        screen.blit(subtitle, subtitle.get_rect(center=(cx, self.s(244))))
 
-        pygame.draw.line(screen, COLOR_ACCENT, (cx - 200, 300), (cx + 200, 300), 2)
+        pygame.draw.line(screen, COLOR_ACCENT,
+                         (cx - self.s(200), self.s(300)),
+                         (cx + self.s(200), self.s(300)), 2)
 
         # 当前出战角色
         save = self.game.save_manager.data
         char_id = save.get("selected_character", "sakura")
         scene_id = save.get("selected_scene", "campus_garden")
-        head = save.get("character_data", {}).get(char_id, {}).get("level", 1)
 
         t = self.font_small.render(
             f"出战角色：{self._char_name(char_id)}    ·    "
             f"当前场景：{self._scene_name(scene_id)}", True, COLOR_TEXT_DIM)
-        screen.blit(t, t.get_rect(center=(cx, 336)))
+        screen.blit(t, t.get_rect(center=(cx, self.s(336))))
 
         for b in self.buttons:
             b.draw(screen)
@@ -98,23 +98,24 @@ class MainMenuScene(Scene):
             f"游玩 {p.get('total_runs', 0)} 局"
         )
         t = self.font_small.render(info_text, True, COLOR_TEXT_DIM)
-        screen.blit(t, t.get_rect(center=(cx, RENDER_HEIGHT - 44)))
+        screen.blit(t, t.get_rect(center=(cx, self.H - self.s(44))))
 
         t = self.font_small.render("v0.1.0  ·  F11 全屏", True, (92, 92, 118))
-        screen.blit(t, t.get_rect(midleft=(20, RENDER_HEIGHT - 24)))
+        screen.blit(t, t.get_rect(midleft=(self.s(20), self.H - self.s(24))))
 
     def _draw_background(self, screen):
-        bg = self.assets.get_scaled("backgrounds/campus_garden.png", width=RENDER_WIDTH)
-        screen.blit(bg, (0, -30))
-        veil = pygame.Surface((RENDER_WIDTH, RENDER_HEIGHT), pygame.SRCALPHA)
+        bg = self.assets.get_scaled("backgrounds/campus_garden.png", width=self.W)
+        screen.blit(bg, (0, self.s(-30)))
+        veil = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         veil.fill((14, 12, 22, 186))
         screen.blit(veil, (0, 0))
 
         grid_color = (34, 32, 52)
-        for x in range(0, RENDER_WIDTH, 60):
-            pygame.draw.line(screen, grid_color, (x, 0), (x, RENDER_HEIGHT))
-        for y in range(0, RENDER_HEIGHT, 60):
-            pygame.draw.line(screen, grid_color, (0, y), (RENDER_WIDTH, y))
+        step = self.s(60)
+        for x in range(0, self.W, step):
+            pygame.draw.line(screen, grid_color, (x, 0), (x, self.H))
+        for y in range(0, self.H, step):
+            pygame.draw.line(screen, grid_color, (0, y), (self.W, y))
 
     @staticmethod
     def _shadowed(screen, surf, rect):

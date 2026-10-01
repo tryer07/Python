@@ -17,7 +17,7 @@ import pygame
 from core.scene import Scene
 from ui.button import Button
 from settings import (
-    DATA_DIR, RENDER_WIDTH, RENDER_HEIGHT,
+    DATA_DIR,
     COLOR_BG, COLOR_ACCENT, COLOR_BG_LIGHT, COLOR_GOLD, COLOR_TEXT, COLOR_TEXT_DIM,
     FONT_SIZE_TITLE, FONT_SIZE_SUBTITLE, FONT_SIZE_BODY, FONT_SIZE_SMALL
 )
@@ -39,22 +39,24 @@ class GachaScene(Scene):
 
     def enter(self):
         self.assets = self.game.assets
-        self.font_title = self.assets.get_font(FONT_SIZE_TITLE, bold=True)
-        self.font_sub = self.assets.get_font(FONT_SIZE_SUBTITLE)
-        self.font_body = self.assets.get_font(FONT_SIZE_BODY)
-        self.font_small = self.assets.get_font(FONT_SIZE_SMALL)
+        self.font_title = self.assets.get_font(self.s(FONT_SIZE_TITLE), bold=True)
+        self.font_sub = self.assets.get_font(self.s(FONT_SIZE_SUBTITLE))
+        self.font_body = self.assets.get_font(self.s(FONT_SIZE_BODY))
+        self.font_small = self.assets.get_font(self.s(FONT_SIZE_SMALL))
 
         self.back_btn = Button(
-            "返回主菜单", 30, RENDER_HEIGHT - 80, 200, 50,
-            font_size=FONT_SIZE_SMALL, on_click=self._on_back
+            "返回主菜单", self.s(30), self.H - self.s(80), self.s(200), self.s(50),
+            font_size=self.s(FONT_SIZE_SMALL), on_click=self._on_back
         )
         self.btn_single = Button(
-            f"单抽 ({COST_SINGLE} 星尘)", RENDER_WIDTH // 2 - 330, RENDER_HEIGHT - 150,
-            300, 64, on_click=lambda: self._pull(1)
+            f"单抽 ({COST_SINGLE} 星尘)", self.W // 2 - self.s(330), self.H - self.s(150),
+            self.s(300), self.s(64), font_size=self.s(FONT_SIZE_BODY),
+            on_click=lambda: self._pull(1)
         )
         self.btn_ten = Button(
-            f"十连 ({COST_TEN} 星尘)", RENDER_WIDTH // 2 + 30, RENDER_HEIGHT - 150,
-            300, 64, on_click=lambda: self._pull(10)
+            f"十连 ({COST_TEN} 星尘)", self.W // 2 + self.s(30), self.H - self.s(150),
+            self.s(300), self.s(64), font_size=self.s(FONT_SIZE_BODY),
+            on_click=lambda: self._pull(10)
         )
 
         self.pool = self._load_pool()
@@ -195,17 +197,17 @@ class GachaScene(Scene):
         screen = self.screen
         screen.fill(COLOR_BG)
 
-        bg = self.assets.get_scaled("backgrounds/campus_garden.png", width=RENDER_WIDTH)
-        screen.blit(bg, (0, -40))
-        veil = pygame.Surface((RENDER_WIDTH, RENDER_HEIGHT), pygame.SRCALPHA)
+        bg = self.assets.get_scaled("backgrounds/campus_garden.png", width=self.W)
+        screen.blit(bg, (0, -self.s(40)))
+        veil = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         veil.fill((14, 12, 22, 208))
         screen.blit(veil, (0, 0))
 
         # 标题
         t = self.font_title.render("蛇娘召集", True, COLOR_GOLD)
-        screen.blit(t, t.get_rect(center=(RENDER_WIDTH // 2, 80)))
+        screen.blit(t, t.get_rect(center=(self.W // 2, self.s(80))))
         t = self.font_small.render("战斗掉落星尘 · 集齐更多蛇娘", True, COLOR_TEXT_DIM)
-        screen.blit(t, t.get_rect(center=(RENDER_WIDTH // 2, 132)))
+        screen.blit(t, t.get_rect(center=(self.W // 2, self.s(132))))
 
         self._draw_up_character()
 
@@ -218,17 +220,17 @@ class GachaScene(Scene):
                 f"已抽 {counter.get('count', 0)} 次    "
                 f"距离 SSR 保底还有 {left} 抽")
         t = self.font_body.render(info, True, COLOR_GOLD)
-        screen.blit(t, t.get_rect(center=(RENDER_WIDTH // 2, RENDER_HEIGHT - 210)))
+        screen.blit(t, t.get_rect(center=(self.W // 2, self.H - self.s(210))))
 
         # 保底进度条
-        bw = 560
-        bx = RENDER_WIDTH // 2 - bw // 2
-        by = RENDER_HEIGHT - 182
-        pygame.draw.rect(screen, (26, 22, 36), (bx, by, bw, 12), border_radius=6)
+        bw = self.s(560)
+        bx = self.W // 2 - bw // 2
+        by = self.H - self.s(182)
+        pygame.draw.rect(screen, (26, 22, 36), (bx, by, bw, self.s(12)), border_radius=6)
         ratio = 1.0 - left / max(1, ssr_need)
         if ratio > 0:
             pygame.draw.rect(screen, (206, 168, 255),
-                             (bx, by, int(bw * ratio), 12), border_radius=6)
+                             (bx, by, int(bw * ratio), self.s(12)), border_radius=6)
 
         self.btn_single.draw(screen)
         self.btn_ten.draw(screen)
@@ -236,7 +238,7 @@ class GachaScene(Scene):
 
         if self.msg_timer > 0 and self.msg:
             t = self.font_body.render(self.msg, True, COLOR_ACCENT)
-            screen.blit(t, t.get_rect(center=(RENDER_WIDTH // 2, RENDER_HEIGHT - 250)))
+            screen.blit(t, t.get_rect(center=(self.W // 2, self.H - self.s(250))))
 
         if self.result_timer > 0:
             self._draw_result()
@@ -244,59 +246,61 @@ class GachaScene(Scene):
     def _draw_up_character(self):
         """UP 角色展示"""
         screen = self.screen
-        cx = RENDER_WIDTH // 2
-        cy = 400
-        glow = pygame.Surface((520, 520), pygame.SRCALPHA)
+        cx = self.W // 2
+        cy = self.s(400)
+        gsize = self.s(520)
+        glow = pygame.Surface((gsize, gsize), pygame.SRCALPHA)
         for i in range(7):
-            r = 200 - i * 22
+            r = self.s(200) - i * self.s(22)
             pygame.draw.circle(glow, (255, 200, 120, 10),
-                               (260, 260), max(10, r))
-        screen.blit(glow, (cx - 260, cy - 260))
+                               (gsize // 2, gsize // 2), max(10, r))
+        screen.blit(glow, (cx - gsize // 2, cy - gsize // 2))
 
-        img = self.assets.get_scaled("characters/sakura/head.png", height=330)
+        img = self.assets.get_scaled("characters/sakura/head.png", height=self.s(330))
         import math
         k = 1.0 + math.sin(self.time * 1.6) * 0.015
         img = pygame.transform.smoothscale(
             img, (int(img.get_width() * k), int(img.get_height() * k)))
-        screen.blit(img, img.get_rect(center=(cx, cy - 20)))
+        screen.blit(img, img.get_rect(center=(cx, cy - self.s(20))))
 
         t = self.font_sub.render("樱落 · SSR", True, COLOR_GOLD)
-        screen.blit(t, t.get_rect(center=(cx, cy + 190)))
+        screen.blit(t, t.get_rect(center=(cx, cy + self.s(190))))
 
     def _draw_result(self):
         screen = self.screen
-        veil = pygame.Surface((RENDER_WIDTH, RENDER_HEIGHT), pygame.SRCALPHA)
+        veil = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         veil.fill((10, 8, 16, 216))
         screen.blit(veil, (0, 0))
 
         n = len(self.result)
         t = self.font_sub.render("抽卡结果", True, COLOR_TEXT)
-        screen.blit(t, t.get_rect(center=(RENDER_WIDTH // 2, 160)))
+        screen.blit(t, t.get_rect(center=(self.W // 2, self.s(160))))
 
         cols = min(5, n)
-        cw, ch = 190, 230
+        cw, ch = self.s(190), self.s(230)
+        gap = self.s(24)
         rows = (n + cols - 1) // cols
-        total_w = cols * cw + (cols - 1) * 24
-        x0 = (RENDER_WIDTH - total_w) // 2
-        y0 = 230
+        total_w = cols * cw + (cols - 1) * gap
+        x0 = (self.W - total_w) // 2
+        y0 = self.s(230)
 
         for i, (char_id, rarity, _) in enumerate(self.result):
             c, r = i % cols, i // cols
-            rect = pygame.Rect(x0 + c * (cw + 24), y0 + r * (ch + 24), cw, ch)
+            rect = pygame.Rect(x0 + c * (cw + gap), y0 + r * (ch + gap), cw, ch)
             color = RARITY_COLORS.get(rarity, (150, 150, 150))
             pygame.draw.rect(screen, (36, 32, 48), rect, border_radius=12)
             pygame.draw.rect(screen, color, rect, 3, border_radius=12)
 
-            img = self.assets.get_scaled("characters/sakura/head.png", height=110)
-            screen.blit(img, img.get_rect(center=(rect.centerx, rect.y + 78)))
+            img = self.assets.get_scaled("characters/sakura/head.png", height=self.s(110))
+            screen.blit(img, img.get_rect(center=(rect.centerx, rect.y + self.s(78))))
 
             t = self.font_body.render(self._display_name(char_id), True, color)
-            screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + 168)))
+            screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(168))))
             t = self.font_small.render(rarity, True, color)
-            screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + 200)))
+            screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(200))))
 
         t = self.font_small.render("按任意方向键关闭", True, COLOR_TEXT_DIM)
-        screen.blit(t, t.get_rect(center=(RENDER_WIDTH // 2, RENDER_HEIGHT - 90)))
+        screen.blit(t, t.get_rect(center=(self.W // 2, self.H - self.s(90))))
 
     def _on_back(self):
         self.game.change_scene("main_menu")

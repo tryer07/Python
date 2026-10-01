@@ -8,6 +8,7 @@ game_logic/entities.py —— 游戏里的所有实体
   · 难度靠小怪变强变多，不靠蛇变长
 """
 
+import itertools
 import math
 import random
 
@@ -15,6 +16,9 @@ import pygame
 
 import settings as S
 from core.asset_manager import angle_between
+
+# 小怪唯一 id 生成器（荆棘/技能计冷却时要按"这只怪"来记，不能按格子）
+_UID_GEN = itertools.count(1)
 
 
 # ======================================================================
@@ -44,6 +48,7 @@ class SnakeGirl:
         self.hp = S.HP_MAX
         self.invincible = 0.0
         self.alive = True
+        self.on_level_up_cb = None          # 由战斗场景挂上去，用来同步技能解锁
 
         # ---- 路径历史：记录蛇头经过的点，用来摆放尾椎 ----
         self.path = []                                                 # [(x, y), ...] 屏幕像素
@@ -191,8 +196,13 @@ class SnakeGirl:
         return S.EXP_PER_LEVEL + (self.level - 1) * 12
 
     def on_level_up(self, gained):
-        """升级奖励：这里先只加伤害，技能解锁留给下一阶段"""
-        pass
+        """
+        升级钩子。真正的技能解锁由战斗场景里的 SkillEngine 处理
+        （它需要知道场上情况才能干活），这里只留一个回调位，
+        方便别的场景复用 SnakeGirl 时也能收到通知。
+        """
+        if self.on_level_up_cb:
+            self.on_level_up_cb(self.level, gained)
 
     @property
     def attack(self):
@@ -315,6 +325,9 @@ class Mob:
     """
 
     def __init__(self, cell, hp_mult=1.0, speed_mult=1.0, chase=0.0):
+        # 每只怪一个稳定 id，荆棘计冷却要用（不能拿格子坐标当 key，
+        # 因为怪会移动，换格子就会重复触发伤害）
+        self.uid = next(_UID_GEN)
         self.cell = [float(cell[0]), float(cell[1])]
         self.prev_cell = list(self.cell)
         self.target = list(self.cell)

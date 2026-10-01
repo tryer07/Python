@@ -15,7 +15,7 @@ import pygame
 from core.scene import Scene
 from ui.button import Button
 from settings import (
-    DATA_DIR, RENDER_WIDTH, RENDER_HEIGHT,
+    DATA_DIR,
     COLOR_BG, COLOR_ACCENT, COLOR_TEXT, COLOR_TEXT_DIM, COLOR_GOLD,
     FONT_SIZE_TITLE, FONT_SIZE_SUBTITLE, FONT_SIZE_BODY, FONT_SIZE_SMALL
 )
@@ -48,14 +48,14 @@ class SceneSelectScene(Scene):
 
     def enter(self):
         self.assets = self.game.assets
-        self.font_title = self.assets.get_font(FONT_SIZE_TITLE, bold=True)
-        self.font_sub = self.assets.get_font(FONT_SIZE_SUBTITLE)
-        self.font_body = self.assets.get_font(FONT_SIZE_BODY)
-        self.font_small = self.assets.get_font(FONT_SIZE_SMALL)
+        self.font_title = self.assets.get_font(self.s(FONT_SIZE_TITLE), bold=True)
+        self.font_sub = self.assets.get_font(self.s(FONT_SIZE_SUBTITLE))
+        self.font_body = self.assets.get_font(self.s(FONT_SIZE_BODY))
+        self.font_small = self.assets.get_font(self.s(FONT_SIZE_SMALL))
 
         self.back_btn = Button(
-            "返回主菜单", 30, RENDER_HEIGHT - 80, 200, 50,
-            font_size=FONT_SIZE_SMALL, on_click=self._on_back
+            "返回主菜单", self.s(30), self.H - self.s(80), self.s(200), self.s(50),
+            font_size=self.s(FONT_SIZE_SMALL), on_click=self._on_back
         )
         self.scenes = self._load_scenes()
         self.selected_scene = self.game.save_manager.get("selected_scene", "campus_garden")
@@ -101,18 +101,18 @@ class SceneSelectScene(Scene):
 
     def _cards(self):
         n = len(self.scenes)
+        cw, ch = self.s(CARD_W), self.s(CARD_H)
+        cg = self.s(CARD_GAP)
         cols = 2
         rows = (n + cols - 1) // cols
-        total_w = cols * CARD_W + (cols - 1) * CARD_GAP
-        total_h = rows * CARD_H + (rows - 1) * CARD_GAP
-        x0 = (RENDER_WIDTH - total_w) // 2
-        y0 = (RENDER_HEIGHT - total_h) // 2 + 40
+        total_w = cols * cw + (cols - 1) * cg
+        total_h = rows * ch + (rows - 1) * cg
+        x0 = (self.W - total_w) // 2
+        y0 = (self.H - total_h) // 2 + self.s(40)
         out = []
         for i, sc in enumerate(self.scenes):
             c, r = i % cols, i // cols
-            rect = pygame.Rect(x0 + c * (CARD_W + CARD_GAP),
-                               y0 + r * (CARD_H + CARD_GAP),
-                               CARD_W, CARD_H)
+            rect = pygame.Rect(x0 + c * (cw + cg), y0 + r * (ch + cg), cw, ch)
             out.append((i, rect, sc))
         return out
 
@@ -127,16 +127,16 @@ class SceneSelectScene(Scene):
         screen = self.screen
         screen.fill(COLOR_BG)
 
-        bg = self.assets.get_scaled("backgrounds/campus_garden.png", width=RENDER_WIDTH)
-        screen.blit(bg, (0, -40))
-        veil = pygame.Surface((RENDER_WIDTH, RENDER_HEIGHT), pygame.SRCALPHA)
+        bg = self.assets.get_scaled("backgrounds/campus_garden.png", width=self.W)
+        screen.blit(bg, (0, self.s(-40)))
+        veil = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
         veil.fill((14, 12, 22, 206))
         screen.blit(veil, (0, 0))
 
         title = self.font_title.render("选择作战场景", True, COLOR_ACCENT)
-        screen.blit(title, title.get_rect(center=(RENDER_WIDTH // 2, 78)))
+        screen.blit(title, title.get_rect(center=(self.W // 2, self.s(78))))
         t = self.font_small.render("不同场景的敌人配置与危险程度不同", True, COLOR_TEXT_DIM)
-        screen.blit(t, t.get_rect(center=(RENDER_WIDTH // 2, 130)))
+        screen.blit(t, t.get_rect(center=(self.W // 2, self.s(130))))
 
         for _, rect, sc in self._cards():
             self._draw_card(screen, rect, sc)
@@ -147,10 +147,11 @@ class SceneSelectScene(Scene):
         selected = sc["id"] == self.selected_scene
         hovered = self.hover_id == sc["id"]
 
-        pygame.draw.rect(screen, (34, 30, 46), rect, border_radius=12)
+        pygame.draw.rect(screen, (34, 30, 46), rect, border_radius=self.s(12))
 
-        # ---- 预览图 ----
-        preview = pygame.Rect(rect.x + 14, rect.y + 14, rect.w - 28, 138)
+        # 预览图
+        preview = pygame.Rect(rect.x + self.s(14), rect.y + self.s(14),
+                              rect.w - self.s(28), self.s(138))
         bg_path = sc.get("bg", "")
         if bg_path and self._asset_exists(bg_path):
             img = self.assets.get_scaled(bg_path, width=preview.w)
@@ -160,11 +161,10 @@ class SceneSelectScene(Scene):
             screen.blit(img, preview.topleft)
         else:
             accent = sc.get("accent", [120, 110, 150])
-            pygame.draw.rect(screen, tuple(accent), preview, border_radius=8)
+            pygame.draw.rect(screen, tuple(accent), preview, border_radius=self.s(8))
             t = self.font_small.render("[ 场景贴图待补 ]", True, (255, 255, 255))
             screen.blit(t, t.get_rect(center=preview.center))
 
-        # 预览图压暗
         ov = pygame.Surface(preview.size, pygame.SRCALPHA)
         ov.fill((0, 0, 0, 60))
         screen.blit(ov, preview.topleft)
@@ -172,24 +172,26 @@ class SceneSelectScene(Scene):
         # 难度角标
         diff = sc.get("difficulty", "普通")
         dc = DIFF_COLORS.get(diff, (150, 150, 150))
-        badge = pygame.Rect(preview.x + 10, preview.y + 10, 76, 28)
-        pygame.draw.rect(screen, dc, badge, border_radius=8)
+        badge = pygame.Rect(preview.x + self.s(10), preview.y + self.s(10),
+                            self.s(76), self.s(28))
+        pygame.draw.rect(screen, dc, badge, border_radius=self.s(8))
         t = self.font_small.render(diff, True, (26, 22, 34))
         screen.blit(t, t.get_rect(center=badge.center))
 
-        # ---- 名字与描述 ----
+        # 名字与描述
         t = self.font_sub.render(sc.get("name", "???"), True, COLOR_TEXT)
-        screen.blit(t, t.get_rect(midleft=(rect.x + 20, rect.y + 182)))
+        screen.blit(t, t.get_rect(midleft=(rect.x + self.s(20), rect.y + self.s(182))))
 
         t = self.font_small.render(sc.get("desc", ""), True, COLOR_TEXT_DIM)
-        screen.blit(t, t.get_rect(midleft=(rect.x + 20, rect.y + 214)))
+        screen.blit(t, t.get_rect(midleft=(rect.x + self.s(20), rect.y + self.s(214))))
 
         if selected:
             t = self.font_body.render("已选择", True, COLOR_GOLD)
-            screen.blit(t, t.get_rect(midright=(rect.right - 20, rect.y + 182)))
+            screen.blit(t, t.get_rect(midright=(rect.right - self.s(20), rect.y + self.s(182))))
 
         border = COLOR_ACCENT if selected else ((130, 120, 170) if hovered else (60, 56, 78))
-        pygame.draw.rect(screen, border, rect, 4 if selected else 2, border_radius=12)
+        bw = self.s(4) if selected else self.s(2)
+        pygame.draw.rect(screen, border, rect, bw, border_radius=self.s(12))
 
     def _on_back(self):
         self.game.change_scene("main_menu")

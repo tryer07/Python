@@ -4,9 +4,9 @@ core/game.py —— 游戏主类
 
 负责：
   1. 创建窗口（支持 窗口 / 无边框 / 全屏，可动态切换）
-  2. 内部按 RENDER_WIDTH x RENDER_HEIGHT 渲染，最后统一缩放到窗口
-     —— 这样游戏逻辑永远不用关心窗口到底多大
-  3. 主循环与场景切换
+  2. 以窗口原生分辨率渲染（无拉伸，不模糊）
+  3. 提供 scale 缩放因子，让所有 UI 元素按比例放大
+  4. 主循环与场景切换
 """
 
 import ctypes
@@ -14,11 +14,13 @@ import sys
 
 import pygame
 
+import settings
 from core.asset_manager import AssetManager
 from core.save_manager import SaveManager
 from settings import (
+    CELL_SIZE_BASE, DESIGN_HEIGHT, DESIGN_WIDTH,
     DISPLAY_MODES, FPS, FULLSCREEN, GAME_TITLE,
-    RENDER_HEIGHT, RENDER_WIDTH, RESOLUTION_OPTIONS, WINDOW_SCALE,
+    RESOLUTION_OPTIONS, WINDOW_SCALE,
 )
 
 
@@ -28,17 +30,14 @@ class Game:
     def __init__(self):
         pygame.init()
 
-        # 渲染分辨率与窗口分辨率分离
-        self.render_surface = pygame.Surface((RENDER_WIDTH, RENDER_HEIGHT))
-
         # 显示设置：优先读存档
         self.save_manager = SaveManager()
         display = self.save_manager.get("display", {}) or {}
         self.display_mode = display.get("mode", "fullscreen" if FULLSCREEN else "windowed")
         self.display_resolution = tuple(display.get("resolution", [0, 0]))
 
-        self.window_width = RENDER_WIDTH
-        self.window_height = RENDER_HEIGHT
+        self.window_width = DESIGN_WIDTH
+        self.window_height = DESIGN_HEIGHT
         self.display = None
         self._apply_display_settings()
 
@@ -49,6 +48,11 @@ class Game:
         self._scenes = {}
 
     # ==================== 窗口 / 显示设置 ====================
+    @property
+    def scale(self):
+        """缩放因子：窗口宽度 / 设计基准宽度"""
+        return self.window_width / DESIGN_WIDTH
+
     def _apply_display_settings(self):
         """根据 display_mode / display_resolution 创建或重建窗口"""
         info = pygame.display.Info()
@@ -56,7 +60,7 @@ class Game:
 
         if self.display_mode == "fullscreen":
             self.window_width, self.window_height = sw, sh
-            flags = pygame.FULLSCREEN | pygame.SCALED
+            flags = pygame.FULLSCREEN
         elif self.display_mode == "borderless":
             self.window_width, self.window_height = sw, sh
             flags = pygame.NOFRAME
@@ -79,6 +83,14 @@ class Game:
         self.display = pygame.display.set_mode(
             (self.window_width, self.window_height), flags
         )
+        # 渲染表面 = 窗口原生分辨率（1:1 像素映射，零模糊）
+        self.render_surface = pygame.Surface((self.window_width, self.window_height))
+
+        # 动态更新 settings 中的渲染分辨率和格子大小
+        settings.RENDER_WIDTH = self.window_width
+        settings.RENDER_HEIGHT = self.window_height
+        settings.CELL_SIZE = int(CELL_SIZE_BASE * self.scale)
+
         pygame.display.set_caption(GAME_TITLE)
         self._disable_ime()
 
@@ -94,6 +106,15 @@ class Game:
             "mode": self.display_mode,
             "resolution": list(self.display_resolution),
         })
+        # 窗口大小变了，需要重新进入当前场景以刷新布局
+        if self.current_scene:
+            scene_name = None
+            for name, cls in self._scenes.items():
+                if isinstance(self.current_scene, cls):
+                    scene_name = name
+                    break
+            if scene_name:
+                self.change_scene(scene_name)
 
     def get_available_resolutions(self):
         """返回不超过屏幕尺寸的分辨率选项 [(w, h, 说明), ...]"""
@@ -151,49 +172,22 @@ class Game:
                 elif event.type == pygame.VIDEORESIZE and self.display_mode == "windowed":
                     self.window_width = event.w
                     self.window_height = event.h
+                    self.render_surface = pygame.Surface((event.w, event.h))
+                    settings.RENDER_WIDTH = event.w
+                    settings.RENDER_HEIGHT = event.h
+                    settings.CELL_SIZE = int(CELL_SIZE_BASE * self.scale)
 
             if self.current_scene:
-                scaled_events = self._scale_mouse_events(events)
-                self.current_scene.handle_events(scaled_events)
+                # 渲染表面 = 窗口大小，鼠标坐标无需转换
+                self.current_scene.handle_events(events)
                 self.current_scene.update(dt)
                 self.current_scene.draw()
 
-            # 渲染表面 -> 实际窗口（一次缩放搞定）
-            if (self.window_width, self.window_height) != (RENDER_WIDTH, RENDER_HEIGHT):
-                scaled = pygame.transform.smoothscale(
-                    self.render_surface, (self.window_width, self.window_height)
-                )
-                self.display.blit(scaled, (0, 0))
-            else:
-                self.display.blit(self.render_surface, (0, 0))
+            # 直接 1:1 blit，无任何缩放 → 零模糊
+            self.display.blit(self.render_surface, (0, 0))
             pygame.display.flip()
 
         self.quit()
-
-    def _scale_mouse_events(self, events):
-        """把鼠标坐标从窗口尺寸映射回渲染尺寸"""
-        if (self.window_width, self.window_height) == (RENDER_WIDTH, RENDER_HEIGHT):
-            return events
-
-        out = []
-        for event in events:
-            if event.type == pygame.MOUSEMOTION:
-                out.append(pygame.event.Event(
-                    pygame.MOUSEMOTION,
-                    pos=(event.pos[0] * RENDER_WIDTH // self.window_width,
-                         event.pos[1] * RENDER_HEIGHT // self.window_height),
-                    rel=event.rel, buttons=event.buttons,
-                ))
-            elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
-                out.append(pygame.event.Event(
-                    event.type,
-                    pos=(event.pos[0] * RENDER_WIDTH // self.window_width,
-                         event.pos[1] * RENDER_HEIGHT // self.window_height),
-                    button=event.button,
-                ))
-            else:
-                out.append(event)
-        return out
 
     def quit(self):
         self.save_manager.save()

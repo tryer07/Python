@@ -85,7 +85,68 @@ def check_settings_imports():
     info.append(f"配置引用检查：settings.py 共导出 {len(valid)} 个配置项")
 
 
-# ------------------------------------------------------ 3. 素材路径是否真实
+# ------------------------------------------------ 3. 未定义名字（漏 import）
+def check_undefined_names():
+    """
+    抓"用了没导入的名字"。
+
+    为什么必须查这个：项目里 settings 的常量有两种写法 —— 开头的
+    `from settings import CELL_SIZE` 和函数里的 `import settings as S`
+    然后 `S.CELL_SIZE`。写代码时两边混用，就会出现某个分支里用了裸的
+    CELL_SIZE 但顶部没导入。这种错**编译期查不出来**，只有那行代码
+    真的被执行到才崩 —— 而且是运行到一半、进了某个技能分支才崩。
+    所以用"所有局部名都赋值的 AST 遍历"来近似判定。
+    """
+    for path in iter_py_files():
+        rel = os.path.relpath(path, BASE)
+        try:
+            tree = ast.parse(open(path, encoding="utf-8").read())
+        except SyntaxError:
+            continue
+
+        # 收集模块级与所有函数内的绑定名、以及所有属性访问的名字（宽松放行）
+        bound = set(dir(__builtins__)) | {"self", "cls", "__name__", "__file__"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                if isinstance(node.ctx, (ast.Store, ast.Del)):
+                    bound.add(node.id)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                bound.add(node.name)
+            elif isinstance(node, ast.arg):
+                bound.add(node.arg)
+            elif isinstance(node, ast.alias):
+                # from X import a, b  /  import x as y —— 都要算绑定
+                bound.add((node.asname or node.name).split(".")[0])
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                bound.add(node.name)
+            elif isinstance(node, (ast.Global, ast.Nonlocal)):
+                bound.update(node.names)
+            elif isinstance(node, ast.comprehension) and isinstance(node.target, ast.Name):
+                bound.add(node.target.id)
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    bound.add((a.asname or a.name).split(".")[0])
+            elif isinstance(node, ast.ImportFrom):
+                for a in node.names:
+                    bound.add(a.asname or a.name)
+
+        # 模块内定义的所有函数/类，供函数间互相调用
+        local_defs = {n.name for n in ast.walk(tree)
+                      if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+        bound |= local_defs
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                if node.id not in bound:
+                    errors.append(
+                        f"[名字未定义] {rel} 第{node.lineno}行 使用了 '{node.id}'，"
+                        f"但它没有被导入或赋值（漏了 import？）"
+                    )
+    info.append("未定义名字检查：完成")
+
+
+# ------------------------------------------------------ 4. 素材路径是否真实
 def check_assets():
     found = set()
     for path in iter_py_files():
@@ -169,6 +230,7 @@ def main():
     check_settings_imports()
     check_json()
     check_assets()
+    check_undefined_names()
 
     for line in info:
         print("  ·", line)
