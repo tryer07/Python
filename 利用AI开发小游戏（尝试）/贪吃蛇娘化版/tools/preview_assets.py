@@ -18,7 +18,8 @@ FILES = [
 
 CELL = 300
 COLS = 3
-ROWS = 2W, H = CELL * COLS, CELL * ROWS
+ROWS = 2
+W, H = CELL * COLS, CELL * ROWS
 
 canvas = Image.new("RGBA", (W, H), (40, 40, 42, 255))
 # 棋盘底

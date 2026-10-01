@@ -5,13 +5,13 @@
     "name": "樱之守护者",
     "sprite": "",
     "tint": [240, 150, 190],
-    "hp": 340,
+    "hp": 260,
     "size": 2.4,
     "speed": 1.4,
     "trigger": { "mode": "time", "value": 60 },
     "phases": [
-      { "below": 1.0, "attacks": ["radial", "aimed"], "interval": 3.2 },
-      { "below": 0.5, "attacks": ["radial", "aimed", "radial"], "interval": 2.6 }
+      { "below": 1.0, "attacks": ["radial", "aimed"], "interval": 3.6 },
+      { "below": 0.5, "attacks": ["radial", "aimed", "radial"], "interval": 3.0 }
     ]
   },
   {
@@ -60,7 +60,7 @@
       { "below": 1.0, "attacks": ["radial", "aimed"], "interval": 2.8 },
       { "below": 0.65, "attacks": ["spiral", "radial", "aimed"], "interval": 2.4 },
       { "below": 0.35, "attacks": ["wall", "slam", "charge"], "interval": 2.1 },
-      { "below": 0.18, "attacks": ["spiral", "charge", "summon", "aimed"], "interval": 1.8 }
+      { "below": 0.18, "attacks": ["spiral", "slam", "charge", "summon", "aimed"], "interval": 1.8 }
     ]
   }
 ]
