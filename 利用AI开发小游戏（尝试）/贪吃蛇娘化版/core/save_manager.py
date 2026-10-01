@@ -1,6 +1,6 @@
 import os
 import json
-from settings import SAVES_DIR
+from settings import SAVES_DIR, ENHANCE_MAX_LAYER
 
 
 class SaveManager:
@@ -92,6 +92,14 @@ class SaveManager:
             if old in cd and new not in cd:
                 cd[new] = cd.pop(old)
 
+        # 强化层数：老存档没有 enhance 字段，补 0；并夹到合法区间
+        for cid in data.get("owned_characters", []):
+            entry = cd.setdefault(cid, {"level": 1, "exp": 0, "skill_points": 0})
+            if not isinstance(entry, dict):
+                entry = {"level": 1, "exp": 0, "skill_points": 0}
+                cd[cid] = entry
+            entry["enhance"] = max(0, min(ENHANCE_MAX_LAYER, int(entry.get("enhance", 0) or 0)))
+
     @staticmethod
     def _deep_update(base, incoming):
         """递归合并，这样老存档缺了新字段也不会丢数据"""
@@ -144,6 +152,29 @@ class SaveManager:
     def set(self, key, value):
         self.data[key] = value
         self.save()
+
+    # ======================== 强化养成接口 ========================
+    def get_enhance(self, char_id):
+        """读取某角色的强化层数（缺省 0）"""
+        cd = self.data.get("character_data", {})
+        entry = cd.get(char_id)
+        if not isinstance(entry, dict):
+            return 0
+        return max(0, min(ENHANCE_MAX_LAYER, int(entry.get("enhance", 0) or 0)))
+
+    def add_enhance(self, char_id):
+        """重复抽到同一角色：强化 +1 层。
+
+        返回 (new_layer, was_maxed)：new_layer 为加层后的层数；
+        was_maxed 为 True 表示加之前已满层（本次不加，调用方应返还星尘）。
+        """
+        cd = self.data.setdefault("character_data", {})
+        entry = cd.setdefault(char_id, {"level": 1, "exp": 0, "skill_points": 0})
+        cur = max(0, min(ENHANCE_MAX_LAYER, int(entry.get("enhance", 0) or 0)))
+        if cur >= ENHANCE_MAX_LAYER:
+            return cur, True
+        entry["enhance"] = cur + 1
+        return cur + 1, False
 
     def reset(self):
         self.data = self.DEFAULT_SAVE.copy()

@@ -7,6 +7,12 @@
     "element": "樱",
     "growth": "均衡",
     "desc": "来自樱花神域的蛇娘，性格温柔。等级越高，斩击越锋利。",
+    "story": "樱落诞生于樱花神域最深处的古树之下，是神域选中的守护者。每逢花期，她会沿着落樱铺成的小径巡视结界，尾尖扫过的地方，枯萎的枝条会重新抽芽。她待人温柔，却从不在守护之事上退让半步——神域的安宁，是她用一季又一季的花开花落守出来的。",
+    "egg_lines": {
+      "head": ["哎呀…被你摸到头了呢，花瓣都乱了。", "头…只许你一个人碰哦。"],
+      "body": ["腰这里…是鳞片开始的地方，痒痒的。", "别、别乱摸啦，人家会害羞的。"],
+      "tail": ["尾巴是我的骄傲，轻一点哦。", "尾尖扫过之处，会有新芽冒出来呢。"]
+    },
     "head": "characters/sakura/head.png",
     "body_seg": "characters/sakura/body_seg.png",
     "tail_tip": "characters/sakura/tail_tip.png",
@@ -17,12 +23,20 @@
   {
     "id": "lamia_mint",
     "name": "薄荷",
-    "rarity": "R",
-    "title": "庭院里的新手蛇娘",
+    "rarity": "SSR",
+    "title": "庭院里的新风",
     "element": "风",
     "growth": "速度",
-    "desc": "刚踏上旅程的蛇娘，动作轻快。",
-    "head": "",
+    "desc": "动作轻快的蛇娘，像一阵穿堂风，所过之处草叶轻摇。",
+    "story": "薄荷是庭院里最坐不住的那阵风。她讨厌一成不变，总爱在午后的回廊里追着落叶跑，把晒着的床单吹得鼓鼓的。别看她笑得天真，一旦认真起来，她的速度快到连影子都追不上——庭院里每个人都记得被一阵清风'偷'走点心的日子。",
+    "egg_lines": {
+      "head": ["嘿嘿，抓到我了？我可是风哦。", "头发被风吹乱啦，帮我理理嘛。"],
+      "body": ["痒—！别挠我腰，我会笑到停不下来的！", "风一样的腰肢，抓不住的哦。"],
+      "tail": ["尾巴一甩就能起飞，要试试吗？", "嘘——我的尾巴正踩着风呢。"]
+    },
+    "head": "characters/lamia_mint/head.png",
+    "body_seg": "characters/lamia_mint/body_seg.png",
+    "tail_tip": "characters/lamia_mint/tail_tip.png",
     "level": 1,
     "skill": "疾风步",
     "tint": [180, 240, 200]
@@ -30,14 +44,85 @@
   {
     "id": "lamia_tide",
     "name": "潮汐",
-    "rarity": "SR",
+    "rarity": "SSR",
     "title": "深海的低语者",
     "element": "水",
     "growth": "控制",
-    "desc": "擅长用水流牵制敌人。",
-    "head": "",
+    "desc": "擅长用水流牵制敌人的深海蛇娘，鳞光如浪。",
+    "story": "潮汐来自阳光照不到的深海遗迹，是那里最后的低语者。她能听懂海流的言语，也能让狂暴的浪涛温顺地伏在脚边。有人说她温柔得像退潮后的浅滩，也有人说她翻脸时如海啸过境——但只有真正被她护在身后的人知道，她的水流永远先一步挡下危险。",
+    "egg_lines": {
+      "head": ["海流告诉我，你今天会来找我。", "我的发丝里，藏着一整片海哦。"],
+      "body": ["水做的腰肢，凉凉的对吧？", "别怕，我的浪只会托住你，不会打翻你。"],
+      "tail": ["尾尖一点，就能掀起一朵浪。", "听，我的尾巴里有潮汐的声音。"]
+    },
+    "head": "characters/lamia_tide/head.png",
+    "body_seg": "characters/lamia_tide/body_seg.png",
+    "tail_tip": "characters/lamia_tide/tail_tip.png",
     "level": 1,
     "skill": "涌流冲击",
     "tint": [150, 200, 255]
+  },
+  {
+    "id": "lamia_flare",
+    "name": "绯焰",
+    "rarity": "SSR",
+    "title": "霓虹夜市的火种",
+    "element": "火",
+    "growth": "爆发",
+    "desc": "性子烈的蛇娘，尾尖扫过便留下一线余烬。",
+    "story": "绯焰是霓虹夜市里最不好惹的那团火。她在灯牌与人流之间长大，性子烈、嗓门大，看谁不顺眼就尾尖一扫留一线余烬当警告。可夜市的人都护着她——因为每逢寒夜，总是她燃起最旺的火，把整条街照得暖烘烘的。她的烈，从来只对外人。",
+    "egg_lines": {
+      "head": ["哼，敢摸我的头？胆子不小嘛。", "头发上的火星，可别怪我没提醒你。"],
+      "body": ["喂！腰是禁区…再摸我就烧你眉毛！", "啧，算你运气好，我今天心情不错。"],
+      "tail": ["尾尖扫过就是一线余烬，怕了吧？", "我的尾巴，比夜市的灯还烫哦。"]
+    },
+    "head": "characters/lamia_flare/head.png",
+    "body_seg": "characters/lamia_flare/body_seg.png",
+    "tail_tip": "characters/lamia_flare/tail_tip.png",
+    "level": 1,
+    "skill": "燎原鞭",
+    "tint": [255, 140, 90]
+  },
+  {
+    "id": "lamia_stella",
+    "name": "星璃",
+    "rarity": "SSR",
+    "title": "缀满星辉的占星者",
+    "element": "星",
+    "growth": "法术",
+    "desc": "仰观星象的蛇娘，发间与尾尖都拖着一道星轨。",
+    "story": "星璃是一位占星者，终年仰观星象，发间与尾尖都拖着一道星轨。她相信每个人的命运都写在天上，却从不说破——因为她见过太多人得知命运后反而迷失。她只默默记下星象的偏移，在灾厄将至时悄悄拨动轨迹。她的神秘，是一种温柔的沉默。",
+    "egg_lines": {
+      "head": ["你的星轨…今晚格外明亮呢。", "发间的星星，是我为某人留的灯。"],
+      "body": ["别动，我在数你命里的星子。", "腰间的星辉，只在我心动时才会亮。"],
+      "tail": ["尾尖划过，就是一道新的星轨。", "想看流星吗？我的尾巴可以画给你。"]
+    },
+    "head": "characters/lamia_stella/head.png",
+    "body_seg": "characters/lamia_stella/body_seg.png",
+    "tail_tip": "characters/lamia_stella/tail_tip.png",
+    "level": 1,
+    "skill": "星陨链",
+    "tint": [190, 150, 255]
+  },
+  {
+    "id": "lamia_luna",
+    "name": "月见",
+    "rarity": "SSR",
+    "title": "月下静立的守望者",
+    "element": "月",
+    "growth": "守护",
+    "desc": "沉静如月的蛇娘，鳞光似月色在夜里流淌。",
+    "story": "月见习惯在夜里静立，像一尊被月光镀过的雕像。她是守望者，守着一条无人知晓的界线，也守着一个不愿提起的约定。她话很少，冷得让人不敢靠近，可若你在深夜迷路，总会发现不远处有一点月色般的鳞光，不即不离地替你照着前路——那是她，从不承认的温柔。",
+    "egg_lines": {
+      "head": ["…夜还长，不必急着走。", "我的发丝，沾了些月光。"],
+      "body": ["靠近的话…会沾一身月色哦。", "我不习惯被触碰。但…你可以例外。"],
+      "tail": ["尾尖的月光，只照亮归人。", "别声张，我的尾巴正替你看着夜路。"]
+    },
+    "head": "characters/lamia_luna/head.png",
+    "body_seg": "characters/lamia_luna/body_seg.png",
+    "tail_tip": "characters/lamia_luna/tail_tip.png",
+    "level": 1,
+    "skill": "月华闪",
+    "tint": [200, 210, 255]
   }
 ]

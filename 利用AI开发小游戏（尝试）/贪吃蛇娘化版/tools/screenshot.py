@@ -26,6 +26,7 @@ SCENES = [
     ("battle", "战斗"),
     ("main_menu", "主菜单"),
     ("character_select", "角色选择"),
+    ("character_detail", "角色详情"),
     ("scene_select", "场景选择"),
     ("gacha", "抽卡"),
     ("display_settings", "显示设置"),
@@ -39,6 +40,7 @@ def main():
     from core.game import Game
     from scenes.main_menu import MainMenuScene
     from scenes.character_select import CharacterSelectScene
+    from scenes.character_detail import CharacterDetailScene
     from scenes.scene_select import SceneSelectScene
     from scenes.battle import BattleScene
     from scenes.gacha import GachaScene
@@ -47,6 +49,7 @@ def main():
     game = Game()
     game.register_scene("main_menu", MainMenuScene)
     game.register_scene("character_select", CharacterSelectScene)
+    game.register_scene("character_detail", CharacterDetailScene)
     game.register_scene("scene_select", SceneSelectScene)
     game.register_scene("battle", BattleScene)
     game.register_scene("gacha", GachaScene)
@@ -59,6 +62,8 @@ def main():
     game.save_manager.data.setdefault("owned_characters", [])
     if "sakura" not in game.save_manager.data["owned_characters"]:
         game.save_manager.data["owned_characters"].append("sakura")
+    # 详情页需要一个待展示角色
+    game.pending_char_id = "sakura"
 
     for name, label in targets:
         game.change_scene(name)

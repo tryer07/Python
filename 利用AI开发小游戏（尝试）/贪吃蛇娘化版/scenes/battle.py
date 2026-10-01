@@ -122,6 +122,17 @@ class BattleScene(Scene):
         # ---- 成长：被动乘区 + 主动技能引擎 ----
         self.stats = {"atk": 1.0, "speed": 1.0, "atkspd": 1.0,
                       "cdr": 0.0, "pickup": 1.0}
+        # 强化养成乘区：按该角色强化层数叠加（无氪金、玩久可满的公平养成）
+        layer = self.game.save_manager.get_enhance(char_id)
+        if layer > 0:
+            self.stats["atk"] *= 1.0 + layer * S.ENHANCE_ATK_PER_LAYER
+            self.stats["speed"] *= 1.0 + layer * S.ENHANCE_SPEED_PER_LAYER
+            self.stats["atkspd"] *= 1.0 + layer * S.ENHANCE_ATKSPD_PER_LAYER
+            self.stats["cdr"] += layer * S.ENHANCE_CDR_PER_LAYER
+            self.stats["pickup"] *= 1.0 + layer * S.ENHANCE_PICKUP_PER_LAYER
+            hp_mult = 1.0 + layer * S.ENHANCE_HP_PER_LAYER
+            self.snake.hp_max = max(1, int(round(self.snake.hp_max * hp_mult)))
+            self.snake.hp = self.snake.hp_max
         self.skills = SkillEngine()
         self.skill_toast = []
         self._cards_cache = None
@@ -1163,6 +1174,22 @@ class BattleScene(Scene):
 
         base_x = self.wx(sn.pos[0], sx)
         base_y = self.wy(sn.pos[1], sy)
+
+        # 腰→尾衔接：在立绘下缘与第一节尾椎之间补一段更粗的“根段”，
+        # 并朝头部方向偏移探进立绘的鳞片区，消除“人贴蛇”的割裂感
+        if pts:
+            rx, ry, rang, _ = pts[0]
+            root_h = max(8, int(self.CELL * S.BODY_SCALE_HEAD * 1.45))
+            root = self.assets.get_rotated(self.char_body, rang + 180)
+            rw, rh = root.get_size()
+            if rh > 0:
+                rr = root_h / rh
+                root = pygame.transform.smoothscale(root, (max(1, int(rw * rr)), root_h))
+            sx0, sy0 = self.wx(rx, sx), self.wy(ry, sy)
+            ox = (base_x - sx0) * 0.45
+            oy = (base_y - sy0) * 0.45
+            screen.blit(root, root.get_rect(center=(int(sx0 + ox), int(sy0 + oy))))
+
         # 影子
         sh_w, sh_h = self.s(72), self.s(22)
         sh = pygame.Surface((sh_w, sh_h), pygame.SRCALPHA)

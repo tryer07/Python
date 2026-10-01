@@ -21,12 +21,6 @@ AST = os.path.join(BASE, "assets")
 # 源文件 -> (目标相对路径, 目标尺寸上限, 是否去水印, 是否裁边, 抠图方式)
 # 抠图方式: auto=自动判断 / flood=从边缘泛洪(浅色净底+浅色主体, 保住主体内部白色) / flat=纯色全局匹配
 JOBS = [
-    # 角色：上半身（清凉夏装新立绘，不裁边，保留完整构图，只去底）
-    ("characters/Anime_game_sprite__upper_body_summer__2026-10-01T19-46-32.png",
-     "characters/sakura/head.png", (1024, 1024), True, False, "flood"),
-    # 角色：尾尖（新素材）
-    ("characters/Anime_game_sprite__tail_tip_summer__2026-10-01T19-46-32.png",
-     "characters/sakura/tail_tip.png", (512, 512), True, True, "flood"),
     # 小怪
     ("characters/Anime_game_sprite__a_small_cut_2026-10-01T08-50-22.png",
      "characters/mob_shadow.png", (384, 384), True, True, "auto"),
@@ -39,10 +33,29 @@ JOBS = [
     # 场景背景
     ("backgrounds/Anime_background_art__Japanese_2026-10-01T08-50-06.png",
      "backgrounds/campus_garden.png", (3840, 2160), True, False, "auto"),
+    # 新增关卡背景（AI 生图无水印，wm=False 不做右下角抹除，避免透明角）
+    ("backgrounds/neon_night_src.png",
+     "backgrounds/neon_night.png", (3840, 2160), False, False, "auto"),
+    ("backgrounds/deep_sea_src.png",
+     "backgrounds/deep_sea.png", (3840, 2160), False, False, "auto"),
+    ("backgrounds/sakura_realm_src.png",
+     "backgrounds/sakura_realm.png", (3840, 2160), False, False, "auto"),
+]
+
+# 角色三件套表：(源图短键, 角色 id)。
+# 源图约定放在 assets/characters/{短键}_src_{upper|scale|tail}.png，
+# 产物输出到 assets/characters/{角色 id}/{head|body_seg|tail_tip}.png。
+CHARACTERS = [
+    ("sakura", "sakura"),
+    ("mint", "lamia_mint"),
+    ("tide", "lamia_tide"),
+    ("flare", "lamia_flare"),
+    ("stella", "lamia_stella"),
+    ("luna", "lamia_luna"),
 ]
 
 
-def strip_checker_bg(im, tol=26, min_frac=0.0005, grow=2):
+def strip_checker_bg(im, tol=26, min_frac=0.0005, grow=2, bg_color=None, bg_tol=24):
     """
     去掉 AI 生图常见的「棋盘格伪透明底」。
 
@@ -54,6 +67,9 @@ def strip_checker_bg(im, tol=26, min_frac=0.0005, grow=2):
       2. 已连通的区域再往外膨胀 grow 像素，吃掉边缘抗锯齿的灰边
       3. 内部同色小块若也被判为背景，靠连通性自然排除不了，
          所以额外加一步：只保留面积最大的那块前景（清理孤岛）
+
+    bg_color 给定时切换为「紧贴底色」模式：只把与边框底色接近的像素当背景。
+    用于角色立绘——否则角色身上的浅色/白色衣物（低饱和）会被灰阶启发式误吃。
     """
     from collections import deque
 
@@ -62,6 +78,9 @@ def strip_checker_bg(im, tol=26, min_frac=0.0005, grow=2):
     px = im.load()
 
     def is_bg(r, g, b):
+        if bg_color is not None:
+            return max(abs(r - bg_color[0]), abs(g - bg_color[1]),
+                       abs(b - bg_color[2])) <= bg_tol
         # 灰阶判定：三通道接近，且整体是浅灰或深灰
         mx, mn = max(r, g, b), min(r, g, b)
         if mx - mn > tol:
@@ -218,7 +237,7 @@ def strip_with_pad(im, pad=8, detect_tol=25, key=(255, 0, 255)):
         canvas = Image.new("RGBA", (w + pl + pr, h + pt + pb), key + (255,))
         canvas.alpha_composite(im, (pl, pt))
         im = canvas
-    stripped = strip_checker_bg(im)
+    stripped = strip_checker_bg(im, bg_color=bg, bg_tol=24)
     if pl or pt or pr or pb:
         W, H = stripped.size
         stripped = stripped.crop((pl, pt, W - pr, H - pb))
@@ -346,38 +365,70 @@ def make_body_seg(src_path, dst_path, size=(512, 512), taper=0.62, aspect=0.34, 
     return canvas
 
 
+def _process(src, dst, size, wm, crop, strip):
+    """通用单图处理：去底 -> 去水印 -> (裁边) -> 缩放 -> 存盘"""
+    if not os.path.exists(src):
+        print("[跳过] 源文件不存在:", src)
+        return False
+    im = Image.open(src)
+    im = auto_strip(im, src, prefer=strip)
+    if wm:
+        im = kill_watermark(im)
+    if crop:
+        im = autocrop(im)
+    im = fit(im, size)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    im.save(dst, "PNG", optimize=True)
+    print(f"[完成] {os.path.relpath(dst, AST)}  {im.size[0]}x{im.size[1]}  "
+          f"{os.path.getsize(dst)//1024}KB")
+    return True
+
+
 def main():
     ok, fail = 0, 0
     for src_rel, dst_rel, size, wm, crop, strip in JOBS:
         src = os.path.join(AST, src_rel.replace("/", os.sep))
         dst = os.path.join(AST, dst_rel.replace("/", os.sep))
-        if not os.path.exists(src):
-            print("[跳过] 源文件不存在:", src_rel)
-            fail += 1
-            continue
-        im = Image.open(src)
-        is_photo = "backgrounds" in src_rel
-        if not is_photo:
-            im = auto_strip(im, src_rel, prefer=strip)
-        if wm:
-            im = kill_watermark(im)
-        if crop and not is_photo:
-            im = autocrop(im)
-        im = fit(im, size)
-        if "_soft" in dst_rel:
-            im = soften_alpha(im)
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        im.save(dst, "PNG", optimize=True)
-        print(f"[完成] {dst_rel}  {im.size[0]}x{im.size[1]}  {os.path.getsize(dst)//1024}KB")
-        ok += 1
+        if "backgrounds" in src_rel:
+            # 背景是整幅插画，不去底，仅去水印 + 缩放
+            if not os.path.exists(src):
+                print("[跳过] 源文件不存在:", src_rel)
+                fail += 1
+                continue
+            im = Image.open(src)
+            if wm:
+                im = kill_watermark(im)
+            im = fit(im, size)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            im.save(dst, "PNG", optimize=True)
+            print(f"[完成] {dst_rel}  {im.size[0]}x{im.size[1]}")
+            ok += 1
+        else:
+            if _process(src, dst, size, wm, crop, strip):
+                ok += 1
+            else:
+                fail += 1
 
-    # 单独处理：蛇身段做成梯形条带（不走通用流程）
-    seg_src = os.path.join(AST, "characters/Anime_game_sprite_texture__scale_strip__2026-10-01T19-54-48.png"
-                                .replace("/", os.sep))
-    seg_dst = os.path.join(AST, "characters", "sakura", "body_seg.png")
-    if os.path.exists(seg_src):
-        make_body_seg(seg_src, seg_dst, prefer="flood")
-        ok += 1
+    # 角色三件套：head(不裁边保构图) / tail_tip(裁边) / body_seg(梯形条带)
+    for key, cid in CHARACTERS:
+        cdir = os.path.join(AST, "characters", cid)
+        up = os.path.join(AST, f"characters/{key}_src_upper.png")
+        sc = os.path.join(AST, f"characters/{key}_src_scale.png")
+        tl = os.path.join(AST, f"characters/{key}_src_tail.png")
+        if _process(up, os.path.join(cdir, "head.png"), (1024, 1024), True, False, "flood"):
+            ok += 1
+        else:
+            fail += 1
+        if _process(tl, os.path.join(cdir, "tail_tip.png"), (512, 512), True, True, "flood"):
+            ok += 1
+        else:
+            fail += 1
+        if os.path.exists(sc):
+            make_body_seg(sc, os.path.join(cdir, "body_seg.png"), prefer="flood")
+            ok += 1
+        else:
+            print("[跳过] 源文件不存在:", sc)
+            fail += 1
 
     print(f"\n成功 {ok} 个，失败 {fail} 个")
     return 0 if fail == 0 else 1

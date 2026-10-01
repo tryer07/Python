@@ -47,10 +47,6 @@ class CharacterSelectScene(Scene):
             font_size=self.s(FONT_SIZE_SMALL), on_click=self._on_back
         )
 
-        self.CARD_W = self.s(260)
-        self.CARD_H = self.s(400)
-        self.CARD_GAP = self.s(40)
-
         self.characters = self._load_characters()
         save = self.game.save_manager.data
         self.owned = save.get("owned_characters", [])
@@ -85,14 +81,19 @@ class CharacterSelectScene(Scene):
 
     # ---------------------------------------------------------------- 布局
     def _cards(self):
+        """网格布局：超过 3 张自动换行（6 张 = 3x2）"""
         n = max(1, len(self.characters))
-        total = n * self.CARD_W + (n - 1) * self.CARD_GAP
-        x0 = (self.W - total) // 2
-        y0 = self.s(210)
+        cols = 3 if n > 3 else n
+        cw, chh = self.s(340), self.s(400)
+        gapx, gapy = self.s(50), self.s(40)
+        total_w = cols * cw + (cols - 1) * gapx
+        x0 = (self.W - total_w) // 2
+        y0 = self.s(180)
         out = []
         for i, ch in enumerate(self.characters):
-            out.append((i, pygame.Rect(x0 + i * (self.CARD_W + self.CARD_GAP), y0,
-                                       self.CARD_W, self.CARD_H), ch))
+            c, r = i % cols, i // cols
+            out.append((i, pygame.Rect(x0 + c * (cw + gapx), y0 + r * (chh + gapy),
+                                       cw, chh), ch))
         return out
 
     # ---------------------------------------------------------------- 输入
@@ -109,8 +110,10 @@ class CharacterSelectScene(Scene):
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 for i, r, ch in self._cards():
                     if r.collidepoint(event.pos) and ch["id"] in self.owned:
-                        self.selected = ch["id"]
-                        self.game.save_manager.set("selected_character", ch["id"])
+                        # 点击已拥有角色 -> 进详情页（出战改在详情页里选）
+                        self.game.pending_char_id = ch["id"]
+                        self.game.change_scene("character_detail")
+                        return
             self.back_btn.handle_event(event)
 
     def update(self, dt):
@@ -130,7 +133,7 @@ class CharacterSelectScene(Scene):
         title = self.font_title.render("选择你的蛇娘", True, COLOR_ACCENT)
         screen.blit(title, title.get_rect(center=(self.W // 2, self.s(90))))
 
-        t = self.font_small.render("不同角色拥有不同的成长曲线与技能", True, COLOR_TEXT_DIM)
+        t = self.font_small.render("全 SSR · 无氪金 · 重复抽卡叠强化层 · 点击已拥有角色查看详情", True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(self.W // 2, self.s(148))))
 
         for i, rect, ch in self._cards():
@@ -158,11 +161,20 @@ class CharacterSelectScene(Scene):
             border, bw = (62, 58, 82), self.s(2)
         pygame.draw.rect(screen, border, rect, bw, border_radius=self.s(14))
 
-        # 稀有度角标
+        # 稀有度角标（左上）
         badge = pygame.Rect(rect.x + self.s(14), rect.y + self.s(14), self.s(64), self.s(30))
         pygame.draw.rect(screen, rc, badge, border_radius=self.s(8))
         tb = self.font_small.render(rarity, True, (30, 24, 38))
         screen.blit(tb, tb.get_rect(center=badge.center))
+
+        # 强化层数角标（右上，仅已拥有）
+        if owned:
+            layer = self.game.save_manager.get_enhance(ch["id"])
+            eb = pygame.Rect(rect.right - self.s(96), rect.y + self.s(14),
+                             self.s(82), self.s(30))
+            pygame.draw.rect(screen, (58, 50, 82), eb, border_radius=self.s(8))
+            te = self.font_small.render(f"强化 {layer}", True, COLOR_GOLD)
+            screen.blit(te, te.get_rect(center=eb.center))
 
         if owned:
             img = self.assets.get_scaled(ch.get("head", "characters/sakura/head.png"),
@@ -180,23 +192,25 @@ class CharacterSelectScene(Scene):
             t = self.font_body.render("?", True, (90, 86, 110))
             screen.blit(t, t.get_rect(center=ph.center))
 
-        # 名字
+        # 名字 / 称号 / 属性（上移，给底部状态条让位，避免被遮挡）
         name_color = COLOR_TEXT if owned else (110, 106, 130)
         t = self.font_sub.render(ch.get("name", "???"), True, name_color)
-        screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(296))))
+        screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(290))))
 
         t = self.font_small.render(ch.get("title", ""), True, COLOR_TEXT_DIM)
-        screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(334))))
+        screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(326))))
 
         t = self.font_small.render(f"属性 · {ch.get('element', '无')}", True, COLOR_ACCENT)
-        screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(366))))
+        screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(356))))
 
+        # 底部独立状态条：不再压住上面的角色信息
         if not owned:
             t = self.font_small.render("未解锁 · 前往抽卡", True, (230, 110, 120))
-            screen.blit(t, t.get_rect(center=(rect.centerx, rect.bottom - self.s(26))))
         elif selected:
-            t = self.font_body.render("已出战", True, COLOR_GOLD)
-            screen.blit(t, t.get_rect(center=(rect.centerx, rect.bottom - self.s(26))))
+            t = self.font_body.render("✔ 出战中", True, COLOR_GOLD)
+        else:
+            t = self.font_small.render("点击查看详情 / 出战", True, COLOR_TEXT_DIM)
+        screen.blit(t, t.get_rect(center=(rect.centerx, rect.bottom - self.s(20))))
 
     def _on_back(self):
         self.game.change_scene("main_menu")

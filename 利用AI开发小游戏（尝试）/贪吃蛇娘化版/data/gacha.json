@@ -1,17 +1,14 @@
 {
-  "rates": {
-    "R": 0.78,
-    "SR": 0.18,
-    "SSR": 0.04
-  },
-  "pool": {
-    "R": ["lamia_mint"],
-    "SR": ["lamia_tide"],
-    "SSR": ["sakura"]
-  },
-  "pity": {
-    "sr_guarantee": 10,
-    "ssr_guarantee": 60
-  },
-  "_comment": "rates 三项之和应为 1.0；ssr_guarantee 是必出 SSR 的抽数上限"
+  "pool": [
+    "sakura",
+    "lamia_mint",
+    "lamia_tide",
+    "lamia_flare",
+    "lamia_stella",
+    "lamia_luna"
+  ],
+  "dup_refund": 40,
+  "max_layer": 15,
+  "overflow_refund": 40,
+  "_comment": "无氪金设计：全角色同为 SSR。抽卡=等概率纯收集+强化养成：首次获得记 0 层；重复抽到同一角色 = 该角色 +1 强化层（上限 max_layer），强化同时加外观与战斗数值，玩久人人可满、无付费差；已满 max_layer 后再抽到则返还 overflow_refund 星尘。"
 }

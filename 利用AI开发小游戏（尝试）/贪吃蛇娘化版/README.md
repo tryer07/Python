@@ -1,6 +1,6 @@
 # 贪吃蛇娘化版 · 项目说明
 
-> 当前状态：**可运行原型（M3 完成）**。核心玩法闭环 + 技能系统 + Boss 战 + 美术 + 音频已就位。
+> 当前状态：**可运行原型（自由移动动作版）**。大地图自由移动 + 自动普攻 + 闪避 + 六主动技能 + 升级三选一卡牌 + Boss 战 + 美术 + 音频已就位。
 > 目录：`D:\Python\Python项目存放点\利用AI开发小游戏（尝试）\贪吃蛇娘化版`
 
 ---
@@ -19,59 +19,64 @@ pip install pygame
 
 | 按键 | 作用 |
 |---|---|
-| 方向键 / WASD | 移动 |
+| WASD / 方向键 | 八向自由移动（斜向自动归一化） |
+| 鼠标左键 | 闪避：朝当前移动方向（静止时朝鼠标）瞬移一段，带短无敌帧与冷却 |
+| 1 ~ 6 | 释放已获得的主动技能（按获得顺序绑定键位，未获得置灰） |
 | ESC / P | 战斗中暂停 / 继续（暂停菜单可重开、回主菜单、调音量）；其它界面返回上层 |
+| R | 结算界面重开一局 |
 | ↑ / → | 将“上次鼠标点选的音量”（音乐 or 音效）+10（长按超 1 秒连调；战斗进行中让位给移动） |
 | ↓ / ← | 同上，−10 |
 | F11 | 全屏 / 窗口切换 |
 
-> **胜负**：每局不再是无尽生存 —— **生存到场景阈值后专属 Boss 登场，击败它即通关结算**（Boss 战中方向键仍只管走位，撞击 Boss / 靠技能输出）。
+> **胜负**：每局不是无尽生存 —— **生存到场景阈值后专属 Boss 登场，击败它即通关结算**；中途血量归零则失败。
+> 普攻始终自动开启（向最近的怪发射弹丸），你只管走位、闪避与放技能。
 
 ---
 
 ## 二、已经实现了什么
 
-### 玩法（按你的设定）
+### 玩法（大地图俯视角动作生存）
 
-- **蛇身固定 10 节，吃东西不再变长**
-- 吃经验果 → **升级 → 攻击力提高**（Lv1 攻击 12，每级 +3）
-- **升级解锁技能**（见下节）
-- 吃能量结晶 / 星尘 / 爱心回血
-- 撞小怪：双方都掉血，击杀掉星尘
-- **难度靠小怪递增 + 一条无条件的时间压力曲线**
+- **世界 = 3×2 屏**，摄像机平滑跟随玩家并钳制在世界内；蛇尾是**纯装饰拖尾**（不碰撞、不会撞死自己）
+- **WASD 八向自由移动**；**鼠标左键闪避**（瞬移 + 短无敌帧 + 冷却）
+- **自动普攻**始终开启：向最近的怪发射弹丸，攻击频率随等级成长
+- 打怪 / 拾取道具获得经验 → **升级弹出三选一强化卡**（技能卡 / 被动数值卡，见下节）
+- 道具**品质随时间升档**（经验值放大），进入范围会被**磁吸**过去；道具只给经验，强度成长全靠卡牌
+- 小怪**恒定索敌追击**，速度与碰触伤害随时间上升；击杀按概率掉落经验 / 结晶 / 星尘 / 爱心
+- **难度 = 怪物递增 + 一条无条件的时间压力曲线**（血量倍率）
 
-### 技能系统（5 个，按等级自动解锁）
+### 技能与卡牌（升级三选一 = 肉鸽式成长）
 
-设计原则是**不额外加按键** —— 贪吃蛇的核心乐趣就是"只操控方向"，
-多一套技能键会毁掉它。所以技能全部是**被动 / 自动触发**：
+技能不再是"到等级自动解锁"，而是**升级时三选一抽卡**获得与强化：
+每次升级弹出 3 张卡（鼠标点或按 1/2/3），**技能卡**首次获得即绑定下一个空键位（1-6）、
+再次抽到则升级该技能（最高 3 级）；**被动卡**叠加数值乘区
+（加攻 / 加移速 / 加攻速 / 减冷却 / 加拾取 / 加最大HP并回满）。
+卡池配在 `data/cards.json`，抽取加权：未拥有的技能卡 > 可升级的技能卡 > 被动卡。
 
-| 等级 | 技能 | 效果 | 定位 |
+六个主动技能（冷却各自独立，按获得顺序绑定 1-6）：
+
+| 键位 | 技能 | 效果 | 定位 |
 |---|---|---|---|
-| Lv.2 | 樱花冲锋 | 移动时碾过身旁小怪（3 格充能，2.2 秒回一格） | 主动清场 |
-| Lv.4 | 荆棘尾 | 小怪撞上你的尾椎也会受伤（有全局节流） | 被动护身 |
-| Lv.6 | 星辉护盾 | 每 22 秒自动获得 1.6 秒无敌 | 救命符 |
-| Lv.8 | 蔓生荆棘 | 走过的地面留下伤害荆棘，存在 3.5 秒 | 走位收益 |
-| Lv.10 | 樱花风暴 | 每 9 秒在周身 3 格范围造成伤害 | 被围时爆发 |
-
-**解锁等级为什么是 2/4/6/8/10**：初版设的是 3/6/9/12/15，
-但实测玩家平均只活到 8~9 级 —— 等于有两个技能永远见不到。
-下调后一局（约 100 秒）能完整走完技能树，成长感才成立。
+| 1 | 樱花冲锋 | 朝面向瞬移并对路径上的怪造成伤害 | 突进清线 |
+| 2 | 荆棘尾 | 周身环绕荆棘光环，持续数秒灼烧贴近的怪 | 护身反伤 |
+| 3 | 星辉护盾 | 获得一段无敌帧 | 救命符 |
+| 4 | 蔓生荆棘 | 在脚下放置一片伤害荆棘地形 | 封场 / 走位收益 |
+| 5 | 樱花风暴 | 周身范围爆发伤害 | 被围时清场 |
+| 6 | 月华绽放 | 向 12 个方向发射穿透弹 | 大招 AoE |
 
 ### 难度系统
 
-**四条通道同时生效**：
+**多条通道同时生效**：
 
-1. 血量变厚（每 30 秒 +34%，最高 6 倍）
-2. 数量变多（刷怪间隔 1.6 秒起，逐步压缩；同屏上限 24 只）
-3. 追击欲望变强（开场 10%，上限 90%）
-4. **时间压力曲线**（第 90 秒起，每秒加压 0.14，最高 3 倍）
+1. 怪物提速（`MOB_SPEED_BASE` 起，随时间按 `MOB_SPEED_GROWTH` 增长，有上限倍率）
+2. 怪物碰触伤害增长（`MOB_ATK_GROWTH`，随时间从 1 往上加）
+3. 数量变多（刷怪间隔逐步压缩；同屏上限 `MOB_MAX_ALIVE`）
+4. 怪物血量倍率随时间上升
+5. **时间压力曲线**（无条件加压的血量倍率，兜底防无限苟）
 
-第 4 条是**兜底机制**，也是调平衡时最关键的一条。理由：
-前三条都依赖"怪比玩家强"，但技能越强玩家清怪越快，局面反而更安全 ——
-实测过 5 局全部 300 秒无伤通关。时间压力是无条件的，
-不管你打得多好它都在涨，所以任何打法都无法无限苟。
-另外还加了一条**击杀经验衰减**（30 秒后逐步降到 25%），
-专门拦住"杀得快 → 升级快 → 更强 → 杀得更快"这个正反馈。
+道具**品质随时间升档**（`ITEM_TIER_TIME`），越往后拾取 / 掉落给的经验越多，
+保证升级节奏不掉队；强度成长则完全交给卡牌，
+避免"杀得快 → 升级快 → 更强 → 杀得更快"这个正反馈失控。
 
 ### Boss 战（每场景专属 Boss + 弹幕）
 
@@ -87,7 +92,7 @@ pip install pygame
 
 **伤害模型（关键设计）**：
 
-- 玩家**撞击 Boss 身体 → Boss 掉 `PLAYER_ATK`，玩家不掉血**（受 `BOSS_HIT_CD`≈0.3s 限流，防贴脸秒杀）；冲锋 / 风暴 / 荆棘尾 / 蔓生荆棘也能打 Boss。
+- **普攻弹丸 / 技能 / 撞击 Boss 身体 → Boss 掉血**（撞击受 `BOSS_HIT_CD`≈0.3s 限流，防贴脸秒杀）；Boss 蓄力冲撞期间贴脸则玩家掉血。
 - Boss **只通过弹幕 / 蓄力冲撞 / 范围震击 / 召唤的小怪**伤害玩家；冲撞与震击都有**预警**（红线 / 红圈），预警结束才结算伤害。
 - 循环 = "躲弹幕 → 找空隙撞 Boss / 靠技能输出"，张力来自弹幕而非接触，符合贪吃蛇的走位内核。
 - Boss 血量按比例**分阶段**，越残血攻击越密；登场后普通刷怪放慢（`BOSS_MOB_SPAWN_SCALE`），维持压力但不喧宾夺主。
@@ -97,8 +102,15 @@ pip install pygame
 ### 系统
 
 - **存档**：`saves/save_data.json`，记录星尘、角色、战绩；含旧 ID 自动迁移
-- **抽卡**：60 星尘一抽 / 540 十连，R 78% · SR 18% · SSR 4%，10 抽保 SR、60 抽保 SSR，**抽完即时写盘**
-- **角色选择**：读 `data/characters.json`，出图后自动多出卡片
+- **角色收集 + 强化养成（无氪金 · 全 SSR · 可追平）**：本作**没有氪金系统**，所有角色**同为 SSR**。
+  抽卡 = 等概率纯收集（60 星尘一抽 / 540 十连，无概率差、无保底）：
+  抽到未拥有角色即入库（记 0 层）；抽到**已拥有**角色 = 该角色**强化 +1 层**（上限 15），
+  强化**同时加外观与战斗数值**；满 15 层后再抽返还星尘（`data/gacha.json` 的 `overflow_refund`），**抽完即时写盘**。
+  因为无氪金、玩久人人可满，这是**公平养成**而非付费碾压。当前共 **6 名角色**：樱落 / 薄荷 / 潮汐 / 绯焰 / 星璃 / 月见。
+- **角色选择**：读 `data/characters.json`，3×2 卡片网格；左上 SSR 角标、右上强化层数角标，
+  底部独立状态条（不再遮挡名字/称号/属性）；**点击已拥有角色进入详情页**。
+- **角色详情页**：切换 4 个场景背景看角色在场景中的拼合蛇姿；点击**头/身/尾**触发彩蛋台词；
+  展示背景故事 / 技能 / 强化层数进度；可“设为出战”。
 - **场景选择**：读 `data/scenes.json`，4 个场景，难度/敌人密度不同
 - **显示设置**：窗口 / 无边框 / 全屏，多档分辨率；含 BGM / 音效音量滑块（拖动即时生效 + 存档）
 - **音频**：BGM 按场景切换 + 全套 SFX（吃果/升级/击杀/受伤/技能/抽卡/UI）。
@@ -107,37 +119,28 @@ pip install pygame
 ### 技术
 
 - 渲染与窗口分辨率分离（改 `settings.py` 即可切 4K）
-- **蛇身骨骼链渲染** + 旋转预烘焙缓存（避免每帧 `rotate` 拖垮帧率）
+- **蛇身骨骼链渲染** + 旋转预烘焙缓存（避免每帧 `rotate` 拖垮帧率）；上半身立绘与尾根之间插入一段**腰→尾衔接过渡段**，让立绘自然“长出”蛇尾而非硬接
 - 逻辑固定 tick + 渲染插值（蛇是平滑移动，不跳格）
 - **HUD 全部按缩放自适应**：面板宽度由"最长一行内容有多少像素"反推，
   不是拍脑袋写死；窗口过小还会自动缩小格子保证三段不重叠
 
 ---
 
-## 三、一局实测数据（自动试玩 12 局）
+## 三、一局实测数据（自动试玩 · 自由移动版）
+
+用 `tools/playsim.py` 模拟"会走位会闪避"的玩家跑多局
+（朝道具走 + 躲怪 + 贴脸左键闪避 + 技能全放 + 自动选卡）：
 
 | 指标 | 结果 |
 |---|---|
-| 存活时长 | 最短 81s / 中位 104s / 最长 128s |
-| 到达等级 | 平均 11.8 级 |
-| 单局击杀 | 平均 74 只 |
-| 单局得分 | 平均 22500 |
-| **技能覆盖** | **平均 4.8 / 5**（一局能走完技能树） |
-| 打不死的局 | 0 / 12 |
+| 胜负 | 全部通关（击败 Boss） |
+| 存活时长 | 平均约 94s |
+| 受伤 | 0~2 点 |
 
-击杀来源分布（用于确认没有某个技能一枝独秀）：
-
-| 来源 | 占比 |
-|---|---|
-| 樱花冲锋 | 54% |
-| 蔓生荆棘 | 19% |
-| 荆棘尾 | 17% |
-| 主动撞击（核心操作） | 10% |
-
-> 调平衡踩过的坑都写在 `settings.py` 的 `[平衡记录]` 注释里了。
-> 最核心的教训：**改数值不如改机制**。冲锋初版是"无冷却永续 AOE"，
-> 独占 68% 击杀、把核心操作挤成 0%；后来靠"充能制 + 全局节流"
-> 这类机制改动才真正解决，光调伤害数字只会来回震荡。
+> 探针是"完美风筝"的超级 AI，0~2 伤不代表真人难度 ——
+> 真人只有 3 点血、还要躲弹幕与怪群，压力明显更大。
+> 调平衡的教训：**改数值不如改机制**；自由移动版把强度成长从"击杀经验"
+> 移到"升级三选一卡牌"，让操作（走位 / 闪避）与构筑（选卡）共同决定难度。
 
 ---
 
@@ -147,27 +150,29 @@ pip install pygame
 
 | 想改什么 | 改哪个 |
 |---|---|
-| 蛇跑得快慢 | `MOVE_INTERVAL`（越小越快） |
-| 蛇身粗细/长度 | `BODY_SCALE_HEAD`、`BODY_SCALE_TAIL`、`SNAKE_LEN` |
+| 世界大小（几屏） | `WORLD_SCREENS_X` / `WORLD_SCREENS_Y` |
+| 玩家跑得快慢 | `PLAYER_SPEED` |
+| 闪避距离 / 冷却 / 无敌帧 | `DODGE_DIST` / `DODGE_CD` / `DODGE_IFRAME` |
+| 普攻频率 / 射程 / 弹速 | `ATK_INTERVAL_BASE` / `ATK_INTERVAL_PER_LEVEL` / `ATK_INTERVAL_MIN` / `ATK_RANGE` / `ATK_BULLET_SPEED` |
 | 升级快慢 | `EXP_PER_LEVEL` |
 | 攻击力成长 | `ATK_BASE`、`ATK_PER_LEVEL` |
-| **技能解锁等级** | `SKILL_UNLOCK` |
-| **冲锋强度** | `DASH_DMG`、`DASH_CHARGES`、`DASH_RECHARGE` |
-| **荆棘尾强度** | `SPIKE_DMG`、`SPIKE_TICK`、`SPIKE_GLOBAL_CD` |
-| **护盾频率** | `SHIELD_INTERVAL`、`SHIELD_TIME` |
-| **荆棘地形** | `THORN_LIFE`、`THORN_SPACING`、`THORN_DMG` |
-| **风暴强度** | `STORM_INTERVAL`、`STORM_RADIUS`、`STORM_DMG` |
+| 蛇身粗细 / 拖尾 / 体型 | `BODY_SCALE_HEAD`、`BODY_SCALE_TAIL`、`BODY_SEG_LEN`、`PLAYER_RADIUS` |
+| 选卡张数 | `CARD_CHOICES` |
+| 被动卡步长 | `CARD_ATK_STEP`、`CARD_SPEED_STEP`、`CARD_ATKSPD_STEP`、`CARD_CDR_STEP`、`CARD_PICKUP_STEP`、`CARD_HP_STEP` |
+| 角色强化每层加成 / 上限 | `ENHANCE_MAX_LAYER`、`ENHANCE_ATK_PER_LAYER`、`ENHANCE_SPEED_PER_LAYER`、`ENHANCE_ATKSPD_PER_LAYER`、`ENHANCE_CDR_PER_LAYER`、`ENHANCE_PICKUP_PER_LAYER`、`ENHANCE_HP_PER_LAYER` |
+| 技能数值 / 冷却 | `DASH_*`、`SPIKE_*`、`SHIELD_*`、`THORN_*`、`STORM_*`、`BLOOM_*` |
+| 怪物速度 / 伤害成长 | `MOB_SPEED_BASE`、`MOB_SPEED_GROWTH`、`MOB_SPEED_MAX_MULT`、`MOB_ATK_GROWTH` |
+| 刷怪节奏 | `MOB_SPAWN_INTERVAL`、`MOB_MAX_ALIVE` |
+| 道具刷新 / 品质升档 / 磁吸 | `ITEM_SPAWN_INTERVAL`、`ITEM_MAX_ON_MAP`、`ITEM_TIER_TIME`、`ITEM_MAGNET_RADIUS` |
 | **时间压力** | `TIME_PRESSURE_START`、`TIME_PRESSURE_RAMP` |
-| 击杀经验衰减 | `KILL_EXP_BASE`、`KILL_EXP_DECAY_RATE` |
-| 小怪强度 | `MOB_HP`、`MOB_TOUCH_DAMAGE`、`MOB_HP_GROWTH` |
-| 刷怪节奏 | `MOB_SPAWN_INTERVAL`、`MOB_SPAWN_RAMP`、`MOB_MAX_ALIVE` |
 | **Boss 弹幕 / 技能** | `BOSS_*`、`RADIAL_COUNT`、`AIMED_*`、`SPIRAL_*`、`WALL_*`（全局参数） |
 | **Boss 血量 / 阶段 / 登场阈值** | `data/bosses.json`（按场景配，数据驱动） |
 | 各种掉落概率 | `DROP_*` 系列 |
 | 切 4K | 把 `RENDER_WIDTH/HEIGHT` 改成 3840/2160 |
 
-抽卡概率改 `data/gacha.json`，场景配置改 `data/scenes.json`，
-角色表改 `data/characters.json`，技能文案改 `data/skills.json`，Boss 配置改 `data/bosses.json`。
+收集卡池 / 强化上限 / 满层返还改 `data/gacha.json`，场景配置改 `data/scenes.json`，
+角色表改 `data/characters.json`，技能文案改 `data/skills.json`，
+**升级强化卡池改 `data/cards.json`**，Boss 配置改 `data/bosses.json`。
 
 ### 音频文件清单
 
@@ -179,7 +184,8 @@ assets/audio/bgm/  menu  battle  boss  gacha  gameover
 assets/audio/sfx/  ui_click  ui_hover  ui_back
                    eat_exp  eat_crystal  eat_stardust  eat_heart
                    level_up  skill_unlock  hurt  kill  gameover
-                   skill_dash  skill_spike  skill_shield  skill_thorn  skill_storm
+                   shoot  dodge  card_pick
+                   skill_dash  skill_spike  skill_shield  skill_thorn  skill_storm  skill_bloom
                    gacha_pull  gacha_error  gacha_ssr  gacha_sr  gacha_r
                    boss_appear  boss_hit  boss_shoot  boss_charge  boss_slam
                    boss_defeat  victory
@@ -200,7 +206,7 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 | `selfcheck.py` | **改完代码先跑这个**。查语法、配置引用、素材缺失、JSON 合法性，以及**用了没导入的名字** |
 | `playsim.py` | 自动试玩若干局，输出生存时长/等级/得分，用来验证数值平衡 |
 | `screenshot.py` | 无头渲染各场景截图到 `tools/_shots/`，不用开窗口就能看画面 |
-| `prepare_assets.py` | 素材整理：抠图（含棋盘格底）、去水印、缩放、重命名 |
+| `prepare_assets.py` | 素材整理：抠图（棋盘格底 / 纯色底 / 贴边垫色泛洪）、去水印、高清化缩放、重命名 |
 | `preview_assets.py` | 把处理后的素材拼成一张预览图，检查抠图效果 |
 
 > `selfcheck.py` 里的"未定义名字检查"是踩坑后才加的：
@@ -217,10 +223,9 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 
 1. **Boss 立绘** —— 目前 4 个 Boss 是程序化几何绘制；出图后放进 `assets/characters/boss/<id>.png` 并在 `bosses.json` 填 `sprite` 即升级
 2. **场景卡片显示 Boss 战绩** —— `scene_select.py` 读 `bosses_defeated`，在卡片上显示该场景 Boss 名与是否已击败
-3. **多角色** —— 出图 → 放进 `assets/characters/<id>/` → 在 `characters.json` 加一条
+3. **多角色** —— 已完成 6 名（全 SSR · 强度一致）；再加角色：出图 → 放进 `assets/characters/<id>/` → 在 `characters.json` 加一条 → `gacha.json` 的 `pool` 补上 id
 4. **多场景贴图** —— 目前只有校园庭院有图，其余 3 个是色块占位
 5. **技能 / Boss 特效** —— 音频已完成；视觉仍为几何图形与飘字，可加更华丽的特效
-6. **技能分支** —— 现在技能是固定解锁；可改成"升级时二选一"，增加构筑深度
 
 ---
 
@@ -237,13 +242,14 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 │   ├── audio_manager.py     BGM / SFX 加载 + 合成占位 + 音量
 │   └── save_manager.py      存档读写 / ID 迁移
 ├── game_logic/
-│   ├── entities.py          蛇娘 / 小怪 / 掉落物
-│   ├── boss.py              Boss / 弹幕（多阶段 + 环形/瞄准/螺旋/弹墙/冲撞/震击/召唤）
-│   └── skills.py            技能引擎（解锁、充能、荆棘地形）
+│   ├── entities.py          自由移动玩家 / 世界怪 / 磁吸掉落物 / 普攻弹丸
+│   ├── boss.py              Boss / 弹幕（多阶段 + 环形/瞄准/螺旋/弹墙/冲撞/震击/召唤，世界坐标）
+│   └── skills.py            主动技能引擎（解锁绑定键位、等级、冷却、释放事件）
 ├── scenes/
 │   ├── main_menu.py         主菜单
-│   ├── battle.py            战斗（核心）
+│   ├── battle.py            战斗（核心：世界/摄像机/刷怪/道具/选卡/HUD）
 │   ├── character_select.py  角色选择
+│   ├── character_detail.py  角色详情（场景预览/部位彩蛋/背景故事/强化展示）
 │   ├── scene_select.py      场景选择
 │   ├── gacha.py             抽卡
 │   └── display_settings.py  显示设置
@@ -254,7 +260,8 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 │   ├── characters.json      角色表
 │   ├── scenes.json          场景表
 │   ├── bosses.json          Boss 表（每场景专属 Boss，多阶段 + 弹幕）
-│   ├── gacha.json           卡池配置
+│   ├── gacha.json           抽卡卡池配置
+│   ├── cards.json           升级三选一强化卡池（技能卡 + 被动卡）
 │   └── skills.json          技能文案
 ├── assets/
 │   ├── characters/          角色立绘 / 蛇身 / 小怪

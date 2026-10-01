@@ -3,7 +3,8 @@
 scenes/gacha.py —— 抽卡
 
 货币用「星尘」（战斗掉落）。
-保底规则写在 data/gacha.json 里，改配置就能调平衡，不用动代码。
+无氪金设计：全角色同 SSR、强度一致，抽卡 = 等概率纯收集；
+重复抽到返还星尘。规则写在 data/gacha.json，改配置不用动代码。
 
 抽卡结果会即时写盘，防止关掉游戏刷卡。
 """
@@ -24,12 +25,15 @@ from settings import (
 
 RARITY_COLORS = {
     "SSR": (255, 200, 50),
-    "SR": (200, 100, 255),
-    "R": (100, 150, 255),
-    "N": (180, 180, 180),
 }
 
-DEFAULT_RATES = {"R": 0.78, "SR": 0.18, "SSR": 0.04}
+# 无氪金设计：全角色同 SSR。抽卡 = 等概率纯收集 + 强化养成：
+# 首次获得记 0 层；重复抽到同一角色 = 该角色 +1 强化层（上限 max_layer），
+# 强化同时加外观与战斗数值；已满层后再抽则返还星尘。规则在 data/gacha.json。
+DEFAULT_POOL = ["sakura", "lamia_mint", "lamia_tide",
+                "lamia_flare", "lamia_stella", "lamia_luna"]
+DEFAULT_DUP_REFUND = 40
+DEFAULT_MAX_LAYER = 15
 COST_SINGLE = 60
 COST_TEN = 540
 
@@ -73,23 +77,21 @@ class GachaScene(Scene):
 
     # ---------------------------------------------------------------- 配置
     def _load_pool(self):
-        """卡池：按稀有度分组。配置在 data/gacha.json"""
+        """卡池：一个扁平的角色 id 列表（等概率）。配置在 data/gacha.json"""
         path = os.path.join(DATA_DIR, "gacha.json")
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                if isinstance(data.get("pool"), list) and data["pool"]:
+                    return data
             except (json.JSONDecodeError, IOError) as e:
                 print(f"[卡池读取失败] {e}，改用内置默认池")
-        return {
-            "rates": DEFAULT_RATES,
-            "pool": {
-                "R":   ["lamia_mint"],
-                "SR":  ["lamia_tide"],
-                "SSR": ["sakura"],
-            },
-            "pity": {"sr_guarantee": 10, "ssr_guarantee": 60},
-        }
+        return {"pool": list(DEFAULT_POOL), "dup_refund": DEFAULT_DUP_REFUND}
+
+    def _roster(self):
+        """卡池角色 id 列表"""
+        return self.pool.get("pool", DEFAULT_POOL)
 
     # ---------------------------------------------------------------- 抽卡
     def _pull(self, times):
@@ -104,69 +106,49 @@ class GachaScene(Scene):
 
         save.data["currency"] = currency - cost
 
-        rates = self.pool.get("rates", DEFAULT_RATES)
-        pool = self.pool.get("pool", {})
-        pity = self.pool.get("pity", {})
-        sr_need = pity.get("sr_guarantee", 10)
-        ssr_need = pity.get("ssr_guarantee", 60)
-
+        roster = self._roster()
+        refund = int(self.pool.get("dup_refund", DEFAULT_DUP_REFUND))
+        overflow = int(self.pool.get("overflow_refund", DEFAULT_DUP_REFUND))
         results = []
+        refund_total = 0
+        got_new = False
+        gained_layers = 0
         for i in range(times):
-            counter = save.data.setdefault("gacha_pity", {"count": 0, "since_sr": 0, "since_ssr": 0})
-            counter["count"] += 1
-            counter["since_sr"] += 1
-            counter["since_ssr"] += 1
-
-            rarity = self._roll_rarity(rates, counter, sr_need, ssr_need)
-            candidates = pool.get(rarity) or ["sakura"]
-            char_id = random.choice(candidates)
-
-            if counter["since_ssr"] >= ssr_need:
-                pass
-            results.append((char_id, rarity, i))
-
-            if rarity in ("SSR", "SR"):
-                counter["since_sr"] = 0
-            if rarity == "SSR":
-                counter["since_ssr"] = 0
-
+            char_id = random.choice(roster)
             if char_id not in self.owned:
                 self.owned.add(char_id)
                 save.data.setdefault("owned_characters", []).append(char_id)
                 save.data.setdefault("character_data", {})[char_id] = {
-                    "level": 1, "exp": 0, "skill_points": 0
+                    "level": 1, "exp": 0, "skill_points": 0, "enhance": 0
                 }
+                got_new = True
+                results.append((char_id, "SSR", i, False, 0, False))
+            else:
+                # 重复抽到 = 强化 +1 层；已满层则返还星尘
+                layer, maxed = save.add_enhance(char_id)
+                if maxed:
+                    refund_total += overflow
+                else:
+                    gained_layers += 1
+                results.append((char_id, "SSR", i, True, layer, maxed))
 
+        save.data["currency"] += refund_total
         save.save()                   # 即时写盘，防刷卡
         self.result = results
         self.result_timer = 4.0
-        self.msg = ""
-        best = min(results, key=lambda r: {"SSR": 0, "SR": 1, "R": 2, "N": 3}.get(r[1], 9))
-        self.msg = f"抽到 {best[1]} · {self._display_name(best[0])}" if best else ""
+        new_n = sum(1 for r in results if not r[3])
+        parts = []
+        if new_n:
+            parts.append(f"新角色 {new_n} 个")
+        if gained_layers:
+            parts.append(f"强化 +{gained_layers} 层")
+        if refund_total:
+            parts.append(f"满层返还星尘 {refund_total}")
+        self.msg = " · ".join(parts) if parts else "都是已拥有的伙伴"
         self.msg_timer = 3.0
         self.game.audio.play("gacha_pull")
-        if best:
-            # 按本次最高稀有度播揭晓音（gacha_ssr / gacha_sr / gacha_r）
-            self.game.audio.play(f"gacha_{best[1].lower()}")
-
-    def _roll_rarity(self, rates, counter, sr_need, ssr_need):
-        """按概率抽稀有度，同时处理两种保底"""
-        if counter["since_ssr"] >= ssr_need:
-            return "SSR"
-        r = random.random()
-        acc = 0.0
-        # 从高到低判定
-        for rarity in ("SSR", "SR", "R"):
-            acc += rates.get(rarity, 0.0)
-            if r < acc:
-                chosen = rarity
-                break
-        else:
-            chosen = "R"
-        # 10 抽内必出 SR+
-        if chosen == "R" and counter["since_sr"] >= sr_need:
-            chosen = "SR"
-        return chosen
+        if got_new:
+            self.game.audio.play("gacha_ssr")
 
     def _display_name(self, char_id):
         path = os.path.join(DATA_DIR, "characters.json")
@@ -212,28 +194,28 @@ class GachaScene(Scene):
         # 标题
         t = self.font_title.render("蛇娘召集", True, COLOR_GOLD)
         screen.blit(t, t.get_rect(center=(self.W // 2, self.s(80))))
-        t = self.font_small.render("战斗掉落星尘 · 集齐更多蛇娘", True, COLOR_TEXT_DIM)
+        t = self.font_small.render("战斗掉落星尘 · 集齐蛇娘 · 重复抽卡叠强化层", True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(self.W // 2, self.s(132))))
 
         self._draw_up_character()
 
-        # 卡池信息
+        # 收集信息（无保底、无概率差：纯收集进度）
         save = self.game.save_manager.data
-        counter = save.get("gacha_pity", {"count": 0, "since_sr": 0, "since_ssr": 0})
-        ssr_need = self.pool.get("pity", {}).get("ssr_guarantee", 60)
-        left = max(0, ssr_need - counter.get("since_ssr", 0))
+        roster = self._roster()
+        owned_n = sum(1 for c in roster if c in self.owned)
+        max_layer = int(self.pool.get("max_layer", DEFAULT_MAX_LAYER))
         info = (f"星尘 {save.get('currency', 0)}    "
-                f"已抽 {counter.get('count', 0)} 次    "
-                f"距离 SSR 保底还有 {left} 抽")
+                f"收集 {owned_n}/{len(roster)}    "
+                f"重复抽卡 = 强化层（上限 {max_layer}）")
         t = self.font_body.render(info, True, COLOR_GOLD)
         screen.blit(t, t.get_rect(center=(self.W // 2, self.H - self.s(210))))
 
-        # 保底进度条
+        # 收集进度条
         bw = self.s(560)
         bx = self.W // 2 - bw // 2
         by = self.H - self.s(182)
         pygame.draw.rect(screen, (26, 22, 36), (bx, by, bw, self.s(12)), border_radius=6)
-        ratio = 1.0 - left / max(1, ssr_need)
+        ratio = owned_n / max(1, len(roster))
         if ratio > 0:
             pygame.draw.rect(screen, (206, 168, 255),
                              (bx, by, int(bw * ratio), self.s(12)), border_radius=6)
@@ -249,8 +231,20 @@ class GachaScene(Scene):
         if self.result_timer > 0:
             self._draw_result()
 
+    def _char_by_id(self, char_id):
+        path = os.path.join(DATA_DIR, "characters.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for ch in json.load(f):
+                        if ch.get("id") == char_id:
+                            return ch
+            except (json.JSONDecodeError, IOError):
+                pass
+        return {"id": char_id, "name": char_id, "head": "characters/sakura/head.png"}
+
     def _draw_up_character(self):
-        """UP 角色展示"""
+        """轮换展示卡池角色（全 SSR，无 UP 概念）"""
         screen = self.screen
         cx = self.W // 2
         cy = self.s(400)
@@ -262,14 +256,18 @@ class GachaScene(Scene):
                                (gsize // 2, gsize // 2), max(10, r))
         screen.blit(glow, (cx - gsize // 2, cy - gsize // 2))
 
-        img = self.assets.get_scaled("characters/sakura/head.png", height=self.s(330))
+        roster = self._roster()
+        ch = self._char_by_id(roster[int(self.time / 2.0) % max(1, len(roster))])
+        head = ch.get("head") or "characters/sakura/head.png"
+        img = self.assets.get_scaled(head, height=self.s(330))
         import math
         k = 1.0 + math.sin(self.time * 1.6) * 0.015
         img = pygame.transform.smoothscale(
             img, (int(img.get_width() * k), int(img.get_height() * k)))
         screen.blit(img, img.get_rect(center=(cx, cy - self.s(20))))
 
-        t = self.font_sub.render("樱落 · SSR", True, COLOR_GOLD)
+        t = self.font_sub.render(
+            f"{ch.get('name', '?')} · SSR · {ch.get('element', '')}", True, COLOR_GOLD)
         screen.blit(t, t.get_rect(center=(cx, cy + self.s(190))))
 
     def _draw_result(self):
@@ -283,26 +281,34 @@ class GachaScene(Scene):
         screen.blit(t, t.get_rect(center=(self.W // 2, self.s(160))))
 
         cols = min(5, n)
-        cw, ch = self.s(190), self.s(230)
+        cw, chh = self.s(190), self.s(230)
         gap = self.s(24)
         rows = (n + cols - 1) // cols
         total_w = cols * cw + (cols - 1) * gap
         x0 = (self.W - total_w) // 2
         y0 = self.s(230)
 
-        for i, (char_id, rarity, _) in enumerate(self.result):
+        for i, (char_id, rarity, _, dup, layer, maxed) in enumerate(self.result):
             c, r = i % cols, i // cols
-            rect = pygame.Rect(x0 + c * (cw + gap), y0 + r * (ch + gap), cw, ch)
+            rect = pygame.Rect(x0 + c * (cw + gap), y0 + r * (chh + gap), cw, chh)
             color = RARITY_COLORS.get(rarity, (150, 150, 150))
             pygame.draw.rect(screen, (36, 32, 48), rect, border_radius=12)
             pygame.draw.rect(screen, color, rect, 3, border_radius=12)
 
-            img = self.assets.get_scaled("characters/sakura/head.png", height=self.s(110))
+            ch = self._char_by_id(char_id)
+            img = self.assets.get_scaled(ch.get("head") or "characters/sakura/head.png",
+                                         height=self.s(110))
             screen.blit(img, img.get_rect(center=(rect.centerx, rect.y + self.s(78))))
 
             t = self.font_body.render(self._display_name(char_id), True, color)
             screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(168))))
-            t = self.font_small.render(rarity, True, color)
+            if dup:
+                label = "已满层 · 返还星尘" if maxed else f"强化 +1 → Lv{layer}"
+                label_color = (160, 160, 180)
+            else:
+                label = rarity
+                label_color = color
+            t = self.font_small.render(label, True, label_color)
             screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(200))))
 
         t = self.font_small.render("按任意方向键关闭", True, COLOR_TEXT_DIM)
