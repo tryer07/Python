@@ -14,11 +14,21 @@ settings.py —— 全局配置
 """
 
 import os
+import sys
 
 # ==================== 路径配置 ====================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# 打包成 exe（PyInstaller onefile）后：
+#   · 只读资源（assets/data）被解压到临时目录 sys._MEIPASS，从那里读；
+#   · 存档等可写内容放在 exe 所在目录旁边，保证退出后还在。
+# 源码方式运行时，两者都是项目根目录，行为不变。
+if getattr(sys, "frozen", False):
+    RES_DIR = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    RES_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = RES_DIR
+ASSETS_DIR = os.path.join(RES_DIR, "assets")
+DATA_DIR = os.path.join(RES_DIR, "data")
 SAVES_DIR = os.path.join(BASE_DIR, "saves")
 AUDIO_DIR = os.path.join(ASSETS_DIR, "audio")
 

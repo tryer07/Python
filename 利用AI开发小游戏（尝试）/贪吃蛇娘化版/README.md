@@ -15,6 +15,16 @@ pip install pygame
 
 **命令行**：`python main.py`
 
+**直接玩打包好的 exe**：`dist\贪吃蛇娘化版.exe`（单文件，双击即玩；存档写在 exe 旁边的 `saves/` 目录）。
+重新打包的命令（在项目根目录执行，注意 PowerShell 里 `--add-data` 的参数要用**单引号**包住分号）：
+
+```powershell
+python -m PyInstaller --onefile --noconsole --name '贪吃蛇娘化版' --add-data 'assets;assets' --add-data 'data;data' --clean --noconfirm main.py
+```
+
+> 打包后的路径规则在 `settings.py` 顶部：只读资源（assets/data）从 PyInstaller 解压目录 `sys._MEIPASS` 读，
+> 可写的存档目录挂在 exe 旁边，源码运行方式行为不变。
+
 操作：
 
 | 按键 | 作用 |
@@ -110,7 +120,8 @@ pip install pygame
 ### 系统
 
 - **多存档槽**：`saves/config.json`（机器级：显示/音量/当前槽）+ `saves/slots/<id>.json`（每槽游戏进度）。
-  主菜单「存档管理」可**命名新建 / 切换 / 重命名 / 删除**存档槽；旧版单文件 `save_data.json`
+  主菜单「存档管理」可**命名新建 / 切换 / 重命名 / 删除**存档槽；命名支持**直接键盘输入（含中文 IME）**，
+  也可点击预设名快速填入（上限 12 字，Enter 确认 / Esc 取消）。旧版单文件 `save_data.json`
   首次启动自动迁移为槽 1「测试存档」。每槽独立记录星尘、角色、战绩、剧情进度、新手指引状态。
 - **新手指引**：新存档首局按 `settings.TUTORIAL_HINTS` 顺序播放定时浮层
   （移动/闪避/放技能/选卡/剧情目标），走完或首局结束即标记 `tutorial_done` 不再打扰。
@@ -125,7 +136,7 @@ pip install pygame
   展示背景故事 / 技能 / 强化层数进度；可“设为出战”。
 - **场景选择**：读 `data/scenes.json`，4 个场景，难度/敌人密度不同
 - **显示设置**：窗口 / 无边框 / 全屏，多档分辨率；含 BGM / 音效音量滑块（拖动即时生效 + 存档）
-- **音频**：BGM 按场景切换 + 全套 SFX（吃果/升级/击杀/受伤/技能/抽卡/UI）。
+- **音频**：BGM 按场景切换（**4 张战斗地图各自一首独立 BGM**，合成兜底的和弦/波形/节奏也各不相同）+ 全套 SFX（吃果/升级/击杀/受伤/技能/抽卡/UI）。
   `assets/audio/` 下有对应文件就用真实音频，没有则用**纯代码合成的占位音**，丢进同名文件即自动升级
 
 ### 技术
@@ -195,6 +206,8 @@ pip install pygame
 
 ```
 assets/audio/bgm/  menu  battle  boss  gacha  gameover
+                   battle_campus_garden  battle_neon_night
+                   battle_deep_sea  battle_sakura_realm   ← 4 张地图专属战斗曲
 assets/audio/sfx/  ui_click  ui_hover  ui_back
                    eat_exp  eat_crystal  eat_stardust  eat_heart
                    level_up  skill_unlock  hurt  kill  gameover
@@ -239,7 +252,8 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 2. **场景卡片显示 Boss 战绩** —— `scene_select.py` 读 `bosses_defeated`，在卡片上显示该场景 Boss 名与是否已击败
 3. **多角色** —— 已完成 6 名（全 SSR · 强度一致）；再加角色：出图 → 放进 `assets/characters/<id>/` → 在 `characters.json` 加一条（含 `kit`）→ `gacha.json` 的 `pool` 补上 id
 4. **更多剧情关** —— 目前 4 关（4 张场景图已齐）；加关只需在 `levels.json` 追加 + 出新场景图
-5. **存档命名输入法** —— 现为预设名 + 逐字符选择（规避中文 IME）；如需完整键盘中文命名可后续接入
+5. **真实 BGM 音频** —— 4 张地图的专属战斗曲目前是合成占位音；把真实音频按 `battle_<场景id>` 命名放进 `assets/audio/bgm/` 即自动升级
+6. **exe 瘦身** —— 当前 onefile 约 168MB（含 numpy 等被动依赖）；可用 `--exclude-module numpy` 等选项裁剪
 
 ---
 
@@ -285,5 +299,6 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 │   ├── backgrounds/         场景背景
 │   └── items/               掉落物图标
 ├── saves/                   存档（config.json + slots/<id>.json）
+├── dist/                    打包产物（贪吃蛇娘化版.exe，单文件双击即玩）
 └── tools/                   自检 / 试玩 / 截图 / 素材处理
 ```

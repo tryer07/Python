@@ -22,6 +22,7 @@ import random
 import pygame
 
 import settings as S
+from core.audio_manager import AudioManager
 from core.scene import Scene
 from game_logic.entities import Drop, EliteMob, Mob, PlayerBullet, SnakeGirl
 from game_logic.boss import Boss, boss_trigger_met, load_boss_cfg
@@ -105,7 +106,6 @@ class BattleScene(Scene):
 
     # ================================================================ 重置
     def reset(self):
-        self.game.audio.play_bgm("battle")
         char_id = self.game.save_manager.get("selected_character", "sakura")
 
         # ---- 本局模式：剧情 / 无尽，由关卡选择场景写入 game.pending_run ----
@@ -127,6 +127,13 @@ class BattleScene(Scene):
                 "selected_scene", "campus_garden")
         self.snake_name, self.snake_rarity = self._char_label(char_id)
         self._load_skin(char_id, self.scene_id)
+
+        # ---- 战斗 BGM：四张地图各自一首（合成兜底配方各不同；
+        #      真实文件丢进 assets/audio/bgm/battle_<场景id>.ogg 即自动升级）----
+        if self.scene_id in AudioManager.SCENE_BGM_IDS:
+            self.game.audio.play_bgm(f"battle_{self.scene_id}")
+        else:
+            self.game.audio.play_bgm("battle")
 
         # ---- 玩家：世界正中出生 ----
         self.snake = SnakeGirl(char_id, start_pos=(self.world_w / 2, self.world_h / 2))

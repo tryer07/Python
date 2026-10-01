@@ -236,11 +236,36 @@ def _recipe(name):
 
 def _bgm_recipe(name):
     """兜底 BGM：约 4 秒柔和琶音循环（真实文件存在时不会用到）。
-    不同场景用略微不同的和弦走向，做一点区分。"""
+    不同场景用不同的和弦走向 / 音色 / 速度，听感上明确区分。"""
+    wave = "sine"
+    trem = 0.0
     if name == "battle":
         chords = [("A3", "C4", "E4"), ("A3", "C4", "E4"),
                   ("F3", "A3", "C4"), ("G3", "B3", "D4")]
         note_dur = 0.16
+    elif name == "battle_campus_garden":
+        # 校园庭院：明亮大调、中速，日常轻松的庭院感
+        chords = [("C4", "E4", "G4"), ("G3", "B3", "D4"),
+                  ("A3", "C4", "E4"), ("F3", "A3", "C4")]
+        note_dur = 0.20
+    elif name == "battle_neon_night":
+        # 霓虹夜市：小调 + 短促音符，都市夜行的紧张切分感
+        chords = [("A3", "C4", "E4"), ("F3", "A3", "C4"),
+                  ("G3", "B3", "D4"), ("E3", "G3", "B3")]
+        note_dur = 0.12
+        wave = "square"
+    elif name == "battle_deep_sea":
+        # 深海遗迹：低八度三角波慢速 pad，幽深压迫
+        chords = [("D3", "F3", "A3"), ("C3", "E3", "G3"),
+                  ("D3", "F3", "A3"), ("E3", "G3", "B3")]
+        note_dur = 0.30
+        wave = "tri"
+    elif name == "battle_sakura_realm":
+        # 樱花神域：高音区琶音 + 颤音，空灵飘渺
+        chords = [("F4", "A4", "C5"), ("C4", "E4", "G4"),
+                  ("D4", "F4", "A4"), ("G4", "B4", "D5")]
+        note_dur = 0.18
+        trem = 0.25
     elif name == "boss":
         # 更急促、更紧张的循环：小调走向 + 短音，营造 Boss 战压迫感
         chords = [("A3", "C4", "E4"), ("G3", "B3", "D4"),
@@ -262,7 +287,8 @@ def _bgm_recipe(name):
     lead = []
     for (a, b, c) in chords:
         for f in (a, b, c, b):
-            lead.extend(_tone(N[f], note_dur, "sine", 0.15, release=note_dur * 0.5))
+            lead.extend(_tone(N[f], note_dur, wave, 0.15,
+                              release=note_dur * 0.5, trem=trem))
     bass = []
     for (a, _b, _c) in chords:
         seg_len = note_dur * 4
@@ -311,7 +337,17 @@ class AudioManager:
     BGM_FILES = {
         "menu": "menu", "battle": "battle",
         "gacha": "gacha", "gameover": "gameover", "boss": "boss",
+        # 四张地图各自的战斗 BGM。
+        # 真实文件位：assets/audio/bgm/battle_<场景id>.ogg（.wav/.mp3 亦可），
+        # 放进去即自动替换合成兜底音，不用改代码。
+        "battle_campus_garden": "battle_campus_garden",
+        "battle_neon_night": "battle_neon_night",
+        "battle_deep_sea": "battle_deep_sea",
+        "battle_sakura_realm": "battle_sakura_realm",
     }
+
+    # 有独立战斗 BGM 的场景 id（battle 场景按 f"battle_{scene_id}" 取曲）
+    SCENE_BGM_IDS = ("campus_garden", "neon_night", "deep_sea", "sakura_realm")
 
     def __init__(self, save_manager=None):
         global _INSTANCE
