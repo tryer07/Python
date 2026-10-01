@@ -21,7 +21,8 @@ from core.save_manager import SaveManager
 from settings import (
     CELL_SIZE_BASE, DESIGN_HEIGHT, DESIGN_WIDTH,
     DISPLAY_MODES, FPS, FULLSCREEN, GAME_TITLE,
-    RESOLUTION_OPTIONS, VOLUME_HOTKEY_STEP, WINDOW_SCALE,
+    RESOLUTION_OPTIONS, VOLUME_HOTKEY_STEP, VOLUME_REPEAT_DELAY_MS,
+    VOLUME_REPEAT_INTERVAL_MS, WINDOW_SCALE,
 )
 
 
@@ -66,6 +67,9 @@ class Game:
         # 音量热键改的是内存值（persist=False），用这个脏标记延迟落盘：
         # 切场景 / 退出 / 取消暂停时一次性写回，避免长按方向键时高频写盘。
         self._audio_dirty = False
+        # 长按连发状态：方向键 -> “下次可连发的时刻”（pygame.time ticks 毫秒）。
+        # 按一下先走一格并记下 now+延迟；主循环轮询到点就持续连调。
+        self._vol_hold = {}
 
     # ==================== 窗口 / 显示设置 ====================
     @property
@@ -234,8 +238,9 @@ class Game:
     def change_scene(self, name):
         if self.current_scene:
             self.current_scene.exit()
-        # 离开当前场景前把热键调过的音量落盘
+        # 离开当前场景前把热键调过的音量落盘，并清掉长按连发状态
         self.flush_audio()
+        self._vol_hold.clear()
 
         scene_class = self._scenes.get(name)
         if scene_class is None:
@@ -271,6 +276,9 @@ class Game:
                     if self.current_scene:
                         self.current_scene.on_resize()
 
+            # 长按方向键时持续连调音量（仅在场景不占用方向键时生效）
+            self._update_volume_repeat()
+
             if self.current_scene:
                 # 渲染表面 = 窗口大小，鼠标坐标无需转换
                 self.current_scene.handle_events(events)
@@ -284,34 +292,60 @@ class Game:
         self.quit()
 
     # ==================== 音量调试热键 ====================
+    # 方向键 -> 增减方向。↑/→ 增大、↓/← 减小，作用于“上次鼠标点选”的音量目标。
+    _VOL_KEY_DIR = {
+        pygame.K_UP: 1, pygame.K_RIGHT: 1,
+        pygame.K_DOWN: -1, pygame.K_LEFT: -1,
+    }
+
     def _handle_volume_hotkey(self, event):
-        """↑/↓ 调 BGM、←/→ 调 SFX，每按一下 ±VOLUME_HOTKEY_STEP（0~100）。
+        """方向键调节音量：作用于玩家上次用鼠标点选的目标（音乐 or 音效）。
 
         仅在「当前场景不占用方向键」时生效（战斗进行中会让路，暂停/菜单才接管）。
+        按一下走一格；按住超过 VOLUME_REPEAT_DELAY_MS 后由 _update_volume_repeat 连发。
         命中时返回 True（事件已消费），否则 False。"""
         if self.current_scene is not None and self.current_scene.wants_movement_keys():
             return False
-        step = VOLUME_HOTKEY_STEP / 100.0
+        direction = self._VOL_KEY_DIR.get(event.key)
+        if direction is None:
+            return False
+        self._apply_volume_step(direction)
+        # 记下“连发启动时刻”：长按超过延迟后主循环才开始连调
+        self._vol_hold[event.key] = pygame.time.get_ticks() + VOLUME_REPEAT_DELAY_MS
+        return True
+
+    def _apply_volume_step(self, direction):
+        """对当前焦点音量（audio.volume_focus）增减一格 ±VOLUME_HOTKEY_STEP/100。"""
         a = self.audio
-        if event.key == pygame.K_UP:
-            a.set_bgm_volume(a.bgm_volume + step, persist=False)
-            self._audio_dirty = True
-            return True
-        if event.key == pygame.K_DOWN:
-            a.set_bgm_volume(a.bgm_volume - step, persist=False)
-            self._audio_dirty = True
-            return True
-        if event.key == pygame.K_RIGHT:
-            a.set_sfx_volume(a.sfx_volume + step, persist=False)
-            self._audio_dirty = True
-            a.play("ui_click")   # 补一声，方便直接听出 SFX 音量大小
-            return True
-        if event.key == pygame.K_LEFT:
-            a.set_sfx_volume(a.sfx_volume - step, persist=False)
-            self._audio_dirty = True
-            a.play("ui_click")
-            return True
-        return False
+        step = VOLUME_HOTKEY_STEP / 100.0
+        if getattr(a, "volume_focus", "bgm") == "sfx":
+            a.set_sfx_volume(a.sfx_volume + direction * step, persist=False)
+            a.play("ui_click", throttle=0.05)   # 补一声，直接听出 SFX 音量大小
+        else:
+            a.set_bgm_volume(a.bgm_volume + direction * step, persist=False)
+        self._audio_dirty = True
+
+    def _update_volume_repeat(self):
+        """长按方向键连发：按住超过延迟后，每 VOLUME_REPEAT_INTERVAL_MS 调一格。
+
+        pygame 默认不自动重复 KEYDOWN，所以这里靠轮询按键状态自己做连发。"""
+        if not self._vol_hold:
+            return
+        # 场景开始占用方向键（如取消暂停回到战斗）时，立刻停止连发
+        if self.current_scene is not None and self.current_scene.wants_movement_keys():
+            self._vol_hold.clear()
+            return
+        pressed = pygame.key.get_pressed()
+        now = pygame.time.get_ticks()
+        for key, next_at in list(self._vol_hold.items()):
+            if not pressed[key]:
+                del self._vol_hold[key]       # 已松开，清理
+                continue
+            if now >= next_at:
+                direction = self._VOL_KEY_DIR.get(key)
+                if direction is not None:
+                    self._apply_volume_step(direction)
+                self._vol_hold[key] = now + VOLUME_REPEAT_INTERVAL_MS
 
     def flush_audio(self):
         """把热键改过但尚未落盘的音量写回存档（幂等，无脏数据时什么都不做）。"""

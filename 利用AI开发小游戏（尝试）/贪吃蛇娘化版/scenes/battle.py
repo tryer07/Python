@@ -1118,6 +1118,17 @@ class BattleScene(Scene):
         if not self.paused:
             self.game.flush_audio()
 
+    def _pause_vol_layout(self):
+        """暂停面板里 音乐 / 音效 两块可点击区域的 rect（用于点选热键焦点）。"""
+        cx = self.W // 2
+        cy = self.H // 2 - self.s(92)
+        w, h = self.s(240), self.s(50)
+        bgm_rect = pygame.Rect(0, 0, w, h)
+        bgm_rect.center = (cx - self.s(150), cy)
+        sfx_rect = pygame.Rect(0, 0, w, h)
+        sfx_rect.center = (cx + self.s(150), cy)
+        return bgm_rect, sfx_rect
+
     def _draw_pause(self):
         """暂停覆盖层：半透明遮罩 + 标题 + 实时音量 + 热键提示 + 三个按钮"""
         screen = self.screen
@@ -1130,15 +1141,27 @@ class BattleScene(Scene):
         t = self.f_title.render("已暂停", True, COLOR_ACCENT)
         screen.blit(t, t.get_rect(center=(cx, cy - self.s(150))))
 
-        # 音量数字实时跟随热键变化（读的就是 AudioManager 上的当前值）
+        # 音量数字实时跟随热键变化；两块可鼠标点选，选中的就是热键调节目标。
         a = self.game.audio
         bgm = int(round(a.bgm_volume * 100))
         sfx = int(round(a.sfx_volume * 100))
-        vol = self.f_body.render(f"音乐 {bgm}      音效 {sfx}", True, COLOR_TEXT)
-        screen.blit(vol, vol.get_rect(center=(cx, cy - self.s(92))))
+        bgm_rect, sfx_rect = self._pause_vol_layout()
+        for rect, label, val, key in (
+            (bgm_rect, "音乐", bgm, "bgm"),
+            (sfx_rect, "音效", sfx, "sfx"),
+        ):
+            focused = (a.volume_focus == key)
+            color = COLOR_ACCENT if focused else COLOR_TEXT
+            txt = self.f_body.render(f"{label} {val}", True, color)
+            screen.blit(txt, txt.get_rect(center=rect.center))
+            if focused:
+                # 选中的那块画个下划线，明确“热键现在调的是它”
+                ul = pygame.Rect(0, 0, rect.width - self.s(70), 2)
+                ul.center = (rect.centerx, rect.bottom - self.s(8))
+                pygame.draw.rect(screen, COLOR_ACCENT, ul)
 
         hint = self.f_small.render(
-            "↑/↓ 音乐音量    ←/→ 音效音量    （每次 ±10）", True, COLOR_TEXT_DIM)
+            "鼠标点选 音乐/音效 后：↑/→ 增大  ↓/← 减小（±10，长按连调）", True, COLOR_TEXT_DIM)
         screen.blit(hint, hint.get_rect(center=(cx, cy + self.s(150))))
 
         self.resume_btn.draw(screen)
@@ -1160,13 +1183,20 @@ class BattleScene(Scene):
                     self.reset()
             return
 
-        # ---- 暂停态：鼠标点按钮 + ESC/P 继续 ----
+        # ---- 暂停态：鼠标点按钮/音量块 + ESC/P 继续 ----
         # 方向键不在这里处理（主循环的音量热键已接管），所以和移动天然不冲突。
         if self.paused:
+            bgm_rect, sfx_rect = self._pause_vol_layout()
             for event in events:
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_p):
                     self._toggle_pause()
                     return
+                # 点“音乐/音效”块切换热键调节目标
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if bgm_rect.collidepoint(event.pos):
+                        self.game.audio.volume_focus = "bgm"
+                    elif sfx_rect.collidepoint(event.pos):
+                        self.game.audio.volume_focus = "sfx"
                 self.resume_btn.handle_event(event)
                 self.restart_btn.handle_event(event)
                 self.quit_btn.handle_event(event)

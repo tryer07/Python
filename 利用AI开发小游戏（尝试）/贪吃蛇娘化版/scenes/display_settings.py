@@ -58,13 +58,13 @@ class DisplaySettingsScene(Scene):
             "音乐", center_x - self.s(455), slider_y, slider_w, slider_h,
             value=float(st.get("bgm_volume", 0.7)), font_size=self.s(FONT_SIZE_SMALL),
             on_change=lambda v: self.game.audio.set_bgm_volume(v, persist=False),
-            on_release=self.game.audio.save_volumes,
+            on_release=self.game.audio.save_volumes, focus_key="bgm",
         )
         self.sfx_slider = Slider(
             "音效", center_x + self.s(25), slider_y, slider_w, slider_h,
             value=float(st.get("sfx_volume", 0.8)), font_size=self.s(FONT_SIZE_SMALL),
             on_change=lambda v: self.game.audio.set_sfx_volume(v, persist=False),
-            on_release=self.game.audio.save_volumes,
+            on_release=self.game.audio.save_volumes, focus_key="sfx",
         )
 
         # 恢复默认
@@ -150,7 +150,7 @@ class DisplaySettingsScene(Scene):
         self.apply_default_btn.draw(screen)
 
         hint = self.font_small.render(
-            "提示: ↑/↓ 音乐音量  ←/→ 音效音量（±10）  |  滑块拖动即时保存  |  ESC 返回  |  F11 全屏",
+            "提示: 鼠标点选滑块后，↑/→ 增大、↓/← 减小（±10，长按连调）  |  拖动即时保存  |  ESC 返回  |  F11 全屏",
             True, COLOR_TEXT_DIM
         )
         screen.blit(hint, hint.get_rect(center=(center_x, self.s(690))))

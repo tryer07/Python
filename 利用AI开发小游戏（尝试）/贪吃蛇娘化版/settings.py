@@ -17,9 +17,14 @@ AUDIO_DIR = os.path.join(ASSETS_DIR, "audio")
 AUDIO_ENABLED = True            # 总开关：关掉后 AudioManager 整体静默
 AUDIO_CHANNELS = 16             # 同时可叠加的 SFX 通道数
 BGM_FADE_MS = 600               # BGM 切换淡入淡出时长（毫秒）
-# 调试用音量热键步长：↑/↓ 调 BGM、←/→ 调 SFX，每按一下 ±这么多（0~100 刻度）。
+# 调试用音量热键：作用于“上一次用鼠标点选的那个音量”（音乐 or 音效）。
+# ↑/→ 增大、↓/← 减小，每按一下 ±VOLUME_HOTKEY_STEP（0~100 刻度）。
 # 战斗进行中方向键要留给移动，此时热键自动让路；暂停菜单/其它界面才生效。
 VOLUME_HOTKEY_STEP = 10
+# 长按连续调节：按住超过 VOLUME_REPEAT_DELAY_MS 毫秒后开始自动连发，
+# 之后每 VOLUME_REPEAT_INTERVAL_MS 毫秒 ±一格，方便快速大幅调节音量。
+VOLUME_REPEAT_DELAY_MS = 1000
+VOLUME_REPEAT_INTERVAL_MS = 70
 
 # ==================== 分辨率配置 ====================
 # 设计基准分辨率（UI 布局以这个为参考）

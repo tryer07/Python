@@ -232,6 +232,8 @@ def _bgm_recipe(name):
 class _NullAudio:
     """mixer 不可用 / 单例尚未建立时的替身，所有方法 no-op。"""
 
+    volume_focus = "bgm"   # 与 AudioManager 对齐，热键读取焦点时不报错
+
     def play(self, *a, **k):
         pass
 
@@ -298,6 +300,8 @@ class AudioManager:
                 st = {}
         self.bgm_volume = self._clamp01(float(st.get("bgm_volume", 0.7)))
         self.sfx_volume = self._clamp01(float(st.get("sfx_volume", 0.8)))
+        # 热键调哪个音量由“上次鼠标点选的滑块/音量块”决定："bgm" 或 "sfx"。
+        self.volume_focus = "bgm"
         if self._ok:
             try:
                 pygame.mixer.music.set_volume(self.bgm_volume)
