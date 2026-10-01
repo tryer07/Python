@@ -1,48 +1,46 @@
 # -*- coding: utf-8 -*-
 """
-game_logic/skills.py —— 技能系统
+game_logic/skills.py —— 主动技能系统（自由移动版）
 
-设计原则（按你的要求）：技能靠升级解锁，但**不额外加按键**。
-贪吃蛇的核心乐趣是「只操控方向」，多一套技能键会毁掉这个纯度。
-所以这里所有技能都是「被动 / 自动触发」：
+设计变更（相较旧网格版）：
+  · 技能不再是「升级自动解锁的被动」，而是**主动释放**：按键 1-6。
+  · 技能通过「升级选卡」获得；按获得顺序绑定键位 1/2/3/4/5/6。
+  · 每个技能有独立冷却与等级（1..SKILL_MAX_LEVEL），升级选到同名技能卡即强化。
+  · SkillEngine 只管：解锁/等级/冷却计时、以及持续型效果的状态（荆棘地形、
+    荆棘尾光环）。瞬发效果通过 cast() 返回一个「事件字典」，由 battle 落地
+    （施加伤害 / 位移 / 生成弹丸），这样技能逻辑可单测、不依赖 battle 内部。
 
-    dash    樱花冲锋   移动时碾过相邻小怪
-    spike   荆棘尾     撞到身体的小怪也受伤
-    thorn   蔓生荆棘   走过的地面留下伤害地形
-    shield  星辉护盾   周期性自动无敌
-    storm   樱花风暴   周期性周身范围伤害
-
-SkillEngine 负责记账：计时器、冷却、以及"这一帧该触发什么"。
-真正的伤害施加在 scenes/battle.py 里做，因为那里才拿得到小怪列表。
+坐标系：荆棘地形 pos 用世界像素，与实体一致。
 """
 
 import json
 import math
 import os
+import random
 
 import settings as S
 
 
 # ======================================================================
-#  技能展示信息（名字 / 说明 / 颜色）
-#  从 data/skills.json 读，读不到就用下面这份兜底，保证界面不会开天窗。
+#  技能展示信息（名字 / 说明 / 颜色 / 键位）
 # ======================================================================
 _FALLBACK_INFO = {
-    "dash":   {"name": "樱花冲锋", "color": (255, 150, 190), "desc": "移动时碾过身旁的小怪"},
-    "spike":  {"name": "荆棘尾",   "color": (180, 120, 255), "desc": "小怪撞上尾椎也会受伤"},
-    "shield": {"name": "星辉护盾", "color": (130, 210, 255), "desc": "周期性获得无敌护盾"},
-    "thorn":  {"name": "蔓生荆棘", "color": (140, 220, 140), "desc": "走过的地面留下伤害荆棘"},
-    "storm":  {"name": "樱花风暴", "color": (255, 200, 120), "desc": "周身掀起范围伤害风暴"},
+    "dash":   {"name": "樱花冲锋", "color": (255, 150, 190), "desc": "向前突进碾过敌人"},
+    "spike":  {"name": "荆棘尾",   "color": (180, 120, 255), "desc": "周身荆棘光环持续刺伤"},
+    "shield": {"name": "星辉护盾", "color": (130, 210, 255), "desc": "获得一段无敌护盾"},
+    "thorn":  {"name": "蔓生荆棘", "color": (140, 220, 140), "desc": "地面催生伤害荆棘"},
+    "storm":  {"name": "樱花风暴", "color": (255, 200, 120), "desc": "周身范围爆发伤害"},
+    "bloom":  {"name": "月华绽放", "color": (200, 170, 255), "desc": "绽射穿透弹贯穿群敌"},
 }
 
 _info_cache = None
 
 
 def skill_info(sid):
-    """取技能的展示信息。返回 dict，字段：name / color / desc / unlock_level"""
+    """取技能的展示信息。返回 dict：name / color / desc / detail / key"""
     global _info_cache
     if _info_cache is None:
-        _info_cache = dict(_FALLBACK_INFO)
+        _info_cache = {k: dict(v) for k, v in _FALLBACK_INFO.items()}
         try:
             path = os.path.join(S.DATA_DIR, "skills.json")
             with open(path, "r", encoding="utf-8") as f:
@@ -51,37 +49,56 @@ def skill_info(sid):
                 sid_key = item.get("id")
                 if not sid_key:
                     continue
-                COLORS = item.get("color") or [255, 255, 255]
+                colors = item.get("color") or [255, 255, 255]
                 info = _info_cache.setdefault(sid_key, {})
                 info["name"] = item.get("name", info.get("name", sid_key))
-                info["color"] = tuple(COLORS[:3])
+                info["color"] = tuple(colors[:3])
                 info["desc"] = item.get("desc", info.get("desc", ""))
                 info["detail"] = item.get("detail", "")
-                info["unlock_level"] = item.get("unlock_level")
+                info["key"] = item.get("key")
         except (IOError, json.JSONDecodeError, KeyError, TypeError):
-            _info_cache = dict(_FALLBACK_INFO)
+            _info_cache = {k: dict(v) for k, v in _FALLBACK_INFO.items()}
     info = dict(_info_cache.get(sid, {"name": sid, "color": (255, 255, 255), "desc": ""}))
     info.setdefault("name", sid)
     info.setdefault("color", (255, 255, 255))
     info.setdefault("desc", "")
-    info["unlock_level"] = S.SKILL_UNLOCK.get(sid, info.get("unlock_level", 1))
     return info
 
 
 def all_skill_ids():
-    """所有技能 id，按解锁等级排序"""
-    return sorted(S.SKILL_UNLOCK.keys(), key=lambda s: S.SKILL_UNLOCK[s])
+    """全部主动技能 id，按键位顺序（1-6）"""
+    return list(S.SKILL_ORDER)
 
+
+def skill_key(sid):
+    """技能默认展示键位（1-6）。实际绑定以引擎获得顺序为准。"""
+    try:
+        return S.SKILL_ORDER.index(sid) + 1
+    except ValueError:
+        return skill_info(sid).get("key") or 0
+
+
+# 各技能基础冷却（秒），集中在此便于查
+_BASE_CD = {
+    "dash": lambda: S.DASH_CD,
+    "spike": lambda: S.SPIKE_CD,
+    "shield": lambda: S.SHIELD_CD,
+    "thorn": lambda: S.THORN_CD,
+    "storm": lambda: S.STORM_CD,
+    "bloom": lambda: S.BLOOM_CD,
+}
 
 
 class Thorn:
-    """蔓生荆棘留在场上的一块地形"""
+    """蔓生荆棘留在场上的一块地形（世界像素坐标）"""
 
-    def __init__(self, cell):
-        self.cell = cell
+    def __init__(self, pos, radius, dmg):
+        self.pos = (float(pos[0]), float(pos[1]))
+        self.radius = float(radius)
+        self.dmg = dmg
         self.life = S.THORN_LIFE
         self.max_life = S.THORN_LIFE
-        self.hit_cd = {}          # {小怪 id: 剩余冷却}，避免同一只怪被连续扣血
+        self.hit_cd = {}          # {key: 剩余冷却}
 
     def update(self, dt):
         self.life -= dt
@@ -91,177 +108,178 @@ class Thorn:
                 del self.hit_cd[k]
         return self.life > 0
 
-    def ready_for(self, mob_key):
-        return self.hit_cd.get(mob_key, 0.0) <= 0.0
+    def ready_for(self, key):
+        return self.hit_cd.get(key, 0.0) <= 0.0
 
-    def mark(self, mob_key):
-        self.hit_cd[mob_key] = S.THORN_TICK
+    def mark(self, key):
+        self.hit_cd[key] = S.THORN_TICK
+
+    def contains(self, pos, extra=0.0):
+        return math.hypot(pos[0] - self.pos[0], pos[1] - self.pos[1]) <= self.radius + extra
 
     @property
     def alpha_ratio(self):
-        """用来做淡出。最后 1.5 秒开始变淡。"""
         if self.life > 1.5:
             return 1.0
         return max(0.0, self.life / 1.5)
 
 
 class SkillEngine:
-    """技能状态机。挂在战斗场景上，每帧 update 一次。"""
+    """主动技能状态机。挂在战斗场景上，每帧 update 一次。"""
 
     def __init__(self):
         self.reset()
 
     def reset(self):
-        self.unlocked = []              # 已解锁技能 id，按解锁顺序
-        self.thorns = []
-        self.shield_timer = S.SHIELD_INTERVAL
-        self.storm_timer = S.STORM_INTERVAL
-        self.last_thorn_cell = None
+        self.order = []                 # 已获得技能 id，按获得顺序（index=键位-1）
+        self.levels = {}                # {sid: 1..SKILL_MAX_LEVEL}
+        self.cds = {}                   # {sid: 剩余冷却秒}
+        self.thorns = []                # [Thorn]
+        # 荆棘尾光环（持续型）
+        self.spike_left = 0.0           # 光环剩余秒数
+        self.spike_radius = 0.0
+        self.spike_dmg = 0
+        self.spike_cd = {}              # {mob_uid: 剩余结算冷却}
+        self.pending_shield = 0.0       # 本帧要给的无敌时长（battle 消费）
+        self.newly_unlocked = []
 
-        # ---- 樱花冲锋的充能 ----
-        # 这是整个技能系统里最强的一个，必须有刹车。
-        # 只有有充能时才能碾怪，碾死一只扣一格，扣完进冷却。
-        self.dash_charges = S.DASH_CHARGES
-        self.dash_recharge_t = 0.0
-        self.dash_ready_flash = 0.0     # 刚回满时闪一下，给玩家反馈
-
-        # ---- 荆棘尾的每怪冷却 + 全局节流 ----
-        self.spike_cd = {}              # {小怪 uid: 剩余秒数}
-        self.spike_global_cd = 0.0      # 全局闸门：多只怪同时撞也只结算一次
-
-        # 一次性事件标志：本帧是否触发了某个需要外部响应的效果
-        self.pending_shield = False
-        self.pending_storm = False
-        self.newly_unlocked = []        # 本帧新解锁的技能（给界面弹提示用）
-
-    # ------------------------------------------------------------ 解锁
-    def sync_unlock(self, level):
-        """按当前等级同步解锁状态。返回本次新解锁的技能 id 列表。"""
-        gained = []
-        for sid, need in S.SKILL_UNLOCK.items():
-            if level >= need and sid not in self.unlocked:
-                self.unlocked.append(sid)
-                gained.append(sid)
-        # 按解锁等级排序，界面上显示顺序才稳定
-        self.unlocked.sort(key=lambda s: S.SKILL_UNLOCK.get(s, 99))
-        if gained:
-            self.newly_unlocked.extend(gained)
-        return gained
+    # ------------------------------------------------------------ 解锁 / 查询
+    def unlock(self, sid):
+        """获得技能（首次）或升级（已拥有）。返回本次操作后的键位（1-based）；
+        已达满级返回其键位但不升级。"""
+        if sid not in self.order:
+            if len(self.order) >= 6:
+                return None
+            self.order.append(sid)
+            self.levels[sid] = 1
+            self.cds[sid] = 0.0
+            self.newly_unlocked.append(sid)
+        else:
+            if self.levels.get(sid, 1) < S.SKILL_MAX_LEVEL:
+                self.levels[sid] = self.levels.get(sid, 1) + 1
+        return self.order.index(sid) + 1
 
     def has(self, sid):
-        return sid in self.unlocked
+        return sid in self.order
+
+    def level(self, sid):
+        return self.levels.get(sid, 0)
 
     @property
     def count(self):
-        return len(self.unlocked)
+        return len(self.order)
+
+    def key_of(self, sid):
+        """技能当前绑定的键位（1-based），未获得返回 0"""
+        return self.order.index(sid) + 1 if sid in self.order else 0
+
+    def sid_at_key(self, key):
+        """键位（1-based）对应的技能 id，没有返回 None"""
+        idx = key - 1
+        if 0 <= idx < len(self.order):
+            return self.order[idx]
+        return None
+
+    def cooldown_max(self, sid, cdr=0.0):
+        """技能冷却总时长（含冷却缩减）"""
+        base = _BASE_CD.get(sid, lambda: 6.0)()
+        return max(0.3, base * (1.0 - min(0.75, cdr)))
+
+    def cooldown_left(self, sid):
+        return self.cds.get(sid, 0.0)
+
+    def cd_ratio(self, sid, cdr=0.0):
+        """冷却进度 0(刚放)..1(就绪)，供 HUD 转圈"""
+        total = self.cooldown_max(sid, cdr)
+        if total <= 0:
+            return 1.0
+        return max(0.0, min(1.0, 1.0 - self.cds.get(sid, 0.0) / total))
+
+    def ready(self, sid, cdr=0.0):
+        return self.has(sid) and self.cds.get(sid, 0.0) <= 0.0
 
     # ------------------------------------------------------------ 每帧
-    def update(self, dt, snake, grid_cols, grid_rows):
-        """推进计时器与地形。不直接造成伤害，只负责记"该触发了"。"""
-        self.pending_shield = False
-        self.pending_storm = False
-
-        # ---- 樱花冲锋充能 ----
-        if self.has("dash"):
-            if self.dash_charges < S.DASH_CHARGES:
-                self.dash_recharge_t += dt
-                if self.dash_recharge_t >= S.DASH_RECHARGE:
-                    self.dash_recharge_t -= S.DASH_RECHARGE
-                    self.dash_charges += 1
-                    if self.dash_charges >= S.DASH_CHARGES:
-                        self.dash_recharge_t = 0.0
-                        self.dash_ready_flash = 0.6
-            if self.dash_ready_flash > 0:
-                self.dash_ready_flash -= dt
-        if self.spike_cd:
+    def update(self, dt):
+        """推进冷却、荆棘地形、荆棘尾光环。不直接造成伤害。"""
+        for sid in list(self.cds):
+            if self.cds[sid] > 0:
+                self.cds[sid] = max(0.0, self.cds[sid] - dt)
+        if self.spike_left > 0:
+            self.spike_left = max(0.0, self.spike_left - dt)
             for k in list(self.spike_cd):
                 self.spike_cd[k] -= dt
                 if self.spike_cd[k] <= 0:
                     del self.spike_cd[k]
-        if self.spike_global_cd > 0:
-            self.spike_global_cd -= dt
-
-        # ---- 护盾 ----
-        if self.has("shield"):
-            self.shield_timer -= dt
-            if self.shield_timer <= 0:
-                self.shield_timer = S.SHIELD_INTERVAL
-                self.pending_shield = True
-
-        # ---- 樱花风暴 ----
-        if self.has("storm"):
-            self.storm_timer -= dt
-            if self.storm_timer <= 0:
-                self.storm_timer = S.STORM_INTERVAL
-                self.pending_storm = True
-
-        # ---- 蔓生荆棘：按间距铺在走过的格子上 ----
-        if self.has("thorn"):
-            cell = (round(snake.grid_pos[0]), round(snake.grid_pos[1]))
-            if cell != self.last_thorn_cell and self._spaced_enough(cell):
-                self.thorns.append(Thorn(cell))
-                self.last_thorn_cell = cell
-                if len(self.thorns) > S.THORN_MAX:
-                    self.thorns = self.thorns[-S.THORN_MAX:]
-
         self.thorns = [t for t in self.thorns if t.update(dt)]
 
-    def _spaced_enough(self, cell):
-        """和已有荆棘别挤在一起，不然一条路上全是刺，视觉很脏"""
-        for t in self.thorns:
-            if abs(t.cell[0] - cell[0]) + abs(t.cell[1] - cell[1]) < S.THORN_SPACING:
-                return False
-        return True
-
-    # ------------------------------------------------------------ 伤害查询
-    def dash_ready(self):
-        return self.dash_charges > 0
-
-    def consume_dash(self):
-        """用掉一格冲锋充能"""
-        if self.dash_charges <= 0:
-            return False
-        self.dash_charges -= 1
-        return True
-
-    def spike_ready(self, mob_uid):
-        """荆棘尾要同时过两道闸：全局闸（防多只怪一起刷）和每怪闸（防单只怪连吃）"""
-        return (self.spike_global_cd <= 0.0
-                and self.spike_cd.get(mob_uid, 0.0) <= 0.0)
-
-    def mark_spike(self, mob_uid):
-        self.spike_cd[mob_uid] = S.SPIKE_TICK
-        self.spike_global_cd = S.SPIKE_GLOBAL_CD
-
-    def thorn_damage_at(self, cell, mob_key):
+    # ------------------------------------------------------------ 释放
+    def cast(self, sid, pos, cdr=0.0):
         """
-        某只怪站在某格上，是否吃到荆棘伤害。
-        返回伤害值（0 表示没有）。
+        尝试释放技能。成功返回事件字典并进入冷却，失败（未拥有/冷却中）返回 None。
+        pos = 玩家当前世界像素位置（荆棘尾/蔓生荆棘布点用）。
         """
-        for t in self.thorns:
-            if t.cell != cell:
-                continue
-            if t.ready_for(mob_key):
-                t.mark(mob_key)
-                return S.THORN_DMG
-        return 0
-
-    def dash_damage(self, level):
-        return S.DASH_DMG + (level - 1) * S.DASH_BONUS_PER_LEVEL
-
-    def storm_cells(self, snake_cell):
-        """樱花风暴覆盖的格子集合"""
-        sx, sy = snake_cell
-        r = S.STORM_RADIUS
-        return {(x, y) for x in range(sx - r, sx + r + 1)
-                for y in range(sy - r, sy + r + 1)
-                if 0 <= x < S.GRID_COLS and 0 <= y < S.GRID_ROWS}
-
-    # ------------------------------------------------------------ 展示用
-    def next_unlock(self, level):
-        """下一个要解锁的技能，返回 (技能id, 还差几级) 或 None"""
-        rest = [(sid, need) for sid, need in S.SKILL_UNLOCK.items() if need > level]
-        if not rest:
+        if not self.ready(sid, cdr):
             return None
-        sid, need = min(rest, key=lambda kv: kv[1])
-        return sid, need - level
+        lv = self.level(sid)
+        self.cds[sid] = self.cooldown_max(sid, cdr)
+
+        if sid == "dash":
+            return {"type": "dash",
+                    "dist": S.DASH_DIST, "time": S.DASH_TIME,
+                    "dmg": S.DASH_DMG + S.DASH_DMG_PER_LV * (lv - 1)}
+        if sid == "spike":
+            self.spike_left = S.SPIKE_DURATION
+            self.spike_radius = S.SPIKE_RADIUS * (1.0 + 0.12 * (lv - 1))
+            self.spike_dmg = S.SPIKE_DMG + S.SPIKE_DMG_PER_LV * (lv - 1)
+            self.spike_cd.clear()
+            return {"type": "spike", "radius": self.spike_radius,
+                    "duration": S.SPIKE_DURATION, "dmg": self.spike_dmg}
+        if sid == "shield":
+            t = S.SHIELD_TIME + S.SHIELD_TIME_PER_LV * (lv - 1)
+            self.pending_shield = t
+            return {"type": "shield", "time": t}
+        if sid == "thorn":
+            dmg = S.THORN_DMG + S.THORN_DMG_PER_LV * (lv - 1)
+            radius = S.THORN_RADIUS
+            n = S.THORN_CHARGES + (lv - 1)
+            placed = []
+            for i in range(n):
+                ang = random.random() * math.tau if i == 0 else (i / n) * math.tau
+                dist = 0 if i == 0 else radius * 1.1
+                p = (pos[0] + math.cos(ang) * dist, pos[1] + math.sin(ang) * dist)
+                self.thorns.append(Thorn(p, radius, dmg))
+                placed.append(p)
+            if len(self.thorns) > S.THORN_MAX:
+                self.thorns = self.thorns[-S.THORN_MAX:]
+            return {"type": "thorn", "positions": placed, "radius": radius, "dmg": dmg}
+        if sid == "storm":
+            return {"type": "storm",
+                    "radius": S.STORM_RADIUS * (1.0 + 0.15 * (lv - 1)),
+                    "dmg": S.STORM_DMG + S.STORM_DMG_PER_LV * (lv - 1)}
+        if sid == "bloom":
+            return {"type": "bloom",
+                    "count": S.BLOOM_COUNT + 2 * (lv - 1),
+                    "dmg": S.BLOOM_DMG + S.BLOOM_DMG_PER_LV * (lv - 1),
+                    "speed": S.BLOOM_BULLET_SPEED, "life": S.BLOOM_BULLET_LIFE,
+                    "pierce": S.BLOOM_PIERCE + (lv - 1)}
+        self.cds[sid] = 0.0
+        return None
+
+    # ------------------------------------------------------------ 持续效果查询
+    @property
+    def spike_active(self):
+        return self.spike_left > 0
+
+    def spike_ready(self, key):
+        return self.spike_cd.get(key, 0.0) <= 0.0
+
+    def mark_spike(self, key):
+        self.spike_cd[key] = S.SPIKE_TICK
+
+    def thorn_damage_at(self, pos, key, extra=0.0):
+        """某个单位站在 pos，是否踩到荆棘。返回伤害值（0 表示没有）。"""
+        for t in self.thorns:
+            if t.contains(pos, extra) and t.ready_for(key):
+                t.mark(key)
+                return t.dmg
+        return 0

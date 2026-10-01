@@ -10,8 +10,9 @@ game_logic/boss.py —— Boss 与弹幕
   · 伤害模型（关键）：玩家撞击 Boss 身体 -> Boss 掉血、玩家不掉血（见 battle
     的 _handle_boss_contact）；Boss 只通过弹幕 / 冲撞 / 震击 / 召唤的小怪伤人。
 
-坐标系：pos 一律是「网格相对像素」（原点 = 网格左上角），battle 绘制时再加
-grid_x / grid_y，和 Mob / Drop 保持一致。
+坐标系（自由移动版）：pos_cells 用「世界格」——battle 传入的 cell_px = self.CELL，
+cols/rows = 世界像素 / CELL。因此 Boss.pos（= pos_cells * cell_px + cell_px/2）
+直接就是世界像素，弹幕 pos 同理，绘制时由 battle 统一减去摄像机偏移 cam。
 """
 
 import json

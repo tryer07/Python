@@ -18,26 +18,27 @@ from PIL import Image
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AST = os.path.join(BASE, "assets")
 
-# 源文件 -> (目标相对路径, 目标尺寸上限, 是否去水印, 是否裁边)
+# 源文件 -> (目标相对路径, 目标尺寸上限, 是否去水印, 是否裁边, 抠图方式)
+# 抠图方式: auto=自动判断 / flood=从边缘泛洪(浅色净底+浅色主体, 保住主体内部白色) / flat=纯色全局匹配
 JOBS = [
-    # 角色：上半身（不裁边，保留完整构图，只去底）
-    ("characters/Anime_game_sprite__upper_body__2026-10-01T08-46-51.png",
-     "characters/sakura/head.png", (512, 512), True, False),
-    # 角色：尾尖
-    ("characters/Anime_game_sprite__the_taperin_2026-10-01T08-49-49.png",
-     "characters/sakura/tail_tip.png", (256, 256), True, True),
+    # 角色：上半身（清凉夏装新立绘，不裁边，保留完整构图，只去底）
+    ("characters/Anime_game_sprite__upper_body_summer__2026-10-01T19-46-32.png",
+     "characters/sakura/head.png", (1024, 1024), True, False, "flood"),
+    # 角色：尾尖（新素材）
+    ("characters/Anime_game_sprite__tail_tip_summer__2026-10-01T19-46-32.png",
+     "characters/sakura/tail_tip.png", (512, 512), True, True, "flood"),
     # 小怪
     ("characters/Anime_game_sprite__a_small_cut_2026-10-01T08-50-22.png",
-     "characters/mob_shadow.png", (192, 192), True, True),
+     "characters/mob_shadow.png", (384, 384), True, True, "auto"),
     # 掉落物：经验果
     ("items/Anime_game_item_icon__a_glowin_2026-10-01T08-50-55.png",
-     "items/exp_berry.png", (128, 128), True, True),
+     "items/exp_berry.png", (256, 256), True, True, "auto"),
     # 掉落物：能量结晶
     ("items/Anime_game_item_icon__a_glowin_2026-10-01T08-51-38.png",
-     "items/energy_crystal.png", (128, 128), True, True),
+     "items/energy_crystal.png", (256, 256), True, True, "auto"),
     # 场景背景
     ("backgrounds/Anime_background_art__Japanese_2026-10-01T08-50-06.png",
-     "backgrounds/campus_garden.png", (1920, 1080), True, False),
+     "backgrounds/campus_garden.png", (3840, 2160), True, False, "auto"),
 ]
 
 
@@ -140,6 +141,92 @@ def strip_checker_bg(im, tol=26, min_frac=0.0005, grow=2):
     return im
 
 
+def keep_largest(im, alpha_thresh=8):
+    """只保留面积最大的一块前景，清掉孤岛/垫色合并进来的碎片"""
+    from collections import deque
+
+    im = im.convert("RGBA")
+    w, h = im.size
+    px = im.load()
+    comp = [[0] * h for _ in range(w)]
+    best, best_size, cid = 0, 0, 0
+    for sy in range(h):
+        for sx in range(w):
+            if px[sx, sy][3] <= alpha_thresh or comp[sx][sy]:
+                continue
+            cid += 1
+            size = 0
+            cq = deque([(sx, sy)])
+            comp[sx][sy] = cid
+            while cq:
+                x, y = cq.popleft()
+                size += 1
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < w and 0 <= ny < h and comp[nx][ny] == 0 \
+                            and px[nx, ny][3] > alpha_thresh:
+                        comp[nx][ny] = cid
+                        cq.append((nx, ny))
+            if size > best_size:
+                best_size, best = size, cid
+    for y in range(h):
+        for x in range(w):
+            if comp[x][y] != best:
+                r, g, b, _ = px[x, y]
+                px[x, y] = (r, g, b, 0)
+    return im
+
+
+def strip_with_pad(im, pad=8, detect_tol=25, key=(255, 0, 255)):
+    """
+    适合「浅色净底 + 主体含白色且可能贴着图像边缘」的图（如白裙立绘、鳞片条带）。
+
+    直接泛洪的问题：主体贴边时，贴边的白色会和外部背景连通，
+    泛洪从边界灌进主体内部把白裙/鳞片高光吃掉。
+
+    做法：
+      1. 检测哪些边被主体碰到（该边存在明显非底色的像素）
+      2. 只在碰到的边外垫一圈饱和 key 色（泛洪不认它，起到封口作用）
+      3. 泛洪去底（主体内部白色因被封口而保留）
+      4. 裁掉垫的边，恢复原构图
+    """
+    from collections import Counter as _Counter
+
+    im = im.convert("RGBA")
+    w, h = im.size
+    border = []
+    for x in range(0, w, 2):
+        border.append(im.getpixel((x, 0))[:3])
+        border.append(im.getpixel((x, h - 1))[:3])
+    for y in range(0, h, 2):
+        border.append(im.getpixel((0, y))[:3])
+        border.append(im.getpixel((w - 1, y))[:3])
+    bg = _Counter(border).most_common(1)[0][0]
+
+    def nonbg(p):
+        return max(abs(p[i] - bg[i]) for i in range(3)) > detect_tol
+
+    touch_top = any(nonbg(im.getpixel((x, 0))[:3]) for x in range(w))
+    touch_bot = any(nonbg(im.getpixel((x, h - 1))[:3]) for x in range(w))
+    touch_l = any(nonbg(im.getpixel((0, y))[:3]) for y in range(h))
+    touch_r = any(nonbg(im.getpixel((w - 1, y))[:3]) for y in range(h))
+    pl = pad if touch_l else 0
+    pt = pad if touch_top else 0
+    pr = pad if touch_r else 0
+    pb = pad if touch_bot else 0
+    if pl or pt or pr or pb:
+        canvas = Image.new("RGBA", (w + pl + pr, h + pt + pb), key + (255,))
+        canvas.alpha_composite(im, (pl, pt))
+        im = canvas
+    stripped = strip_checker_bg(im)
+    if pl or pt or pr or pb:
+        W, H = stripped.size
+        stripped = stripped.crop((pl, pt, W - pr, H - pb))
+        # 垫色会把同一条边上多个碎片连成一块，裁掉垫色后再取最大连通域清碎片
+        stripped = keep_largest(stripped)
+    return stripped
+
+
 def strip_flat_bg(im, tol=18):
     """纯色背景抠图（用于白底/纯色底的图）"""
     im = im.convert("RGBA")
@@ -158,9 +245,15 @@ def strip_flat_bg(im, tol=18):
     return im
 
 
-def auto_strip(im, name=""):
-    """自动判断是棋盘格底还是纯色底"""
+def auto_strip(im, name="", prefer="auto"):
+    """自动判断是棋盘格底还是纯色底；prefer 可强制 flood(泛洪)/flat(纯色)"""
     im = im.convert("RGBA")
+    if prefer == "flood":
+        print("   [泛洪去底] 贴边垫色封口 + 泛洪，保住主体内部浅色")
+        return strip_with_pad(im)
+    if prefer == "flat":
+        print("   [纯色去底] 全局匹配")
+        return strip_flat_bg(im)
     w, h = im.size
     # 采四角 5x5 区域，看颜色种类
     samples = set()
@@ -200,12 +293,12 @@ def autocrop(im, pad=6, alpha_thresh=8):
 
 
 def fit(im, max_size):
-    """等比缩放到不超过 max_size"""
+    """等比缩放到 max_size；允许 LANCZOS 放大，避免浪费高分辨率源图"""
     im = im.convert("RGBA")
     w, h = im.size
     mw, mh = max_size
     ratio = min(mw / w, mh / h)
-    if ratio < 1:
+    if ratio != 1:
         im = im.resize((max(1, int(w * ratio)), max(1, int(h * ratio))), Image.LANCZOS)
     return im
 
@@ -219,7 +312,7 @@ def soften_alpha(im, radius=4):
     return im
 
 
-def make_body_seg(src_path, dst_path, size=(384, 384), taper=0.62, aspect=0.34):
+def make_body_seg(src_path, dst_path, size=(512, 512), taper=0.62, aspect=0.34, prefer="auto"):
     """
     把矩形蛇身纹理裁成「左粗右细」的梯形条带。
     游戏内按骨骼方向旋转拼接，就用这一张。
@@ -227,7 +320,7 @@ def make_body_seg(src_path, dst_path, size=(384, 384), taper=0.62, aspect=0.34):
       taper : 右端高度 / 左端高度  —— 0.62 表示向右收细到 62%
     """
     im = Image.open(src_path).convert("RGBA")
-    im = auto_strip(im)
+    im = auto_strip(im, prefer=prefer)
     im = autocrop(im)
     w, h = im.size
     band_h = max(24, int(w * aspect))
@@ -255,7 +348,7 @@ def make_body_seg(src_path, dst_path, size=(384, 384), taper=0.62, aspect=0.34):
 
 def main():
     ok, fail = 0, 0
-    for src_rel, dst_rel, size, wm, crop in JOBS:
+    for src_rel, dst_rel, size, wm, crop, strip in JOBS:
         src = os.path.join(AST, src_rel.replace("/", os.sep))
         dst = os.path.join(AST, dst_rel.replace("/", os.sep))
         if not os.path.exists(src):
@@ -265,7 +358,7 @@ def main():
         im = Image.open(src)
         is_photo = "backgrounds" in src_rel
         if not is_photo:
-            im = auto_strip(im, src_rel)
+            im = auto_strip(im, src_rel, prefer=strip)
         if wm:
             im = kill_watermark(im)
         if crop and not is_photo:
@@ -279,11 +372,11 @@ def main():
         ok += 1
 
     # 单独处理：蛇身段做成梯形条带（不走通用流程）
-    seg_src = os.path.join(AST, "characters/Anime_game_sprite_texture__a_h_2026-10-01T08-47-35.png"
+    seg_src = os.path.join(AST, "characters/Anime_game_sprite_texture__scale_strip__2026-10-01T19-54-48.png"
                                 .replace("/", os.sep))
     seg_dst = os.path.join(AST, "characters", "sakura", "body_seg.png")
     if os.path.exists(seg_src):
-        make_body_seg(seg_src, seg_dst)
+        make_body_seg(seg_src, seg_dst, prefer="flood")
         ok += 1
 
     print(f"\n成功 {ok} 个，失败 {fail} 个")

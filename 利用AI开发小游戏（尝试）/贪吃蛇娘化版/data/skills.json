@@ -1,50 +1,59 @@
 {
-  "_comment": "技能表。unlock_level 与 settings.SKILL_UNLOCK 保持一致；改这里只影响展示文案，实际数值在 settings.py。",
+  "_comment": "主动技能表。技能通过升级选卡获得，按获得顺序绑定 1-6 键；实际数值在 settings.py，这里只放展示文案（名字/图标/颜色/说明）。",
   "skills": [
     {
       "id": "dash",
       "name": "樱花冲锋",
-      "unlock_level": 3,
+      "key": 1,
       "icon": "dash",
       "color": [255, 150, 190],
-      "desc": "移动时碾过身旁的小怪，造成撞击伤害。",
-      "detail": "伤害 14 + 每级 +2"
+      "desc": "向前突进一段距离，碾过路径上的小怪。",
+      "detail": "冷却 4 秒 · 路径伤害"
     },
     {
       "id": "spike",
       "name": "荆棘尾",
-      "unlock_level": 6,
+      "key": 2,
       "icon": "spike",
       "color": [180, 120, 255],
-      "desc": "小怪撞上你的尾椎也会被刺伤。",
-      "detail": "伤害 10"
+      "desc": "展开周身荆棘光环，持续刺伤靠近的敌人。",
+      "detail": "冷却 8 秒 · 持续 3 秒"
     },
     {
       "id": "shield",
       "name": "星辉护盾",
-      "unlock_level": 9,
+      "key": 3,
       "icon": "shield",
       "color": [130, 210, 255],
-      "desc": "周期性获得一段无敌护盾。",
-      "detail": "每 12 秒 1.6 秒无敌"
+      "desc": "展开护盾，获得一段无敌时间。",
+      "detail": "冷却 12 秒 · 无敌 2 秒"
     },
     {
       "id": "thorn",
       "name": "蔓生荆棘",
-      "unlock_level": 12,
+      "key": 4,
       "icon": "thorn",
       "color": [140, 220, 140],
-      "desc": "走过的地面上留下荆棘，小怪踩到会持续受伤。",
-      "detail": "存在 5 秒 · 伤害 9"
+      "desc": "在身旁地面催生荆棘，敌人踩到持续受伤。",
+      "detail": "冷却 3 秒 · 存在 5 秒"
     },
     {
       "id": "storm",
       "name": "樱花风暴",
-      "unlock_level": 15,
+      "key": 5,
       "icon": "storm",
       "color": [255, 200, 120],
-      "desc": "定期在周身掀起花瓣风暴，范围内小怪全部受伤。",
-      "detail": "每 9 秒 · 半径 3 格 · 伤害 26"
+      "desc": "在周身掀起花瓣风暴，范围内敌人全部受伤。",
+      "detail": "冷却 9 秒 · 范围爆发"
+    },
+    {
+      "id": "bloom",
+      "name": "月华绽放",
+      "key": 6,
+      "icon": "bloom",
+      "color": [200, 170, 255],
+      "desc": "向四面八方绽射月华穿透弹，贯穿成群的敌人。",
+      "detail": "冷却 16 秒 · 12 道穿透弹"
     }
   ]
 }

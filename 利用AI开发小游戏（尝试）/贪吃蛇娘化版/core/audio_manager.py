@@ -174,6 +174,19 @@ def _recipe(name):
         return _mix([_noise(0.40, 0.22, release=0.3),
                      _tone(N["A4"], 0.40, "sine", 0.18, slide_to=N["A5"]),
                      _tone(N["E5"], 0.40, "sine", 0.14)])
+    if name == "skill_bloom":
+        return _mix([_tone(N["C6"], 0.30, "sine", 0.24, slide_to=N["G5"], trem=0.25),
+                     _tone(N["E5"], 0.30, "tri", 0.16),
+                     _noise(0.24, 0.10, lp=0.4, release=0.2)])
+    # ---------------- 自由移动：普攻 / 闪避 / 选卡 ----------------
+    if name == "shoot":
+        return _tone(1100, 0.05, "tri", 0.18, slide_to=680, release=0.03)
+    if name == "dodge":
+        return _mix([_noise(0.14, 0.16, lp=0.5, release=0.1),
+                     _tone(520, 0.12, "sine", 0.16, slide_to=1300)])
+    if name == "card_pick":
+        return _seq([_tone(N["E5"], 0.06, "sine", 0.30),
+                     _tone(N["A5"], 0.10, "sine", 0.28)])
     if name == "gameover":
         return _seq([_tone(N["A4"], 0.18, "sine", 0.34),
                      _tone(N["F4"], 0.18, "sine", 0.34),

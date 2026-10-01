@@ -1,231 +1,151 @@
 # -*- coding: utf-8 -*-
 """
-game_logic/entities.py —— 游戏里的所有实体
+game_logic/entities.py —— 游戏里的所有实体（自由移动版）
 
-设计要点（按你的要求）：
-  · 蛇身长度固定，不随吃东西变长
-  · 成长体现在等级、伤害、技能解锁上
-  · 难度靠小怪变强变多，不靠蛇变长
+坐标系：所有实体的 pos 都是「世界像素」（原点 = 世界左上角）。
+绘制时由 battle 减去摄像机偏移 cam，得到屏幕坐标。
+标注 (设计像素) 的尺寸常量在 battle 里按 self.S 缩放后传入。
+
+设计要点：
+  · 玩家用 WASD 八向自由移动，蛇尾变成纯装饰拖尾（不再碰撞）
+  · 小怪始终索敌跟随玩家，速度 / 攻击力随时间上升
+  · 道具只给经验，进入磁吸半径会飞向玩家
 """
 
 import itertools
 import math
 import random
 
-import pygame
-
 import settings as S
 from core.asset_manager import angle_between
 
-# 小怪唯一 id 生成器（荆棘/技能计冷却时要按"这只怪"来记，不能按格子）
+# 小怪唯一 id 生成器（荆棘/技能计冷却时要按"这只怪"来记）
 _UID_GEN = itertools.count(1)
 
 
 # ======================================================================
-#  娘化角色蛇
+#  娘化角色蛇（自由移动玩家）
 # ======================================================================
 class SnakeGirl:
     """
-    蛇娘本体。
+    蛇娘本体（自由移动）。
 
     身体分成两部分画：
-      · 上半身 = 一张人物立绘，贴在蛇头位置
-      · 下半身 = 一串「尾椎」贴图，沿蛇头走过的路径反向排布
-                越靠近头越粗，越靠尾越细（靠贴图本身缩放实现）
+      · 上半身 = 一张人物立绘，贴在玩家位置
+      · 下半身 = 一串「尾椎」贴图，沿玩家走过的路径反向排布（纯装饰）
     """
 
-    def __init__(self, char_id="sakura", start_cell=(6, 6), direction=(1, 0)):
+    def __init__(self, char_id="sakura", start_pos=(0.0, 0.0)):
         self.char_id = char_id
-        self.grid_pos = [float(start_cell[0]), float(start_cell[1])]   # 逻辑格子坐标（浮点，便于插值）
-        self.prev_grid_pos = list(self.grid_pos)
-        self.direction = direction                                     # 当前方向
-        self.next_direction = direction
-        self.move_timer = 0.0
+        self.pos = [float(start_pos[0]), float(start_pos[1])]   # 世界像素
+        self.vel = [0.0, 0.0]                                    # 当前速度（世界像素/秒）
+        self.move_dir = [0.0, 0.0]                               # 归一化输入方向
+        self.aim_dir = [1.0, 0.0]                                # 朝向（普攻/立绘翻转用）
+        self.radius = S.PLAYER_RADIUS                            # 碰撞半径（世界像素，battle 会覆写）
 
         # ---- 成长属性 ----
         self.level = 1
         self.exp = 0
         self.hp = S.HP_MAX
+        self.hp_max = S.HP_MAX
         self.invincible = 0.0
         self.alive = True
-        self.on_level_up_cb = None          # 由战斗场景挂上去，用来同步技能解锁
+        self.on_level_up_cb = None          # 由战斗场景挂上去
 
-        # ---- 路径历史：记录蛇头经过的点，用来摆放尾椎 ----
-        self.path = []                                                 # [(x, y), ...] 屏幕像素
-        self.body_length = S.SNAKE_LEN                                 # 固定身长
-        self.cells = []                                                # 当前占据的所有格子（含头）
+        # ---- 闪避状态机 ----
+        self.dodge_cd = 0.0                 # 剩余冷却
+        self.dodge_t = 0.0                  # 剩余位移时间（>0 表示正在闪避）
+        self.dodge_dir = [0.0, 0.0]         # 闪避方向
+        self.dodge_from = [0.0, 0.0]        # 闪避起点（做拖影）
+
+        # ---- 攻击节奏 ----
+        self.atk_timer = 0.0
+
+        # ---- 装饰尾迹 ----
+        self.path = []                      # [(x, y), ...] 世界像素
+        self.body_length = S.SNAKE_LEN
+        self.seg_len = S.BODY_SEG_LEN       # 世界像素（battle 会按 scale 覆写）
 
         # ---- 视觉 ----
-        self.facing_angle = 0.0                                        # 立绘朝向
-        self.bob_t = random.random() * 6.28                            # 呼吸浮动相位
+        self.facing_angle = 0.0
+        self.bob_t = random.random() * 6.28
 
-        self._rebuild_cells()
         self._init_path()
 
     # ------------------------------------------------------------ 初始化
     def _init_path(self):
-        """初始路径：沿身体反方向铺一条直线，免得开局尾椎全挤在头上"""
-        hx, hy = self.grid_pos
-        total = S.BODY_SEG_LEN * (self.body_length + 2)
+        """初始路径：沿身后铺一条直线，免得开局尾椎全挤在身上"""
+        hx, hy = self.pos
+        total = int(self.seg_len * (self.body_length + 2))
         self.path = []
         for i in range(total, -1, -1):
-            self.path.append((hx * S.CELL_SIZE + S.CELL_SIZE / 2 - self.direction[0] * i,
-                              hy * S.CELL_SIZE + S.CELL_SIZE / 2 - self.direction[1] * i))
-
-    def _rebuild_cells(self):
-        """
-        根据当前格子位置，重建身体占据的格子列表（用于碰撞与渲染定位）。
-
-        注意：沿移动方向反推格子时要做去重。
-        如果不去重，转弯瞬间会出现两个身体节指向同一格，
-        导致 is_self_hit() 误判成"撞到自己"，白扣血。
-        """
-        self.cells = []
-        seen = set()
-        cx, cy = round(self.grid_pos[0]), round(self.grid_pos[1])
-        dx, dy = self.direction
-        for i in range(self.body_length):
-            cell = (cx - dx * i, cy - dy * i)
-            if cell in seen:
-                continue
-            seen.add(cell)
-            self.cells.append(cell)
+            self.path.append((hx - self.aim_dir[0] * i, hy - self.aim_dir[1] * i))
 
     # ---------------------------------------------------------------- 移动
-    def set_direction(self, nd):
-        """设置方向。禁止 180 度掉头（会直接撞死自己）"""
-        if (nd[0] == -self.direction[0] and nd[1] == -self.direction[1]):
-            return
-        self.next_direction = nd
+    def start_dodge(self, direction):
+        """开始闪避：direction 为归一化方向。返回是否成功触发。"""
+        if self.dodge_cd > 0 or self.dodge_t > 0:
+            return False
+        dx, dy = direction
+        if abs(dx) < 1e-6 and abs(dy) < 1e-6:
+            dx, dy = self.aim_dir
+        d = math.hypot(dx, dy) or 1.0
+        self.dodge_dir = [dx / d, dy / d]
+        self.dodge_t = S.DODGE_TIME
+        self.dodge_cd = S.DODGE_CD
+        self.dodge_from = list(self.pos)
+        self.invincible = max(self.invincible, S.DODGE_IFRAME)
+        return True
 
-    def update(self, dt, grid_cols, grid_rows):
-        """每帧更新：按固定节奏走格子，同时把路径点记下来"""
+    def update(self, dt, world_w, world_h, move_dir, speed, dodge_dist=None):
+        """
+        每帧更新：闪避位移优先，否则按 move_dir 自由移动，最后钳制在世界内。
+        move_dir 应为归一化向量；speed 为世界像素/秒。
+        """
         if not self.alive:
             return
         if self.invincible > 0:
             self.invincible -= dt
+        if self.dodge_cd > 0:
+            self.dodge_cd = max(0.0, self.dodge_cd - dt)
 
-        self.prev_grid_pos = list(self.grid_pos)
-        self.move_timer += dt
+        self.move_dir = list(move_dir)
 
-        while self.move_timer >= S.MOVE_INTERVAL:
-            self.move_timer -= S.MOVE_INTERVAL
-            self.direction = self.next_direction
-            nx = self.grid_pos[0] + self.direction[0]
-            ny = self.grid_pos[1] + self.direction[1]
-
-            if nx < 0 or ny < 0 or nx >= grid_cols or ny >= grid_rows:
-                self._on_wall_hit(grid_cols, grid_rows)
-                # 撞完墙这一 tick 不再前进，避免连撞
-                continue
-
-            self.grid_pos = [float(nx), float(ny)]
-            self._rebuild_cells()
-
-    def _on_wall_hit(self, cols, rows):
-        """
-        撞墙处理。
-
-        踩过的坑：不能简单掉头，否则下一 tick 立刻撞上对面的墙，
-        每 0.16 秒掉 1 血，两秒就死了。
-        正确做法是原地改成「沿墙」方向，把玩家留在墙边安全走。
-        """
-        self.take_damage(1)
-
-        cx = min(max(round(self.grid_pos[0]), 0), cols - 1)
-        cy = min(max(round(self.grid_pos[1]), 0), rows - 1)
-        self.grid_pos = [float(cx), float(cy)]
-
-        # 优先挑一个「能走出去」的方向：排除掉头，也排除会立刻再次撞墙的
-        back = (-self.direction[0], -self.direction[1])
-        safe = []
-        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-            if (dx, dy) == back:
-                continue
-            px, py = cx + dx, cy + dy
-            if 0 <= px < cols and 0 <= py < rows:
-                safe.append((dx, dy))
-
-        if safe:
-            # 优先往「离墙更远」的方向走，避免贴着墙来回蹭
-            def dist_to_wall(d):
-                px, py = cx + d[0], cy + d[1]
-                return min(px, py, cols - 1 - px, rows - 1 - py)
-            turn = [d for d in safe if d != self.direction] or safe
-            self.direction = max(turn, key=dist_to_wall)
+        if self.dodge_t > 0:
+            # 闪避：在 DODGE_TIME 内匀速冲过 dodge_dist
+            dist = dodge_dist if dodge_dist is not None else S.DODGE_DIST
+            step = dist / max(1e-6, S.DODGE_TIME) * dt
+            self.pos[0] += self.dodge_dir[0] * step
+            self.pos[1] += self.dodge_dir[1] * step
+            self.dodge_t = max(0.0, self.dodge_t - dt)
+            self.vel = [self.dodge_dir[0] * dist / S.DODGE_TIME,
+                        self.dodge_dir[1] * dist / S.DODGE_TIME]
         else:
-            self.direction = back          # 极端情况兜底
+            mx, my = self.move_dir
+            if abs(mx) > 1e-6 or abs(my) > 1e-6:
+                d = math.hypot(mx, my) or 1.0
+                mx, my = mx / d, my / d
+                self.aim_dir = [mx, my]
+            self.pos[0] += mx * speed * dt
+            self.pos[1] += my * speed * dt
+            self.vel = [mx * speed, my * speed]
 
-        self.next_direction = self.direction
-        # 撞墙后给一段短暂保护，防止玩家贴墙时被连续扣血扣死
-        self.invincible = max(self.invincible, S.WALL_IFRAME)
-        self._rebuild_cells()
-        self._init_path()                  # 路径重建，尾椎别挂在墙外
+        # 钳制在世界内（留一点边距，别让立绘卡出界）
+        m = self.radius
+        self.pos[0] = min(max(self.pos[0], m), max(m, world_w - m))
+        self.pos[1] = min(max(self.pos[1], m), max(m, world_h - m))
 
-    def is_self_hit(self):
-        """头撞到自己身体"""
-        head = self.cells[0]
-        return head in self.cells[1:]
-
-    def take_damage(self, amount):
-        if self.invincible > 0 or not self.alive:
-            return False
-        self.hp -= amount
-        self.invincible = S.IFRAME_TIME
-        if self.hp <= 0:
-            self.hp = 0
-            self.alive = False
-        return True
-
-    # ---------------------------------------------------------------- 成长
-    def gain_exp(self, amount):
-        """加经验，可能连升多级。返回升了几级。"""
-        if self.level >= S.LEVEL_MAX:
-            return 0
-        self.exp += amount
-        gained = 0
-        while self.exp >= self.exp_needed() and self.level < S.LEVEL_MAX:
-            self.exp -= self.exp_needed()
-            self.level += 1
-            gained += 1
-        if gained:
-            self.on_level_up(gained)
-        return gained
-
-    def exp_needed(self):
-        return S.EXP_PER_LEVEL + (self.level - 1) * 12
-
-    def on_level_up(self, gained):
-        """
-        升级钩子。真正的技能解锁由战斗场景里的 SkillEngine 处理
-        （它需要知道场上情况才能干活），这里只留一个回调位，
-        方便别的场景复用 SnakeGirl 时也能收到通知。
-        """
-        if self.on_level_up_cb:
-            self.on_level_up_cb(self.level, gained)
-
-    @property
-    def attack(self):
-        return S.ATK_BASE + (self.level - 1) * S.ATK_PER_LEVEL
-
-    # ------------------------------------------------------------ 渲染坐标
     @property
     def draw_pos(self):
-        """
-        渲染位置 = 上一格和当前格之间插值。
-        不做插值的话，蛇会一格一格瞬移，4K 下观感很廉价。
-        """
-        t = min(1.0, self.move_timer / S.MOVE_INTERVAL)
-        cx = (self.prev_grid_pos[0] + (self.grid_pos[0] - self.prev_grid_pos[0]) * t) * S.CELL_SIZE + S.CELL_SIZE / 2
-        cy = (self.prev_grid_pos[1] + (self.grid_pos[1] - self.prev_grid_pos[1]) * t) * S.CELL_SIZE + S.CELL_SIZE / 2
-        return cx, cy
+        """渲染位置 = 世界像素（battle 再减 cam）"""
+        return (self.pos[0], self.pos[1])
 
     def update_path(self, dt):
-        """把渲染位置追加进路径，并裁掉过长的部分"""
-        px, py = self.draw_pos
+        """把当前位置追加进路径，并裁掉过长的部分（装饰尾迹用）"""
+        px, py = self.pos
         if not self.path or math.hypot(px - self.path[-1][0], py - self.path[-1][1]) > 1.5:
             self.path.append((px, py))
-        max_pts = S.BODY_SEG_LEN * (self.body_length + 3)
+        max_pts = int(self.seg_len * (self.body_length + 3))
         if len(self.path) > max_pts:
             self.path = self.path[-max_pts:]
 
@@ -237,9 +157,8 @@ class SnakeGirl:
         if len(self.path) < 2:
             return []
         pts = []
-        seg_len = S.BODY_SEG_LEN
+        seg_len = self.seg_len
         n = self.body_length
-        # 从路径末端（也就是蛇头）往回走
         for i in range(1, n + 1):
             dist = seg_len * i
             p = self._point_at_distance_from_head(dist)
@@ -270,16 +189,84 @@ class SnakeGirl:
         return None
 
     def facing_update(self):
-        self.facing_angle = angle_between(
-            (0, 0), (self.direction[0], self.direction[1])
-        )
+        self.facing_angle = angle_between((0, 0), (self.aim_dir[0], self.aim_dir[1]))
+
+    # ---------------------------------------------------------------- 承伤
+    def take_damage(self, amount):
+        if self.invincible > 0 or not self.alive:
+            return False
+        self.hp -= amount
+        self.invincible = S.IFRAME_TIME
+        if self.hp <= 0:
+            self.hp = 0
+            self.alive = False
+        return True
+
+    # ---------------------------------------------------------------- 成长
+    def gain_exp(self, amount):
+        """加经验，可能连升多级。返回升了几级。"""
+        if self.level >= S.LEVEL_MAX:
+            return 0
+        self.exp += amount
+        gained = 0
+        while self.exp >= self.exp_needed() and self.level < S.LEVEL_MAX:
+            self.exp -= self.exp_needed()
+            self.level += 1
+            gained += 1
+        if gained:
+            self.on_level_up(gained)
+        return gained
+
+    def exp_needed(self):
+        return S.EXP_PER_LEVEL + (self.level - 1) * 12
+
+    def on_level_up(self, gained):
+        if self.on_level_up_cb:
+            self.on_level_up_cb(self.level, gained)
+
+    @property
+    def attack(self):
+        return S.ATK_BASE + (self.level - 1) * S.ATK_PER_LEVEL
 
 
 # ======================================================================
-#  掉落物
+#  玩家普攻弹丸
+# ======================================================================
+class PlayerBullet:
+    """自动普攻发射的弹丸。命中最近的怪即消失。pos/vel 世界像素。"""
+
+    def __init__(self, pos, vel, dmg, radius, life=None, color=(255, 210, 230),
+                 pierce=0):
+        self.pos = [float(pos[0]), float(pos[1])]
+        self.vel = [float(vel[0]), float(vel[1])]
+        self.dmg = dmg
+        self.radius = float(radius)
+        self.life = S.ATK_BULLET_LIFE if life is None else float(life)
+        self.color = color
+        self.pierce = pierce          # 还能穿透几只怪（大招用）
+        self.alive = True
+        self.hit_ids = set()
+
+    def update(self, dt, world_w, world_h):
+        self.life -= dt
+        self.pos[0] += self.vel[0] * dt
+        self.pos[1] += self.vel[1] * dt
+        if self.life <= 0:
+            self.alive = False
+            return
+        if (self.pos[0] < -40 or self.pos[0] > world_w + 40
+                or self.pos[1] < -40 or self.pos[1] > world_h + 40):
+            self.alive = False
+
+
+# ======================================================================
+#  掉落物 / 地图道具
 # ======================================================================
 class Drop:
-    """地上可以捡的东西：经验果 / 能量结晶 / 星尘 / 爱心"""
+    """
+    地上可以捡的东西：经验果 / 能量结晶 / 星尘 / 爱心。
+    tier = 品质档（1..ITEM_TIER_MAX），越高经验越多、体积越大、颜色越亮。
+    """
 
     KINDS = {
         "exp":      {"asset": "items/exp_berry.png",      "size": 44, "color": (240, 186, 96)},
@@ -288,113 +275,120 @@ class Drop:
         "heart":    {"asset": "items/exp_berry.png",      "size": 40, "color": (226, 84, 110)},
     }
 
-    def __init__(self, kind, cell):
+    def __init__(self, kind, pos, tier=1):
         self.kind = kind
-        self.cell = cell
+        self.pos = [float(pos[0]), float(pos[1])]
+        self.tier = max(1, min(S.ITEM_TIER_MAX, int(tier)))
         self.alive = True
-        cfg = self.KINDS[kind]
+        cfg = self.KINDS.get(kind, self.KINDS["exp"])
         self.asset = cfg["asset"]
-        self.size = cfg["size"]
+        self.base_size = cfg["size"]
         self.color = cfg["color"]
         self.t = random.random() * 6.28
-        cx = cell[0] * S.CELL_SIZE + S.CELL_SIZE / 2
-        cy = cell[1] * S.CELL_SIZE + S.CELL_SIZE / 2
-        self.pos = (cx, cy)
+        self.magnet = False
 
-    def update(self, dt):
+    @property
+    def size(self):
+        """品质越高越大（+12% / 档）"""
+        return int(self.base_size * (1.0 + 0.12 * (self.tier - 1)))
+
+    def exp_value(self):
+        """经验果随品质档放大经验值"""
+        if self.kind != "exp":
+            return 0
+        return int(S.ITEM_EXP_BASE * (S.ITEM_TIER_EXP_MULT ** (self.tier - 1)))
+
+    def update(self, dt, player_pos, magnet_radius, pickup_radius):
+        """浮动动画 + 磁吸：进入磁吸半径就飞向玩家，够近则标记可拾取。"""
         self.t += dt * 2.6
+        dx = player_pos[0] - self.pos[0]
+        dy = player_pos[1] - self.pos[1]
+        dist = math.hypot(dx, dy)
+        if dist <= magnet_radius:
+            self.magnet = True
+        if self.magnet and dist > 1.0:
+            # 越近吸得越快
+            pull = 620.0 + (magnet_radius - min(dist, magnet_radius)) * 3.0
+            self.pos[0] += dx / dist * pull * dt
+            self.pos[1] += dy / dist * pull * dt
+            dist = math.hypot(player_pos[0] - self.pos[0],
+                              player_pos[1] - self.pos[1])
+        return dist <= pickup_radius       # 返回是否已可拾取
 
     @property
     def draw_pos(self):
-        """上下浮动，看起来像在呼吸"""
         return (self.pos[0], self.pos[1] + math.sin(self.t) * 4)
 
 
 # ======================================================================
-#  小怪
+#  小怪（自动索敌）
 # ======================================================================
 class Mob:
     """
-    小怪。会走动，也会追人。
-    碰到玩家扣血，被玩家撞也会掉血。
-
-    难度成长体现在三处：
-      1. 血量变厚
-      2. 数量变多
-      3. 追击欲望变强（chase 概率随时间提升）
+    小怪。始终朝玩家直线追击，带轻微个体速度差与分离力防重叠。
+    碰到玩家扣血，被弹丸/技能命中掉血。
     """
 
-    def __init__(self, cell, hp_mult=1.0, speed_mult=1.0, chase=0.0):
-        # 每只怪一个稳定 id，荆棘计冷却要用（不能拿格子坐标当 key，
-        # 因为怪会移动，换格子就会重复触发伤害）
+    def __init__(self, pos, hp_mult=1.0, speed=100.0, atk=1, radius=None):
         self.uid = next(_UID_GEN)
-        self.cell = [float(cell[0]), float(cell[1])]
-        self.prev_cell = list(self.cell)
-        self.target = list(self.cell)
-        self.hp_max = int(S.MOB_HP * hp_mult)
+        self.pos = [float(pos[0]), float(pos[1])]
+        self.vel = [0.0, 0.0]
+        self.hp_max = max(1, int(S.MOB_HP * hp_mult))
         self.hp = self.hp_max
         self.alive = True
-        self.move_timer = 0.0
-        self.interval = 0.62 / speed_mult
+        self.speed = float(speed)               # 世界像素/秒（battle 按时间注入）
+        self.atk = int(atk)                     # 碰触伤害
+        self.radius = float(radius if radius is not None else S.MOB_RADIUS)
         self.hit_flash = 0.0
-        self.knock = (0.0, 0.0)
+        self.knock = [0.0, 0.0]
         self.t = random.random() * 6.28
-        self.chase = chase                      # 0~1，越高越倾向朝玩家走
+        self.jitter = random.uniform(0.85, 1.15)  # 个体速度差，避免整齐划一
 
-    def pick_target(self, cols, rows, avoid, player_cell=None):
-        """
-        选下一个目标格。
-        chase 概率决定"追玩家"还是"随机游走"。
-        """
-        dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-        cx, cy = round(self.cell[0]), round(self.cell[1])
-
-        if player_cell is not None and random.random() < self.chase:
-            # 追击：朝玩家方向挑一个能走的格子
-            px, py = player_cell
-            dx = 0 if px == cx else (1 if px > cx else -1)
-            dy = 0 if py == cy else (1 if py > cy else -1)
-            prefer = []
-            if abs(px - cx) >= abs(py - cy):
-                prefer = [(dx, 0), (0, dy)]
-            else:
-                prefer = [(0, dy), (dx, 0)]
-            for d in prefer + dirs:
-                if d == (0, 0):
-                    continue
-                nx, ny = cx + d[0], cy + d[1]
-                if 0 <= nx < cols and 0 <= ny < rows and (nx, ny) not in avoid:
-                    self.target = [float(nx), float(ny)]
-                    return
-
-        random.shuffle(dirs)
-        for dx, dy in dirs:
-            nx, ny = cx + dx, cy + dy
-            if 0 <= nx < cols and 0 <= ny < rows and (nx, ny) not in avoid:
-                self.target = [float(nx), float(ny)]
-                return
-
-    def update(self, dt, cols, rows, avoid, player_cell=None):
+    def update(self, dt, player_pos, world_w, world_h, mobs=None):
         if self.hit_flash > 0:
             self.hit_flash -= dt
         self.t += dt * 3.0
-        kx, ky = self.knock
-        if abs(kx) > 0.01 or abs(ky) > 0.01:
-            kx -= kx * min(1.0, dt * 7) * 0.75
-            ky -= ky * min(1.0, dt * 7) * 0.75
-            self.knock = (kx, ky)
 
-        self.prev_cell = list(self.cell)
-        self.move_timer += dt
-        if self.move_timer >= self.interval:
-            self.move_timer = 0.0
-            self.prev_cell = list(self.cell)
-            if (abs(self.cell[0] - self.target[0]) < 0.01
-                    and abs(self.cell[1] - self.target[1]) < 0.01):
-                self.pick_target(cols, rows, avoid, player_cell)
-            tx, ty = self.target
-            self.cell[0] += max(-1, min(1, tx - self.cell[0]))
-            self.cell[1] += max(-1, min(1, ty - self.cell[1]))
+        # 击退衰减
+        kx, ky = self.knock
+        if abs(kx) > 0.5 or abs(ky) > 0.5:
+            fade = min(1.0, dt * 8)
+            kx -= kx * fade
+            ky -= ky * fade
+            self.knock = [kx, ky]
+            self.pos[0] += kx * dt * 6
+            self.pos[1] += ky * dt * 6
+
+        # 追击玩家
+        dx = player_pos[0] - self.pos[0]
+        dy = player_pos[1] - self.pos[1]
+        d = math.hypot(dx, dy)
+        if d > 1.0:
+            sp = self.speed * self.jitter
+            self.pos[0] += dx / d * sp * dt
+            self.pos[1] += dy / d * sp * dt
+
+        # 分离力：和同伴太近就互相推开，避免叠成一个点
+        if mobs:
+            sx = sy = 0.0
+            for o in mobs:
+                if o is self or not o.alive:
+                    continue
+                ox = self.pos[0] - o.pos[0]
+                oy = self.pos[1] - o.pos[1]
+                od = math.hypot(ox, oy)
+                mind = self.radius + o.radius
+                if 0 < od < mind:
+                    f = (mind - od) / mind
+                    sx += ox / od * f
+                    sy += oy / od * f
+            self.pos[0] += sx * 60 * dt
+            self.pos[1] += sy * 60 * dt
+
+        # 钳制在世界内
+        m = self.radius
+        self.pos[0] = min(max(self.pos[0], -m), world_w + m)
+        self.pos[1] = min(max(self.pos[1], -m), world_h + m)
 
     def take_damage(self, amount):
         self.hp -= amount
@@ -403,17 +397,12 @@ class Mob:
             self.alive = False
         return not self.alive
 
-    def knockback(self, from_pos, strength=0.55):
-        cx = self.draw_pos[0]
-        cy = self.draw_pos[1]
-        dx = cx - from_pos[0]
-        dy = cy - from_pos[1]
+    def knockback(self, from_pos, strength=140.0):
+        dx = self.pos[0] - from_pos[0]
+        dy = self.pos[1] - from_pos[1]
         d = math.hypot(dx, dy) or 1.0
-        self.knock = (dx / d * strength, dy / d * strength)
+        self.knock = [dx / d * strength, dy / d * strength]
 
     @property
     def draw_pos(self):
-        t = min(1.0, self.move_timer / max(0.01, self.interval))
-        cx = (self.prev_cell[0] + (self.cell[0] - self.prev_cell[0]) * t) * S.CELL_SIZE + S.CELL_SIZE / 2
-        cy = (self.prev_cell[1] + (self.cell[1] - self.prev_cell[1]) * t) * S.CELL_SIZE + S.CELL_SIZE / 2
-        return (cx + self.knock[0], cy + self.knock[1])
+        return (self.pos[0], self.pos[1])
