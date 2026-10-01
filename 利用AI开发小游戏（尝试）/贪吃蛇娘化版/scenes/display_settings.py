@@ -1,6 +1,7 @@
 import pygame
 from core.scene import Scene
 from ui.button import Button
+from ui.slider import Slider
 from settings import (
     COLOR_BG, COLOR_ACCENT, COLOR_TEXT, COLOR_TEXT_DIM,
     COLOR_BUTTON_BG, FONT_SIZE_TITLE, FONT_SIZE_BODY, FONT_SIZE_SMALL
@@ -12,6 +13,7 @@ class DisplaySettingsScene(Scene):
 
     def enter(self):
         self.assets = self.game.assets
+        self.game.audio.play_bgm("menu")
         self.font_title = self.assets.get_font(self.s(FONT_SIZE_TITLE), bold=True)
         self.font_body = self.assets.get_font(self.s(FONT_SIZE_BODY))
         self.font_small = self.assets.get_font(self.s(FONT_SIZE_SMALL))
@@ -49,9 +51,25 @@ class DisplaySettingsScene(Scene):
             )
             self.res_buttons.append(((w, h), btn))
 
+        # 音量滑块：拖动即时生效（不写盘），松手才落盘一次，避免高频 IO
+        st = self.game.save_manager.get("settings", {}) or {}
+        slider_w, slider_h, slider_y = self.s(430), self.s(44), self.s(520)
+        self.bgm_slider = Slider(
+            "音乐", center_x - self.s(455), slider_y, slider_w, slider_h,
+            value=float(st.get("bgm_volume", 0.7)), font_size=self.s(FONT_SIZE_SMALL),
+            on_change=lambda v: self.game.audio.set_bgm_volume(v, persist=False),
+            on_release=self.game.audio.save_volumes,
+        )
+        self.sfx_slider = Slider(
+            "音效", center_x + self.s(25), slider_y, slider_w, slider_h,
+            value=float(st.get("sfx_volume", 0.8)), font_size=self.s(FONT_SIZE_SMALL),
+            on_change=lambda v: self.game.audio.set_sfx_volume(v, persist=False),
+            on_release=self.game.audio.save_volumes,
+        )
+
         # 恢复默认
         self.apply_default_btn = Button(
-            "恢复默认（自动适配）", center_x - self.s(160), self.s(550),
+            "恢复默认（自动适配）", center_x - self.s(160), self.s(600),
             self.s(320), self.s(55),
             font_size=self.s(FONT_SIZE_SMALL), on_click=self._reset_default
         )
@@ -69,6 +87,8 @@ class DisplaySettingsScene(Scene):
                 btn.handle_event(event)
             for _, btn in self.res_buttons:
                 btn.handle_event(event)
+            self.bgm_slider.handle_event(event)
+            self.sfx_slider.handle_event(event)
 
     def update(self, dt):
         pass
@@ -115,13 +135,25 @@ class DisplaySettingsScene(Scene):
                 btn.bg_color = COLOR_BUTTON_BG
             btn.draw(screen)
 
+        audio_label = self.font_body.render("【音频音量】", True, COLOR_TEXT)
+        screen.blit(audio_label, audio_label.get_rect(center=(center_x, self.s(488))))
+        # 方向键热键在主循环里改的是 AudioManager 的值，这里让滑块跟随显示，
+        # 避免“按了热键音量变了、滑块却停在原位”。拖拽中的滑块不覆盖，免得打架。
+        a = self.game.audio
+        if not self.bgm_slider.dragging:
+            self.bgm_slider.value = a.bgm_volume
+        if not self.sfx_slider.dragging:
+            self.sfx_slider.value = a.sfx_volume
+        self.bgm_slider.draw(screen)
+        self.sfx_slider.draw(screen)
+
         self.apply_default_btn.draw(screen)
 
         hint = self.font_small.render(
-            "提示: 全屏/无边框模式将使用屏幕原生分辨率  |  按 ESC 返回  |  F11 快速切换全屏",
+            "提示: ↑/↓ 音乐音量  ←/→ 音效音量（±10）  |  滑块拖动即时保存  |  ESC 返回  |  F11 全屏",
             True, COLOR_TEXT_DIM
         )
-        screen.blit(hint, hint.get_rect(center=(center_x, self.s(640))))
+        screen.blit(hint, hint.get_rect(center=(center_x, self.s(690))))
 
         self.back_btn.draw(screen)
 

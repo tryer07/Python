@@ -36,6 +36,7 @@ class CharacterSelectScene(Scene):
 
     def enter(self):
         self.assets = self.game.assets
+        self.game.audio.play_bgm("menu")
         self.font_title = self.assets.get_font(self.s(FONT_SIZE_TITLE), bold=True)
         self.font_sub = self.assets.get_font(self.s(FONT_SIZE_SUBTITLE))
         self.font_body = self.assets.get_font(self.s(FONT_SIZE_BODY))

@@ -11,6 +11,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 SAVES_DIR = os.path.join(BASE_DIR, "saves")
+AUDIO_DIR = os.path.join(ASSETS_DIR, "audio")
+
+# ==================== 音频配置 ====================
+AUDIO_ENABLED = True            # 总开关：关掉后 AudioManager 整体静默
+AUDIO_CHANNELS = 16             # 同时可叠加的 SFX 通道数
+BGM_FADE_MS = 600               # BGM 切换淡入淡出时长（毫秒）
+# 调试用音量热键步长：↑/↓ 调 BGM、←/→ 调 SFX，每按一下 ±这么多（0~100 刻度）。
+# 战斗进行中方向键要留给移动，此时热键自动让路；暂停菜单/其它界面才生效。
+VOLUME_HOTKEY_STEP = 10
 
 # ==================== 分辨率配置 ====================
 # 设计基准分辨率（UI 布局以这个为参考）

@@ -18,6 +18,7 @@ class MainMenuScene(Scene):
 
     def enter(self):
         self.assets = self.game.assets
+        self.game.audio.play_bgm("menu")
         self.font_title = self.assets.get_font(self.s(FONT_SIZE_TITLE), bold=True)
         self.font_subtitle = self.assets.get_font(self.s(FONT_SIZE_SUBTITLE))
         self.font_body = self.assets.get_font(self.s(FONT_SIZE_BODY))
@@ -44,6 +45,10 @@ class MainMenuScene(Scene):
         ]
 
         self.time = 0.0
+
+        # 角色名 / 场景名一次性读进缓存，避免 draw() 每帧重复 open() 而泄漏文件句柄
+        self._char_names = self._load_names("characters.json")
+        self._scene_names = self._load_names("scenes.json")
 
     def exit(self):
         pass
@@ -81,9 +86,10 @@ class MainMenuScene(Scene):
         char_id = save.get("selected_character", "sakura")
         scene_id = save.get("selected_scene", "campus_garden")
 
+        char_name = self._char_names.get(char_id, char_id)
+        scene_name = self._scene_names.get(scene_id, scene_id)
         t = self.font_small.render(
-            f"出战角色：{self._char_name(char_id)}    ·    "
-            f"当前场景：{self._scene_name(scene_id)}", True, COLOR_TEXT_DIM)
+            f"出战角色：{char_name}    ·    当前场景：{scene_name}", True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(cx, self.s(336))))
 
         for b in self.buttons:
@@ -125,33 +131,29 @@ class MainMenuScene(Scene):
         screen.blit(surf, rect)
 
     # ---------------------------------------------------------------- 工具
-    def _char_name(self, char_id):
-        import json
-        import os
-        from settings import DATA_DIR
-        path = os.path.join(DATA_DIR, "characters.json")
-        if os.path.exists(path):
-            try:
-                for ch in json.load(open(path, encoding="utf-8")):
-                    if ch.get("id") == char_id:
-                        return ch.get("name", char_id)
-            except (json.JSONDecodeError, IOError):
-                pass
-        return char_id
+    @staticmethod
+    def _load_names(filename):
+        """从 data/<filename> 一次性读出 {id: name} 映射。
 
-    def _scene_name(self, scene_id):
+        旧写法在 draw() 里每帧 open() 且不关闭，会持续泄漏文件句柄；
+        改为进入场景时读一次缓存起来。兼容 json 为列表或 {"characters": [...]} 字典。"""
         import json
         import os
         from settings import DATA_DIR
-        path = os.path.join(DATA_DIR, "scenes.json")
+        result = {}
+        path = os.path.join(DATA_DIR, filename)
         if os.path.exists(path):
             try:
-                for sc in json.load(open(path, encoding="utf-8")):
-                    if sc.get("id") == scene_id:
-                        return sc.get("name", scene_id)
-            except (json.JSONDecodeError, IOError):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                items = data.get("characters", data) if isinstance(data, dict) else data
+                if isinstance(items, list):
+                    for it in items:
+                        if isinstance(it, dict) and "id" in it:
+                            result[it["id"]] = it.get("name", it["id"])
+            except (json.JSONDecodeError, IOError, AttributeError, TypeError):
                 pass
-        return scene_id
+        return result
 
     # ---------------------------------------------------------------- 回调
     def _go(self, scene_name):

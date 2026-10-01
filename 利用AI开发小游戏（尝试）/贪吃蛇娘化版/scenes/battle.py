@@ -29,6 +29,7 @@ import settings as S
 from core.scene import Scene
 from game_logic.entities import Drop, Mob, SnakeGirl
 from game_logic.skills import SkillEngine, all_skill_ids, skill_info
+from ui.button import Button
 from settings import (
     COLOR_ACCENT, COLOR_ACCENT_DARK, COLOR_BG, COLOR_BG_LIGHT, COLOR_DANGER,
     COLOR_EXP, COLOR_GOLD, COLOR_GOOD, COLOR_HP, COLOR_TEXT, COLOR_TEXT_DIM,
@@ -42,7 +43,15 @@ class BattleScene(Scene):
 
     def enter(self):
         self.assets = self.game.assets
+        self._setup_view()
+        self.reset()
 
+    def on_resize(self):
+        """拖拽改变窗口大小时：只重算字体与布局，绝不重置战斗进度"""
+        self._setup_view()
+
+    def _setup_view(self):
+        """按当前窗口尺寸/缩放重算字体、网格与左右面板布局（enter 与 resize 共用）"""
         # 字体全部按当前缩放取（self.s 是 Scene 基类给的缩放换算）
         self.f_tiny = self.assets.get_font(self.s(FONT_SIZE_SMALL - 2))
         self.f_small = self.assets.get_font(self.s(FONT_SIZE_SMALL))
@@ -66,10 +75,11 @@ class BattleScene(Scene):
         # 不要把这里的数字拍脑袋写死 —— 用"最长的一行内容实际有多宽"来定。
         # 左面板一行技能 = 图标 + 技能名 + 状态（Lv.x 或 ◆◆◆），三者都要放得下。
         pad = self.s(10)
-        icon_w = self.s(30)
+        icon_w = self.s(34)
         name_w = max(self.f_tiny.size(skill_info(s)["name"])[0] for s in all_skill_ids())
         state_w = self.f_tiny.size("Lv.10")[0]
-        skill_row_w = icon_w + name_w + state_w + self.s(24)
+        # 图标 + 间距 + 名字 + 间距 + 状态 + 两侧留白
+        skill_row_w = icon_w + self.s(8) + name_w + self.s(8) + state_w + pad * 2
         # 右面板一行 = 大号数字，留足余量
         num_w = self.f_sub.size("99999")[0] + pad * 2
         content_min = max(skill_row_w, num_w)
@@ -94,7 +104,21 @@ class BattleScene(Scene):
         # 但用代码判一下就是确定的。窗口太小时自动把面板压到可接受范围。
         self._fit_layout(free_left, free_right)
 
-        self.reset()
+        # ---- 暂停菜单按钮（居中竖排）----
+        # 放在 _setup_view 里建，拖窗口 on_resize 重算布局时按钮会跟着居中。
+        bw, bh = self.s(300), self.s(58)
+        bx = self.W // 2 - bw // 2
+        by = self.H // 2 - self.s(30)
+        gap = bh + self.s(14)
+        self.resume_btn = Button("继续  (ESC)", bx, by, bw, bh,
+                                 font_size=self.s(FONT_SIZE_BODY),
+                                 on_click=self._toggle_pause)
+        self.restart_btn = Button("重开本局", bx, by + gap, bw, bh,
+                                  font_size=self.s(FONT_SIZE_BODY),
+                                  on_click=self.reset)
+        self.quit_btn = Button("返回主菜单", bx, by + gap * 2, bw, bh,
+                               font_size=self.s(FONT_SIZE_BODY),
+                               on_click=lambda: self.game.change_scene("main_menu"))
 
     def _fit_layout(self, free_left, free_right):
         """
@@ -122,12 +146,19 @@ class BattleScene(Scene):
     def exit(self):
         pass
 
+    def wants_movement_keys(self):
+        """只有「进行中」才占用方向键（移动）；暂停或结算时让给音量热键。"""
+        return not self.paused and not self.finished
+
     # ---------------------------------------------------------------- 重置
     def reset(self):
+        # 进入 / 重开战斗都从这里走：切到战斗 BGM（幂等，拖窗口重进也不会重启）
+        self.game.audio.play_bgm("battle")
         # 角色 / 场景从存档里取，这样"角色选择""场景选择"才真的生效
         char_id = self.game.save_manager.get("selected_character", "sakura")
         self.scene_id = self.game.save_manager.get("selected_scene", "campus_garden")
         self.snake_name, self.snake_rarity = self._char_label(char_id)
+        self._load_skin(char_id, self.scene_id)
 
         self.snake = SnakeGirl(char_id, start_cell=(6, GRID_ROWS // 2), direction=(1, 0))
         self.snake.facing_update()
@@ -152,16 +183,19 @@ class BattleScene(Scene):
         self.shake = 0.0
         self.flash = 0.0
         self.finished = False
+        self.paused = False
 
         for _ in range(6):
             self._spawn_drop()
 
     def _on_snake_level_up(self, level, gained):
         """蛇升级了 → 同步技能解锁，并弹提示"""
+        self.game.audio.play("level_up")
         newly = self.skills.sync_unlock(level)
         for sid in newly:
             self.skill_toast.append({"sid": sid, "life": 3.0})
             self.flash = max(self.flash, 0.4)
+            self.game.audio.play("skill_unlock")
 
     # -------------------------------------------------------- 技能系统辅助
     def _char_label(self, char_id):
@@ -182,6 +216,47 @@ class BattleScene(Scene):
         except (IOError, json.JSONDecodeError, AttributeError, TypeError):
             pass
         return char_id, "Sakura"
+
+    # -------------------------------------------------------- 角色 / 场景外观
+    def _load_skin(self, char_id, scene_id):
+        """一次性读出发战角色的三段贴图与场景背景。
+
+        这是让"自己新增的蛇娘 / 地图"在战斗里真正显示出来的关键：
+        战斗不再写死樱落 + 校园庭院，而是按 characters.json / scenes.json 取图。
+        任何字段缺失或为空都回退到默认（樱落 + 校园庭院），绝不崩、绝不开天窗。
+        """
+        default_head = "characters/sakura/head.png"
+        default_body = "characters/sakura/body_seg.png"
+        default_tail = "characters/sakura/tail_tip.png"
+        default_bg = "backgrounds/campus_garden.png"
+
+        char = self._find_in_json("characters.json", "characters", char_id)
+        rarity = char.get("rarity", "")
+        if rarity:
+            self.snake_rarity = f"{self.snake_name} · {rarity}"
+        self.char_head = char.get("head") or default_head
+        self.char_body = char.get("body_seg") or default_body
+        self.char_tail = char.get("tail_tip") or default_tail
+
+        scene = self._find_in_json("scenes.json", "scenes", scene_id)
+        self.scene_bg = scene.get("bg") or default_bg
+
+    @staticmethod
+    def _find_in_json(filename, wrap_key, want_id):
+        """从 data/<filename> 按 id 找一条记录，找不到返回空 dict。
+        兼容 json 为列表或 {wrap_key: [...]} 字典两种写法。"""
+        try:
+            path = os.path.join(S.DATA_DIR, filename)
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            items = raw.get(wrap_key, raw) if isinstance(raw, dict) else raw
+            if isinstance(items, list):
+                for it in items:
+                    if isinstance(it, dict) and it.get("id") == want_id:
+                        return it
+        except (IOError, json.JSONDecodeError, AttributeError, TypeError):
+            pass
+        return {}
 
     @property
     def skilled(self):
@@ -268,7 +343,7 @@ class BattleScene(Scene):
 
     # ---------------------------------------------------------------- 更新
     def update(self, dt):
-        if self.finished:
+        if self.finished or self.paused:
             return
 
         self.elapsed += dt
@@ -320,6 +395,8 @@ class BattleScene(Scene):
 
         if not self.snake.alive:
             self.finished = True
+            self.game.audio.play("gameover")
+            self.game.audio.play_bgm("gameover")
             self.game.save_manager.add_stardust(self.stardust)
             self.game.save_manager.record_run(self.score, self.snake.level, self.kills)
 
@@ -353,6 +430,8 @@ class BattleScene(Scene):
         self.drops = [d for d in self.drops if d.alive]
 
     def _apply_drop(self, d, hx, hy):
+        # d.kind ∈ {exp, crystal, stardust, heart}，直接拼成 eat_* 音效名
+        self.game.audio.play(f"eat_{d.kind}")
         if d.kind == "exp":
             gained = self.snake.gain_exp(18)
             self.score += 60
@@ -416,6 +495,7 @@ class BattleScene(Scene):
         """处理 SkillEngine 报上来的"本帧该触发"的事件"""
         # ---- 星辉护盾：直接给无敌 ----
         if self.skills.pending_shield:
+            self.game.audio.play("skill_shield")
             self.snake.invincible = max(self.snake.invincible, S.SHIELD_TIME)
             px, py = self.snake.draw_pos
             self._float("护盾", px, py - 54, (130, 210, 255), 30)
@@ -426,6 +506,7 @@ class BattleScene(Scene):
             self._cast_storm()
 
     def _cast_storm(self):
+        self.game.audio.play("skill_storm")
         sx, sy = self.snake.grid_pos
         cx = sx * S.CELL_SIZE + S.CELL_SIZE / 2
         cy = sy * S.CELL_SIZE + S.CELL_SIZE / 2
@@ -466,6 +547,7 @@ class BattleScene(Scene):
                 if abs(mc[0] - hx) <= 1 and abs(mc[1] - hy) <= 1 and mc != head:
                     if not self.skills.consume_dash():
                         continue
+                    self.game.audio.play("skill_dash", throttle=0.12)
                     dmg = self.skills.dash_damage(self.snake.level)
                     if not S.DASH_FINISH and m.hp <= dmg:
                         # 冲锋不补刀：只削到剩 1 血，最后一击留给玩家自己撞。
@@ -483,6 +565,7 @@ class BattleScene(Scene):
             if self.skills.has("spike") and mc in body_cells:
                 if self.skills.spike_ready(m.uid):
                     self.skills.mark_spike(m.uid)
+                    self.game.audio.play("skill_spike", throttle=0.12)
                     self._hurt_mob(m, S.SPIKE_DMG, mx, my,
                                    color=(180, 120, 255), spark=8)
                     continue
@@ -491,6 +574,7 @@ class BattleScene(Scene):
             if self.skills.has("thorn"):
                 dmg = self.skills.thorn_damage_at(mc, m.uid)
                 if dmg > 0:
+                    self.game.audio.play("skill_thorn", throttle=0.12)
                     self._hurt_mob(m, dmg, mx, my, color=(140, 220, 140), spark=5)
         self.mobs = [m for m in self.mobs if m.alive]
 
@@ -506,6 +590,7 @@ class BattleScene(Scene):
 
     def _on_mob_killed(self, m, mx, my):
         self.kills += 1
+        self.game.audio.play("kill", throttle=0.04)
         self.score += 200
         self.shake = max(self.shake, 0.45)
         self._burst(mx, my, (200, 130, 255), 26)
@@ -522,6 +607,7 @@ class BattleScene(Scene):
             self._float(f"LEVEL {self.snake.level}", mx, my - 34, COLOR_GOLD, 30)
 
     def _on_hurt(self):
+        self.game.audio.play("hurt")
         self.shake = 0.6
         self.flash = 0.5
         px, py = self.snake.draw_pos
@@ -568,6 +654,8 @@ class BattleScene(Scene):
 
         if self.finished:
             self._draw_gameover()
+        if self.paused and not self.finished:
+            self._draw_pause()
 
     def _draw_thorns(self, screen, sx, sy):
         """蔓生荆棘：画在地上的刺，用几何图形拼，不需要额外贴图"""
@@ -611,11 +699,9 @@ class BattleScene(Scene):
         screen.fill(COLOR_BG, right_cover)
 
         # ③ 背景图只在网格区域显示，按网格区域裁切后居中放置
-        bg = self.assets.get_scaled("backgrounds/campus_garden.png",
-                                    width=self.GRID_PX_W)
+        bg = self.assets.get_scaled(self.scene_bg, width=self.GRID_PX_W)
         if bg.get_height() < self.GRID_PX_H:
-            bg = self.assets.get_scaled("backgrounds/campus_garden.png",
-                                        height=self.GRID_PX_H)
+            bg = self.assets.get_scaled(self.scene_bg, height=self.GRID_PX_H)
         by = self.grid_y - (bg.get_height() - self.GRID_PX_H) // 2
         # 用子区域把图限制在网格范围内，shift 时也不会溢到面板上
         area = pygame.Rect(self.grid_x, self.grid_y, self.GRID_PX_W, self.GRID_PX_H)
@@ -693,7 +779,7 @@ class BattleScene(Scene):
         n = max(1, len(pts))
         for i, (tx, ty, ang, scale) in enumerate(pts):
             seg_h = max(6, int(self.CELL * scale))
-            img = self.assets.get_rotated("characters/sakura/body_seg.png", ang + 180)
+            img = self.assets.get_rotated(self.char_body, ang + 180)
             w, h = img.get_size()
             ratio = seg_h / h
             img = pygame.transform.smoothscale(img, (max(1, int(w * ratio)), seg_h))
@@ -706,7 +792,7 @@ class BattleScene(Scene):
     
         if pts:
             tx, ty, ang, _ = pts[-1]
-            tip = self.assets.get_rotated("characters/sakura/tail_tip.png", ang)
+            tip = self.assets.get_rotated(self.char_tail, ang)
             th = max(8, int(self.CELL * 0.30))
             r = th / tip.get_height()
             tip = pygame.transform.smoothscale(tip, (max(1, int(tip.get_width() * r)), th))
@@ -726,7 +812,7 @@ class BattleScene(Scene):
         if sn.invincible > 0 and int(sn.invincible * 14) % 2 == 0:
             alpha = 105
     
-        head = self.assets.get_scaled("characters/sakura/head.png",
+        head = self.assets.get_scaled(self.char_head,
                                       height=int(self.CELL * 1.7))
         if sn.direction[0] < 0:
             head = pygame.transform.flip(head, True, False)
@@ -919,7 +1005,7 @@ class BattleScene(Scene):
 
         # 立绘：高度按面板宽度推，保证不同窗口尺寸下都放得下
         head_h = int(min(panel_w * 0.75, panel_h * 0.22))
-        head = self.assets.get_scaled("characters/sakura/head.png", height=head_h)
+        head = self.assets.get_scaled(self.char_head, height=head_h)
         screen.blit(head, (lx + (panel_w - head.get_width()) / 2, py))
         py += head_h + self.s(6)
 
@@ -1025,18 +1111,74 @@ class BattleScene(Scene):
         t = self.f_small.render("按 R 再来一局    ·    按 ESC 返回主菜单", True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(cx, cy + 220)))
 
+    # ---------------------------------------------------------------- 暂停
+    def _toggle_pause(self):
+        """ESC / P 切换暂停。取消暂停时把热键调过的音量落盘一次。"""
+        self.paused = not self.paused
+        if not self.paused:
+            self.game.flush_audio()
+
+    def _draw_pause(self):
+        """暂停覆盖层：半透明遮罩 + 标题 + 实时音量 + 热键提示 + 三个按钮"""
+        screen = self.screen
+        veil = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        veil.fill((10, 8, 16, 190))
+        screen.blit(veil, (0, 0))
+
+        cx = self.W // 2
+        cy = self.H // 2
+        t = self.f_title.render("已暂停", True, COLOR_ACCENT)
+        screen.blit(t, t.get_rect(center=(cx, cy - self.s(150))))
+
+        # 音量数字实时跟随热键变化（读的就是 AudioManager 上的当前值）
+        a = self.game.audio
+        bgm = int(round(a.bgm_volume * 100))
+        sfx = int(round(a.sfx_volume * 100))
+        vol = self.f_body.render(f"音乐 {bgm}      音效 {sfx}", True, COLOR_TEXT)
+        screen.blit(vol, vol.get_rect(center=(cx, cy - self.s(92))))
+
+        hint = self.f_small.render(
+            "↑/↓ 音乐音量    ←/→ 音效音量    （每次 ±10）", True, COLOR_TEXT_DIM)
+        screen.blit(hint, hint.get_rect(center=(cx, cy + self.s(150))))
+
+        self.resume_btn.draw(screen)
+        self.restart_btn.draw(screen)
+        self.quit_btn.draw(screen)
+
     # ---------------------------------------------------------------- 输入
     def handle_events(self, events):
+        # ---- 结算态：R 重开 / ESC 回主菜单 ----
+        # 方向键此时空闲，音量热键已在主循环里生效，这里只管重开与返回。
+        if self.finished:
+            for event in events:
+                if event.type != pygame.KEYDOWN:
+                    continue
+                if event.key == pygame.K_ESCAPE:
+                    self.game.change_scene("main_menu")
+                    return
+                if event.key == pygame.K_r:
+                    self.reset()
+            return
+
+        # ---- 暂停态：鼠标点按钮 + ESC/P 继续 ----
+        # 方向键不在这里处理（主循环的音量热键已接管），所以和移动天然不冲突。
+        if self.paused:
+            for event in events:
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_p):
+                    self._toggle_pause()
+                    return
+                self.resume_btn.handle_event(event)
+                self.restart_btn.handle_event(event)
+                self.quit_btn.handle_event(event)
+            return
+
+        # ---- 进行中：ESC/P 暂停，方向键 / WASD 控制移动 ----
         for event in events:
             if event.type != pygame.KEYDOWN:
                 continue
-            if event.key == pygame.K_ESCAPE:
-                self.game.change_scene("main_menu")
+            if event.key in (pygame.K_ESCAPE, pygame.K_p):
+                self._toggle_pause()
                 return
-            if self.finished:
-                if event.key == pygame.K_r:
-                    self.reset()
-                continue
             k = event.key
             if k in (pygame.K_UP, pygame.K_w):
                 self.snake.set_direction((0, -1))

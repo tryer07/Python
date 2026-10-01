@@ -25,14 +25,23 @@ class Button:
         self.is_pressed = False
 
     def handle_event(self, event):
+        # 延迟 import，避免 ui -> core -> ui 的循环依赖；取不到时返回 no-op 替身。
+        from core.audio_manager import get_audio
+        audio = get_audio()
+
         if event.type == pygame.MOUSEMOTION:
+            was = self.is_hovered
             self.is_hovered = self.rect.collidepoint(event.pos)
+            # 只在"刚移入"的边沿播一次，并节流，避免在按钮上滑动时哒哒响
+            if self.is_hovered and not was:
+                audio.play("ui_hover", throttle=0.08)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.is_hovered:
                 self.is_pressed = True
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             if self.is_pressed and self.is_hovered:
                 self.is_pressed = False
+                audio.play("ui_click")
                 if self.on_click:
                     self.on_click()
                 return True

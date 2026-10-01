@@ -39,6 +39,7 @@ class GachaScene(Scene):
 
     def enter(self):
         self.assets = self.game.assets
+        self.game.audio.play_bgm("gacha")
         self.font_title = self.assets.get_font(self.s(FONT_SIZE_TITLE), bold=True)
         self.font_sub = self.assets.get_font(self.s(FONT_SIZE_SUBTITLE))
         self.font_body = self.assets.get_font(self.s(FONT_SIZE_BODY))
@@ -96,6 +97,7 @@ class GachaScene(Scene):
         cost = COST_SINGLE * times if times == 1 else COST_TEN
         currency = save.get("currency", 0)
         if currency < cost:
+            self.game.audio.play("gacha_error")
             self.msg = f"星尘不足（需要 {cost}，当前 {currency}）"
             self.msg_timer = 2.4
             return
@@ -142,6 +144,10 @@ class GachaScene(Scene):
         best = min(results, key=lambda r: {"SSR": 0, "SR": 1, "R": 2, "N": 3}.get(r[1], 9))
         self.msg = f"抽到 {best[1]} · {self._display_name(best[0])}" if best else ""
         self.msg_timer = 3.0
+        self.game.audio.play("gacha_pull")
+        if best:
+            # 按本次最高稀有度播揭晓音（gacha_ssr / gacha_sr / gacha_r）
+            self.game.audio.play(f"gacha_{best[1].lower()}")
 
     def _roll_rarity(self, rates, counter, sr_need, ssr_need):
         """按概率抽稀有度，同时处理两种保底"""

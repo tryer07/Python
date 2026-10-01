@@ -32,8 +32,8 @@
     }
   },
   "settings": {
-    "bgm_volume": 0.7,
-    "sfx_volume": 0.8
+    "bgm_volume": 0.6,
+    "sfx_volume": 0.6834733893557423
   },
   "progress": {
     "best_score": 84740,
@@ -50,8 +50,8 @@
   "display": {
     "mode": "windowed",
     "resolution": [
-      1036,
-      582
+      3840,
+      2160
     ]
   }
 }
