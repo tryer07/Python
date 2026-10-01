@@ -1,0 +1,66 @@
+[
+  {
+    "id": "sakura_guardian",
+    "scene": "campus_garden",
+    "name": "樱之守护者",
+    "sprite": "",
+    "tint": [240, 150, 190],
+    "hp": 340,
+    "size": 2.4,
+    "speed": 1.4,
+    "trigger": { "mode": "time", "value": 60 },
+    "phases": [
+      { "below": 1.0, "attacks": ["radial", "aimed"], "interval": 3.2 },
+      { "below": 0.5, "attacks": ["radial", "aimed", "radial"], "interval": 2.6 }
+    ]
+  },
+  {
+    "id": "neon_lord",
+    "scene": "neon_night",
+    "name": "霓虹夜主",
+    "sprite": "",
+    "tint": [150, 110, 240],
+    "hp": 480,
+    "size": 2.6,
+    "speed": 1.5,
+    "trigger": { "mode": "time", "value": 72 },
+    "phases": [
+      { "below": 1.0, "attacks": ["aimed", "wall"], "interval": 3.0 },
+      { "below": 0.55, "attacks": ["radial", "wall", "aimed"], "interval": 2.6 },
+      { "below": 0.25, "attacks": ["wall", "radial", "aimed"], "interval": 2.2 }
+    ]
+  },
+  {
+    "id": "deep_relic",
+    "scene": "deep_sea",
+    "name": "深海遗主",
+    "sprite": "",
+    "tint": [80, 190, 220],
+    "hp": 620,
+    "size": 2.8,
+    "speed": 1.4,
+    "trigger": { "mode": "time", "value": 85 },
+    "phases": [
+      { "below": 1.0, "attacks": ["spiral", "aimed"], "interval": 2.8 },
+      { "below": 0.6, "attacks": ["spiral", "slam", "wall"], "interval": 2.4 },
+      { "below": 0.3, "attacks": ["spiral", "slam", "radial", "aimed"], "interval": 2.1 }
+    ]
+  },
+  {
+    "id": "divine_sovereign",
+    "scene": "sakura_realm",
+    "name": "神域主宰",
+    "sprite": "",
+    "tint": [230, 130, 190],
+    "hp": 800,
+    "size": 3.0,
+    "speed": 1.7,
+    "trigger": { "mode": "time", "value": 95 },
+    "phases": [
+      { "below": 1.0, "attacks": ["radial", "aimed"], "interval": 2.8 },
+      { "below": 0.65, "attacks": ["spiral", "radial", "aimed"], "interval": 2.4 },
+      { "below": 0.35, "attacks": ["wall", "slam", "charge"], "interval": 2.1 },
+      { "below": 0.18, "attacks": ["spiral", "charge", "summon", "aimed"], "interval": 1.8 }
+    ]
+  }
+]

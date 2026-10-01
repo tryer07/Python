@@ -40,7 +40,9 @@
     "best_level": 21,
     "total_kills": 2106,
     "total_runs": 40,
-    "total_stardust": 1157
+    "total_stardust": 1157,
+    "total_wins": 0,
+    "bosses_defeated": {}
   },
   "gacha_pity": {
     "count": 40,

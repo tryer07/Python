@@ -30,7 +30,9 @@ class SaveManager:
             "best_level": 0,
             "total_kills": 0,
             "total_runs": 0,
-            "total_stardust": 0
+            "total_stardust": 0,
+            "total_wins": 0,
+            "bosses_defeated": {}
         }
     }
 
@@ -120,6 +122,20 @@ class SaveManager:
         p["total_kills"] += kills
         p["best_score"] = max(p["best_score"], score)
         p["best_level"] = max(p["best_level"], level)
+        self.save()
+
+    def record_victory(self, scene_id, score, level, kills, time=0):
+        """记录一次通关（击败 Boss）。旧存档缺的字段由 _deep_update 自动补齐。"""
+        p = self.data["progress"]
+        p.setdefault("total_wins", 0)
+        p.setdefault("bosses_defeated", {})
+        p["total_runs"] += 1
+        p["total_wins"] += 1
+        p["total_kills"] += kills
+        p["best_score"] = max(p["best_score"], score)
+        p["best_level"] = max(p["best_level"], level)
+        bd = p["bosses_defeated"]
+        bd[scene_id] = bd.get(scene_id, 0) + 1
         self.save()
 
     def get(self, key, default=None):

@@ -193,6 +193,30 @@ def _recipe(name):
                      for k in ("C5", "E5", "G5")])
     if name == "gacha_r":
         return _tone(N["G4"], 0.15, "sine", 0.28)
+    # ---------------- Boss 战 ----------------
+    if name == "boss_appear":
+        return _mix([_tone(70, 0.70, "saw", 0.30, slide_to=180, release=0.4),
+                     _noise(0.70, 0.16, lp=0.15, release=0.5)])
+    if name == "boss_hit":
+        return _tone(420, 0.05, "square", 0.26, slide_to=260, release=0.03)
+    if name == "boss_shoot":
+        return _tone(1500, 0.05, "square", 0.16, slide_to=900, release=0.03)
+    if name == "boss_charge":
+        return _mix([_tone(200, 0.35, "saw", 0.26, slide_to=1000, release=0.1),
+                     _noise(0.35, 0.12, release=0.2)])
+    if name == "boss_slam":
+        return _mix([_tone(90, 0.30, "square", 0.34, slide_to=45, release=0.2),
+                     _noise(0.30, 0.28, lp=0.25, release=0.2)])
+    if name == "boss_defeat":
+        return _seq([_tone(N["C5"], 0.12, "saw", 0.30, slide_to=N["C4"]),
+                     _tone(N["A4"], 0.12, "saw", 0.28, slide_to=N["A3"]),
+                     _tone(N["F4"], 0.16, "saw", 0.26, slide_to=N["F3"]),
+                     _mix([_tone(60, 0.55, "square", 0.30, slide_to=35, release=0.4),
+                           _noise(0.55, 0.20, lp=0.2, release=0.45)])])
+    if name == "victory":
+        arp = _seq([_tone(N[k], 0.10, "tri", 0.34)
+                    for k in ("C5", "E5", "G5", "C6", "G5", "C6")])
+        return _mix([arp, _tone(N["C6"], 0.60, "sine", 0.16, release=0.4)])
     # 未知名字：给个中性提示音，保证「调了就有声」，方便发现漏配
     return _tone(880, 0.06, "sine", 0.28)
 
@@ -204,6 +228,11 @@ def _bgm_recipe(name):
         chords = [("A3", "C4", "E4"), ("A3", "C4", "E4"),
                   ("F3", "A3", "C4"), ("G3", "B3", "D4")]
         note_dur = 0.16
+    elif name == "boss":
+        # 更急促、更紧张的循环：小调走向 + 短音，营造 Boss 战压迫感
+        chords = [("A3", "C4", "E4"), ("G3", "B3", "D4"),
+                  ("F3", "A3", "C4"), ("E3", "G3", "B3")]
+        note_dur = 0.11
     elif name == "gacha":
         chords = [("C4", "E4", "G4"), ("A3", "C4", "E4"),
                   ("F3", "A3", "C4"), ("G3", "B3", "D4")]
@@ -268,7 +297,7 @@ class AudioManager:
 
     BGM_FILES = {
         "menu": "menu", "battle": "battle",
-        "gacha": "gacha", "gameover": "gameover",
+        "gacha": "gacha", "gameover": "gameover", "boss": "boss",
     }
 
     def __init__(self, save_manager=None):

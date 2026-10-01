@@ -1,6 +1,6 @@
 # 贪吃蛇娘化版 · 项目说明
 
-> 当前状态：**可运行原型（M2 完成）**。核心玩法闭环 + 技能系统 + 美术 + 音频已就位。
+> 当前状态：**可运行原型（M3 完成）**。核心玩法闭环 + 技能系统 + Boss 战 + 美术 + 音频已就位。
 > 目录：`D:\Python\Python项目存放点\利用AI开发小游戏（尝试）\贪吃蛇娘化版`
 
 ---
@@ -24,6 +24,8 @@ pip install pygame
 | ↑ / → | 将“上次鼠标点选的音量”（音乐 or 音效）+10（长按超 1 秒连调；战斗进行中让位给移动） |
 | ↓ / ← | 同上，−10 |
 | F11 | 全屏 / 窗口切换 |
+
+> **胜负**：每局不再是无尽生存 —— **生存到场景阈值后专属 Boss 登场，击败它即通关结算**（Boss 战中方向键仍只管走位，撞击 Boss / 靠技能输出）。
 
 ---
 
@@ -70,6 +72,27 @@ pip install pygame
 不管你打得多好它都在涨，所以任何打法都无法无限苟。
 另外还加了一条**击杀经验衰减**（30 秒后逐步降到 25%），
 专门拦住"杀得快 → 升级快 → 更强 → 杀得更快"这个正反馈。
+
+### Boss 战（每场景专属 Boss + 弹幕）
+
+把"无尽生存"升级为"有终点的一局"：**生存到场景阈值 → 专属 Boss 登场 → 击败它即通关结算**。
+4 个场景各一个**数据驱动** Boss（配在 `data/bosses.json`），多阶段 + 弹幕：
+
+| 场景 | Boss | 血量 | 特色攻击 |
+|---|---|---|---|
+| 校园庭院（入门） | 樱之守护者 | 1200 | 环形 + 瞄准 |
+| 霓虹夜市（普通） | 霓虹夜主 | 1600 | + 弹墙（留缺口） |
+| 深海遗迹（困难） | 深海遗主 | 2000 | + 螺旋 + 震击 |
+| 樱花神域（噩梦） | 神域主宰 | 2600 | + 冲撞 + 召唤，阶段最密 |
+
+**伤害模型（关键设计）**：
+
+- 玩家**撞击 Boss 身体 → Boss 掉 `PLAYER_ATK`，玩家不掉血**（受 `BOSS_HIT_CD`≈0.3s 限流，防贴脸秒杀）；冲锋 / 风暴 / 荆棘尾 / 蔓生荆棘也能打 Boss。
+- Boss **只通过弹幕 / 蓄力冲撞 / 范围震击 / 召唤的小怪**伤害玩家；冲撞与震击都有**预警**（红线 / 红圈），预警结束才结算伤害。
+- 循环 = "躲弹幕 → 找空隙撞 Boss / 靠技能输出"，张力来自弹幕而非接触，符合贪吃蛇的走位内核。
+- Boss 血量按比例**分阶段**，越残血攻击越密；登场后普通刷怪放慢（`BOSS_MOB_SPAWN_SCALE`），维持压力但不喧宾夺主。
+- Boss 立绘缺失时用**程序化几何绘制**（尖刺冠 + 主体 + 主题色描边 + 眼睛，绝不露品红占位块）；把贴图放进 `assets/characters/boss/<id>.png` 并在 `bosses.json` 填 `sprite` 即自动换成贴图。
+- 通关写 `record_victory`：累计 `total_wins` 与 `bosses_defeated[场景]`，额外奖励 `BOSS_REWARD_STARDUST` 星尘。若某场景没配 Boss（或 `BOSS_ENABLED=False`），该局**自动退回纯无尽生存，绝不崩**。
 
 ### 系统
 
@@ -138,11 +161,13 @@ pip install pygame
 | 击杀经验衰减 | `KILL_EXP_BASE`、`KILL_EXP_DECAY_RATE` |
 | 小怪强度 | `MOB_HP`、`MOB_TOUCH_DAMAGE`、`MOB_HP_GROWTH` |
 | 刷怪节奏 | `MOB_SPAWN_INTERVAL`、`MOB_SPAWN_RAMP`、`MOB_MAX_ALIVE` |
+| **Boss 弹幕 / 技能** | `BOSS_*`、`RADIAL_COUNT`、`AIMED_*`、`SPIRAL_*`、`WALL_*`（全局参数） |
+| **Boss 血量 / 阶段 / 登场阈值** | `data/bosses.json`（按场景配，数据驱动） |
 | 各种掉落概率 | `DROP_*` 系列 |
 | 切 4K | 把 `RENDER_WIDTH/HEIGHT` 改成 3840/2160 |
 
 抽卡概率改 `data/gacha.json`，场景配置改 `data/scenes.json`，
-角色表改 `data/characters.json`，技能文案改 `data/skills.json`。
+角色表改 `data/characters.json`，技能文案改 `data/skills.json`，Boss 配置改 `data/bosses.json`。
 
 ### 音频文件清单
 
@@ -150,12 +175,14 @@ pip install pygame
 想要真实音频，把文件按下表名字放进 `assets/audio/`（每个名字按 `.ogg`→`.wav`→`.mp3` 顺序探测）：
 
 ```
-assets/audio/bgm/  menu  battle  gacha  gameover
+assets/audio/bgm/  menu  battle  boss  gacha  gameover
 assets/audio/sfx/  ui_click  ui_hover  ui_back
                    eat_exp  eat_crystal  eat_stardust  eat_heart
                    level_up  skill_unlock  hurt  kill  gameover
                    skill_dash  skill_spike  skill_shield  skill_thorn  skill_storm
                    gacha_pull  gacha_error  gacha_ssr  gacha_sr  gacha_r
+                   boss_appear  boss_hit  boss_shoot  boss_charge  boss_slam
+                   boss_defeat  victory
 ```
 
 音量有两种调法：「显示设置」页拖动滑块，或用**方向键热键**。热键调的是音乐还是音效，
@@ -188,11 +215,12 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 
 按优先级：
 
-1. **多角色** —— 出图 → 放进 `assets/characters/<id>/` → 在 `characters.json` 加一条
-2. **多场景贴图** —— 目前只有校园庭院有图，其余 3 个是色块占位
-3. **技能特效** —— 音频系统已完成；技能视觉仍只有几何图形与飘字，可加更华丽的特效
-4. **4K 压测** —— 用 `screenshot.py` 的思路实测 4K 下的帧率
-5. **技能分支** —— 现在技能是固定解锁；可以改成"升级时二选一"，增加构筑深度
+1. **Boss 立绘** —— 目前 4 个 Boss 是程序化几何绘制；出图后放进 `assets/characters/boss/<id>.png` 并在 `bosses.json` 填 `sprite` 即升级
+2. **场景卡片显示 Boss 战绩** —— `scene_select.py` 读 `bosses_defeated`，在卡片上显示该场景 Boss 名与是否已击败
+3. **多角色** —— 出图 → 放进 `assets/characters/<id>/` → 在 `characters.json` 加一条
+4. **多场景贴图** —— 目前只有校园庭院有图，其余 3 个是色块占位
+5. **技能 / Boss 特效** —— 音频已完成；视觉仍为几何图形与飘字，可加更华丽的特效
+6. **技能分支** —— 现在技能是固定解锁；可改成"升级时二选一"，增加构筑深度
 
 ---
 
@@ -210,6 +238,7 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 │   └── save_manager.py      存档读写 / ID 迁移
 ├── game_logic/
 │   ├── entities.py          蛇娘 / 小怪 / 掉落物
+│   ├── boss.py              Boss / 弹幕（多阶段 + 环形/瞄准/螺旋/弹墙/冲撞/震击/召唤）
 │   └── skills.py            技能引擎（解锁、充能、荆棘地形）
 ├── scenes/
 │   ├── main_menu.py         主菜单
@@ -224,6 +253,7 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 ├── data/
 │   ├── characters.json      角色表
 │   ├── scenes.json          场景表
+│   ├── bosses.json          Boss 表（每场景专属 Boss，多阶段 + 弹幕）
 │   ├── gacha.json           卡池配置
 │   └── skills.json          技能文案
 ├── assets/

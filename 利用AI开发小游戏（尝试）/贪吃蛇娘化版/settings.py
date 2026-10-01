@@ -212,3 +212,37 @@ DROP_EXP = 0.55                 # 经验果
 DROP_CRYSTAL = 0.22             # 能量结晶
 DROP_STARDUST = 0.13            # 星尘（抽卡材料）
 DROP_HEART = 0.10               # 爱心（回血）
+
+# ==================== Boss 战 ====================
+# 生存到场景阈值后，专属 Boss 登场，击败它即通关结算。
+# Boss 的具体数值走 data/bosses.json（数据驱动），这里只放全局参数。
+BOSS_ENABLED = True             # 总开关：关掉后退回纯无尽生存
+# 玩家撞击 Boss 身体 -> Boss 掉 PLAYER_ATK，玩家不掉血（伤害模型的关键）。
+# BOSS_HIT_CD 给撞击限流，防止贴脸瞬间把 Boss 秒掉。
+BOSS_HIT_CD = 0.3
+BOSS_MOB_SPAWN_SCALE = 1.8      # Boss 登场后普通刷怪间隔放大倍数（放慢但不完全停）
+BOSS_REWARD_STARDUST = 30       # 通关额外奖励的星尘
+
+# ---- 弹幕（速度/半径按“格”计，乘 CELL 得到分辨率无关的像素值）----
+# [平衡记录] 初版速度 3.5 / 环形 16 / 瞄准 5，配 3 血蛇娘太密：无头探针下
+# 玩家平均 ~10s 就被弹幕打死（3 次命中即死），根本打不动 Boss。降速降密度。
+BOSS_BULLET_SPEED_CELLS = 2.2   # 弹幕飞行速度（格/秒）
+BOSS_BULLET_DAMAGE = 1          # 弹幕命中扣多少血
+BOSS_BULLET_RADIUS_CELLS = 0.20 # 弹幕判定半径（格）
+BOSS_BULLET_LIFE = 3.2          # 弹幕存活秒数（超时或越界即销毁，短一些让屏幕不堆积）
+
+# ---- 弹幕模式参数 ----
+RADIAL_COUNT = 8                # 环形：一圈发多少颗
+AIMED_COUNT = 3                 # 瞄准扇形：发多少颗
+AIMED_SPREAD = 0.5              # 瞄准扇形：总张角（弧度）
+SPIRAL_ARMS = 2                 # 螺旋：几条臂
+SPIRAL_RATE = 14                # 螺旋：每次连发的旋转步长（度）
+WALL_COUNT = 8                  # 弹墙：一排多少颗
+WALL_GAP = 3                    # 弹墙：留几个缺口（供玩家穿行）
+
+# ---- Boss 技能参数 ----
+BOSS_SUMMON_COUNT = 3           # 召唤：一次召几只小怪
+BOSS_CHARGE_SPEED_CELLS = 13    # 冲撞：高速直线冲刺速度（格/秒）
+BOSS_CHARGE_TELEGRAPH = 1.0     # 冲撞：预警线显示时长（秒），结束后才结算伤害
+BOSS_SLAM_RADIUS_CELLS = 2.6    # 震击：范围伤害半径（格）
+BOSS_SLAM_TELEGRAPH = 1.0       # 震击：预警圈显示时长（秒），结束后才结算伤害

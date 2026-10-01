@@ -28,6 +28,7 @@ import pygame
 import settings as S
 from core.scene import Scene
 from game_logic.entities import Drop, Mob, SnakeGirl
+from game_logic.boss import Boss, boss_trigger_met, load_boss_cfg
 from game_logic.skills import SkillEngine, all_skill_ids, skill_info
 from ui.button import Button
 from settings import (
@@ -184,6 +185,16 @@ class BattleScene(Scene):
         self.flash = 0.0
         self.finished = False
         self.paused = False
+
+        # ---- Boss 战状态 ----
+        # boss_cfg 缺配（该场景没配 Boss / 总开关关）时为 None，本局退回纯无尽生存，绝不崩。
+        self.boss_cfg = load_boss_cfg(self.scene_id)
+        self.boss = None
+        self.projectiles = []
+        self.boss_spawned = False
+        self.boss_hit_cd = 0.0            # 玩家撞击 Boss 的限流计时
+        self.boss_banner = 0.0            # 登场横幅提示计时
+        self.victory = False
 
         for _ in range(6):
             self._spawn_drop()
@@ -364,7 +375,11 @@ class BattleScene(Scene):
         # ---- 刷怪 ----
         self.mob_spawn_timer -= dt
         if self.mob_spawn_timer <= 0:
-            self.mob_spawn_timer = self._spawn_interval()
+            interval = self._spawn_interval()
+            if self.boss is not None:
+                # Boss 登场后普通怪放慢，维持压力但不喧宾夺主
+                interval *= S.BOSS_MOB_SPAWN_SCALE
+            self.mob_spawn_timer = interval
             self._spawn_mob()
 
         # ---- 小怪数量上限：太多了会满屏堵死，反而没法玩 ----
@@ -383,6 +398,7 @@ class BattleScene(Scene):
         self._handle_mob_collision()
         self._handle_skill_damage()
         self._handle_self_collision()
+        self._update_boss(dt)
 
         self.shake = max(0.0, self.shake - dt * 3.2)
         self.flash = max(0.0, self.flash - dt * 2.4)
@@ -490,6 +506,180 @@ class BattleScene(Scene):
         if self.snake.is_self_hit() and self.snake.take_damage(1):
             self._on_hurt()
 
+    # ====================================================== Boss 战
+    def _update_boss(self, dt):
+        """Boss 登场触发 / 行为推进 / 弹幕与碰撞判定 / 击败结算，全部集中在这里。"""
+        if self.boss_hit_cd > 0:
+            self.boss_hit_cd -= dt
+        if self.boss_banner > 0:
+            self.boss_banner -= dt
+
+        # ---- 登场触发 ----
+        if (self.boss is None and not self.boss_spawned and self.boss_cfg
+                and boss_trigger_met(self.boss_cfg, self.elapsed,
+                                     self.snake.level, self.kills)):
+            self._spawn_boss()
+
+        if self.boss is None:
+            return
+        # 本帧更早的技能伤害可能已经把 Boss 打死
+        if not self.boss.alive:
+            self._on_boss_defeated()
+            return
+
+        # ---- Boss 行为 ----
+        snake_cell = (round(self.snake.grid_pos[0]), round(self.snake.grid_pos[1]))
+        ctx = {"cols": GRID_COLS, "rows": GRID_ROWS, "cell_px": self.CELL}
+        events = self.boss.update(dt, snake_cell, ctx)
+
+        for name in events.get("sfx", []):
+            self.game.audio.play(name, throttle=0.05)
+        self.projectiles.extend(events.get("bullets", []))
+        for _ in range(events.get("summon", 0)):
+            self._spawn_mob()
+        for eff in events.get("effects", []):
+            if eff.get("type") == "slam_burst":
+                self._resolve_slam(eff)
+
+        # ---- 弹幕推进 ----
+        for p in self.projectiles:
+            p.update(dt, GRID_COLS, GRID_ROWS, self.CELL)
+        self.projectiles = [p for p in self.projectiles if p.alive]
+
+        # ---- 判定 ----
+        self._handle_projectile_hits()
+        self._handle_boss_contact()
+
+        if not self.boss.alive:
+            self._on_boss_defeated()
+
+    def _spawn_boss(self):
+        """建 Boss、切 BGM、播登场音、弹横幅。从远离玩家的一侧登场。"""
+        sx, _ = self.snake.grid_pos
+        cx = GRID_COLS - 4 if sx < GRID_COLS / 2 else 3
+        cy = GRID_ROWS // 2
+        self.boss = Boss(self.boss_cfg, (cx, cy), lambda: self.CELL)
+        self.boss_spawned = True
+        self.projectiles = []
+        self.boss_banner = 2.6
+        self.shake = max(self.shake, 0.6)
+        self.flash = max(self.flash, 0.5)
+        self.game.audio.play_bgm("boss")
+        self.game.audio.play("boss_appear")
+
+    def _resolve_slam(self, eff):
+        """震击预警结束：按半径结算范围伤害。"""
+        ex, ey = eff["pos"]
+        r = eff["radius_px"]
+        self._burst(ex, ey, (255, 200, 120), 30)
+        self.shake = max(self.shake, 0.5)
+        px, py = self.snake.draw_pos
+        if math.hypot(px - ex, py - ey) <= r + self.CELL * 0.3:
+            if self.snake.take_damage(1):
+                self._on_hurt()
+
+    def _handle_projectile_hits(self):
+        """弹幕 vs 蛇头/身体（像素半径判定）→ 掉血。"""
+        if not self.projectiles:
+            return
+        px, py = self.snake.draw_pos
+        head_r = self.CELL * 0.42
+        body_r = self.CELL * 0.34
+        cells = self.snake.cells
+        for p in self.projectiles:
+            if not p.alive:
+                continue
+            hit = math.hypot(p.pos[0] - px, p.pos[1] - py) <= p.radius + head_r
+            if not hit:
+                for c in cells:
+                    ccx = c[0] * self.CELL + self.CELL / 2
+                    ccy = c[1] * self.CELL + self.CELL / 2
+                    if math.hypot(p.pos[0] - ccx, p.pos[1] - ccy) <= p.radius + body_r:
+                        hit = True
+                        break
+            if hit:
+                p.alive = False
+                self._burst(p.pos[0], p.pos[1], (255, 120, 150), 8)
+                if self.snake.take_damage(p.damage):
+                    self._on_hurt()
+        self.projectiles = [p for p in self.projectiles if p.alive]
+
+    def _handle_boss_contact(self):
+        """蛇头进 Boss 身体：普通接触→Boss 掉血、玩家不掉血；冲刺接触→玩家掉血。"""
+        if self.boss is None or not self.boss.alive:
+            return
+        px, py = self.snake.draw_pos
+        bx, by = self.boss.draw_pos
+        if math.hypot(px - bx, py - by) > self.boss.radius_px + self.CELL * 0.4:
+            return
+        if self.boss.charge_active:
+            if self.snake.take_damage(1):
+                self._on_hurt()
+                self.shake = max(self.shake, 0.5)
+            return
+        if self.boss_hit_cd > 0:
+            return
+        self.boss_hit_cd = S.BOSS_HIT_CD
+        self._damage_boss(S.PLAYER_ATK, color=COLOR_GOLD)
+
+    def _damage_boss(self, amount, color=COLOR_GOLD):
+        """对 Boss 结算一次伤害（撞击 / 技能共用），统一特效与音效。"""
+        if self.boss is None or not self.boss.alive:
+            return
+        bx, by = self.boss.draw_pos
+        self.boss.take_damage(amount)
+        self.game.audio.play("boss_hit", throttle=0.04)
+        self._float(f"-{amount}", bx, by - self.boss.radius_px * 0.6, color, 26)
+        self._burst(bx, by, color, 10)
+
+    def _apply_skill_to_boss(self, head, body_cells):
+        """冲锋 / 荆棘尾 / 蔓生荆棘 对 Boss 的判定（风暴在 _cast_storm 里）。"""
+        b = self.boss
+        if b is None or not b.alive:
+            return
+        hx, hy = head
+        bcx, bcy = b.pos_cells
+        # 冲锋：头邻近 Boss 中心（1.6 格内）且还有充能
+        if self.skills.has("dash") and self.skills.dash_ready():
+            if abs(bcx - hx) <= 1.6 and abs(bcy - hy) <= 1.6:
+                if self.skills.consume_dash():
+                    self.game.audio.play("skill_dash", throttle=0.12)
+                    self._damage_boss(self.skills.dash_damage(self.snake.level),
+                                      color=(255, 150, 190))
+        # 荆棘尾：Boss 中心落在身体格附近
+        if self.skills.has("spike"):
+            near = any(abs(bcx - c[0]) <= 1.2 and abs(bcy - c[1]) <= 1.2
+                       for c in body_cells)
+            if near and self.skills.spike_ready("boss"):
+                self.skills.mark_spike("boss")
+                self.game.audio.play("skill_spike", throttle=0.12)
+                self._damage_boss(S.SPIKE_DMG, color=(180, 120, 255))
+        # 蔓生荆棘：Boss 中心所在格踩到荆棘
+        if self.skills.has("thorn"):
+            dmg = self.skills.thorn_damage_at(b.cell, "boss")
+            if dmg > 0:
+                self.game.audio.play("skill_thorn", throttle=0.12)
+                self._damage_boss(dmg, color=(140, 220, 140))
+
+    def _on_boss_defeated(self):
+        """Boss 血量归零：通关结算。幂等（victory 已置则直接返回）。"""
+        if self.victory:
+            return
+        self.victory = True
+        self.finished = True
+        self.projectiles = []
+        bx, by = self.boss.draw_pos
+        self._burst(bx, by, (255, 220, 140), 60)
+        self.shake = max(self.shake, 0.8)
+        self.flash = max(self.flash, 0.6)
+        self.score += 1000
+        self.game.audio.play("boss_defeat")
+        self.game.audio.play("victory")
+        self.game.save_manager.add_stardust(self.stardust + S.BOSS_REWARD_STARDUST)
+        self.game.save_manager.record_victory(
+            self.scene_id, self.score, self.snake.level,
+            self.kills, int(self.elapsed))
+
     # ====================================================== 技能伤害结算
     def _apply_skill_events(self):
         """处理 SkillEngine 报上来的"本帧该触发"的事件"""
@@ -522,6 +712,9 @@ class BattleScene(Scene):
             if (round(m.cell[0]), round(m.cell[1])) in area:
                 mx, my = m.draw_pos
                 self._hurt_mob(m, S.STORM_DMG, mx, my)
+        # 风暴也能扇到 Boss（Boss 中心格在范围内）
+        if self.boss is not None and self.boss.alive and self.boss.cell in area:
+            self._damage_boss(S.STORM_DMG, color=(255, 200, 120))
 
     def _handle_skill_damage(self):
         """
@@ -577,6 +770,7 @@ class BattleScene(Scene):
                     self.game.audio.play("skill_thorn", throttle=0.12)
                     self._hurt_mob(m, dmg, mx, my, color=(140, 220, 140), spark=5)
         self.mobs = [m for m in self.mobs if m.alive]
+        self._apply_skill_to_boss(head, body_cells)
 
     def _hurt_mob(self, m, dmg, mx, my, color=COLOR_GOLD, spark=0):
         """对一只小怪结算伤害。统一走这里，方便保证击杀特效一致。"""
@@ -640,12 +834,16 @@ class BattleScene(Scene):
 
         self._draw_background(screen, sx, sy)
         self._draw_thorns(screen, sx, sy)
+        self._draw_boss_telegraph(screen, sx, sy)
         self._draw_drops(screen, sx, sy)
         self._draw_mobs(screen, sx, sy)
+        self._draw_boss(screen, sx, sy)
         self._draw_snake(screen, sx, sy)
+        self._draw_projectiles(screen, sx, sy)
         self._draw_particles(screen, sx, sy)
         self._draw_floaters(screen, sx, sy)
         self._draw_hud()
+        self._draw_boss_banner()
 
         if self.flash > 0:
             veil = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
@@ -767,6 +965,106 @@ class BattleScene(Scene):
                 pygame.draw.rect(screen, (30, 20, 40), (bx, by, bw, bh), border_radius=2)
                 pygame.draw.rect(screen, COLOR_DANGER,
                                  (bx, by, bw * m.hp / m.hp_max, bh), border_radius=2)
+
+    # ---------------------------------------------------------------- Boss
+    def _draw_boss_telegraph(self, screen, sx, sy):
+        """冲撞预警线 / 震击预警圈，画在地上，随 progress 越来越亮。"""
+        if self.boss is None:
+            return
+        for tg in self.boss.telegraphs:
+            prog = max(0.0, min(1.0, tg.get("progress", 0.0)))
+            a = int(70 + 150 * prog)
+            if tg["type"] == "charge":
+                x0 = self.grid_x + tg["from"][0] + sx
+                y0 = self.grid_y + tg["from"][1] + sy
+                x1 = self.grid_x + tg["to"][0] + sx
+                y1 = self.grid_y + tg["to"][1] + sy
+                w = max(2, int(tg["width_px"]))
+                pygame.draw.line(screen, (255, 90, 90, 255), (x0, y0), (x1, y1), w)
+                pygame.draw.line(screen, (255, 220, 120, a), (x0, y0), (x1, y1),
+                                 max(1, w // 3))
+            elif tg["type"] == "slam":
+                cx = self.grid_x + tg["pos"][0] + sx
+                cy = self.grid_y + tg["pos"][1] + sy
+                r = max(2, int(tg["radius_px"] * (0.5 + 0.5 * prog)))
+                ring = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+                pygame.draw.circle(ring, (255, 120, 80, a), (r + 2, r + 2), r, 3)
+                pygame.draw.circle(ring, (255, 200, 120, int(a * 0.25)), (r + 2, r + 2), r)
+                screen.blit(ring, ring.get_rect(center=(cx, cy)))
+
+    def _draw_boss(self, screen, sx, sy):
+        """有 sprite 贴图就用贴图；否则程序化几何绘制（不露品红占位块）。"""
+        b = self.boss
+        if b is None:
+            return
+        bx = self.grid_x + b.draw_pos[0] + sx
+        by = self.grid_y + b.draw_pos[1] + sy
+        r = max(6, int(b.radius_px))
+
+        # 影子
+        sh = pygame.Surface((r * 2, r // 1.6 + 2), pygame.SRCALPHA)
+        pygame.draw.ellipse(sh, (0, 0, 0, 100), sh.get_rect())
+        screen.blit(sh, sh.get_rect(center=(bx, by + r * 0.85)))
+
+        if b.sprite:
+            img = self.assets.get_scaled(b.sprite, height=r * 2)
+            rect = img.get_rect(center=(bx, by))
+            screen.blit(img, rect)
+            if b.hit_flash > 0:
+                fl = img.copy()
+                fl.fill((255, 255, 255, int(190 * (b.hit_flash / 0.16))),
+                        special_flags=pygame.BLEND_RGBA_MULT)
+                screen.blit(fl, rect)
+            return
+
+        # ---- 程序化绘制：尖刺冠 + 主体大圆 + 主题色描边 + 眼睛 ----
+        tint = b.tint
+        dark = tuple(max(0, int(c * 0.55)) for c in tint)
+        light = tuple(min(255, int(c + 60)) for c in tint)
+        spike = pygame.Surface((r * 2 + 8, r * 2 + 8), pygame.SRCALPHA)
+        sc = r + 4
+        n_sp = 10
+        for k in range(n_sp):
+            ang = k * math.tau / n_sp + b.t * 0.15
+            tip = (sc + math.cos(ang) * (r + 4), sc + math.sin(ang) * (r + 4))
+            b1 = (sc + math.cos(ang + 0.28) * r * 0.85,
+                  sc + math.sin(ang + 0.28) * r * 0.85)
+            b2 = (sc + math.cos(ang - 0.28) * r * 0.85,
+                  sc + math.sin(ang - 0.28) * r * 0.85)
+            pygame.draw.polygon(spike, (*dark, 255), (tip, b1, b2))
+        screen.blit(spike, spike.get_rect(center=(bx, by)))
+
+        pygame.draw.circle(screen, tint, (int(bx), int(by)), r)
+        pygame.draw.circle(screen, light, (int(bx), int(by)), r, max(2, r // 8))
+        # 内核高光
+        pygame.draw.circle(screen, (*light, 120),
+                           (int(bx - r * 0.25), int(by - r * 0.3)), max(2, int(r * 0.3)))
+        # 眼睛：朝玩家方向偏移
+        ex = math.cos(b.t * 0.5) * r * 0.2
+        ey = math.sin(b.t * 0.5) * r * 0.2
+        for sgn in (-1, 1):
+            cx = int(bx + ex + sgn * r * 0.32)
+            cy = int(by + ey - r * 0.1)
+            pygame.draw.circle(screen, (255, 255, 255), (cx, cy), max(2, int(r * 0.18)))
+            pygame.draw.circle(screen, (30, 10, 20), (cx, cy), max(1, int(r * 0.09)))
+
+        if b.hit_flash > 0:
+            fl = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+            aa = int(200 * (b.hit_flash / 0.16))
+            pygame.draw.circle(fl, (255, 255, 255, aa), (r + 2, r + 2), r)
+            screen.blit(fl, fl.get_rect(center=(bx, by)))
+
+    def _draw_projectiles(self, screen, sx, sy):
+        """发光弹幕圆点。"""
+        for p in self.projectiles:
+            x = self.grid_x + p.pos[0] + sx
+            y = self.grid_y + p.pos[1] + sy
+            r = max(2, int(p.radius))
+            glow = pygame.Surface((r * 4, r * 4), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*p.color, 70), (r * 2, r * 2), r * 2)
+            screen.blit(glow, glow.get_rect(center=(x, y)))
+            pygame.draw.circle(screen, p.color, (int(x), int(y)), r)
+            pygame.draw.circle(screen, (255, 255, 255), (int(x), int(y)), max(1, r // 2))
 
     def _draw_snake(self, screen, sx, sy):
         sn = self.snake
@@ -1073,6 +1371,71 @@ class BattleScene(Scene):
         screen.blit(t, (rx + pad, ly + panel_h - t.get_height() - pad))
 
         self._draw_skill_toast()
+        self._draw_boss_bar()
+
+    def _draw_boss_bar(self):
+        """Boss 大血条：登场时显示在网格顶部，含名字 + 阶段分段刻度。"""
+        b = self.boss
+        if b is None:
+            return
+        screen = self.screen
+        w = int(self.GRID_PX_W * 0.7)
+        h = self.s(18)
+        x = self.grid_x + (self.GRID_PX_W - w) // 2
+        y = self.grid_y + self.s(8)
+
+        bar = pygame.Surface((w, h), pygame.SRCALPHA)
+        bar.fill((20, 14, 26, 210))
+        screen.blit(bar, (x, y))
+        ratio = b.hp_ratio()
+        fill_w = int(w * ratio)
+        if fill_w > 0:
+            grad = pygame.Surface((fill_w, h), pygame.SRCALPHA)
+            grad.fill((*b.tint, 235))
+            screen.blit(grad, (x, y))
+        pygame.draw.rect(screen, (255, 255, 255), pygame.Rect(x, y, w, h), 2,
+                         border_radius=self.s(4))
+        # 阶段分段刻度
+        for ph in b.phases:
+            below = float(ph.get("below", 1.0))
+            if 0.0 < below < 1.0:
+                mx = x + int(w * below)
+                pygame.draw.line(screen, (255, 255, 255, 160), (mx, y), (mx, y + h), 1)
+
+        name = self.f_small.render(b.name, True, COLOR_TEXT)
+        screen.blit(name, (x, y - name.get_height() - self.s(2)))
+        hp_txt = self.f_tiny.render(f"{int(b.hp)} / {b.hp_max}", True, COLOR_TEXT_DIM)
+        screen.blit(hp_txt, (x + w - hp_txt.get_width(),
+                             y - hp_txt.get_height() - self.s(2)))
+
+    def _draw_boss_banner(self):
+        """登场横幅：屏幕中上方滞出的 Boss 名提示。"""
+        if self.boss_banner <= 0 or self.boss is None:
+            return
+        screen = self.screen
+        total = 2.6
+        life = self.boss_banner
+        if life > total - 0.4:
+            a = (total - life) / 0.4
+        elif life < 0.6:
+            a = life / 0.6
+        else:
+            a = 1.0
+        a = max(0.0, min(1.0, a))
+        cx = self.W // 2
+        cy = self.grid_y + int(self.GRID_PX_H * 0.28)
+        tint = self.boss.tint
+        band = pygame.Surface((int(self.W * 0.6), self.s(64)), pygame.SRCALPHA)
+        band.fill((10, 8, 16, int(190 * a)))
+        pygame.draw.rect(band, (*tint, int(230 * a)), band.get_rect(), self.s(3),
+                         border_radius=self.s(8))
+        screen.blit(band, band.get_rect(center=(cx, cy)))
+        warn = self.f_tiny.render("强敌登场", True, (*tint,))
+        warn.set_alpha(int(255 * a))
+        screen.blit(warn, warn.get_rect(center=(cx, cy - self.s(16))))
+        nm = self.f_sub.render(self.boss.name, True, COLOR_TEXT)
+        nm.set_alpha(int(255 * a))
+        screen.blit(nm, nm.get_rect(center=(cx, cy + self.s(12))))
 
     def _panel(self, screen, x, y, w, h):
         """统一的半透明面板样式"""
@@ -1089,7 +1452,9 @@ class BattleScene(Scene):
         screen.blit(veil, (0, 0))
 
         cx, cy = self.W // 2, self.H // 2
-        t = self.f_title.render("战斗结束", True, COLOR_ACCENT)
+        title = "胜利!" if self.victory else "战斗结束"
+        title_color = COLOR_GOLD if self.victory else COLOR_ACCENT
+        t = self.f_title.render(title, True, title_color)
         screen.blit(t, t.get_rect(center=(cx, cy - 250)))
 
         rows = [
@@ -1100,7 +1465,11 @@ class BattleScene(Scene):
             ("存活时间", f"{int(self.elapsed)} 秒", (120, 210, 200)),
             ("获得星尘", f"{self.stardust}", (206, 168, 255)),
         ]
-        y = cy - 140
+        if self.victory:
+            boss_name = self.boss.name if self.boss else "Boss"
+            rows.insert(0, ("击败 Boss", boss_name, title_color))
+            rows.append(("通关奖励", f"+{S.BOSS_REWARD_STARDUST} 星尘", (206, 168, 255)))
+        y = cy - (180 if self.victory else 140)
         for label, value, color in rows:
             lt = self.f_body.render(label, True, COLOR_TEXT_DIM)
             vt = self.f_body.render(value, True, color)
