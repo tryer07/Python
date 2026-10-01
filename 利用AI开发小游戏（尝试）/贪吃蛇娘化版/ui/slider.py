@@ -83,11 +83,12 @@ class Slider:
         from core.audio_manager import get_audio
         tr = self._track_rect
 
-        # 被选中（热键当前调的就是它）时，标签变主色并加个◀ 标记
+        # 被选中（热键当前调的就是它）时，标签变主色并加个● 标记
+        # （◀ 之类的几何符号在微软雅黑里是缺字豆腐块，不用）
         focused = (self.focus_key is not None
                    and get_audio().volume_focus == self.focus_key)
         lab_color = COLOR_ACCENT if focused else COLOR_TEXT_DIM
-        lab_text = ("◀ " + self.label) if focused else self.label
+        lab_text = ("● " + self.label) if focused else self.label
         lab = self.font.render(lab_text, True, lab_color)
         surface.blit(lab, lab.get_rect(midleft=(self.rect.x, self.rect.centery)))
 

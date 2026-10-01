@@ -448,10 +448,11 @@ class AudioManager:
         if self.save_manager is None:
             return
         try:
-            st = self.save_manager.data.setdefault("settings", {})
-            st["bgm_volume"] = self.bgm_volume
-            st["sfx_volume"] = self.sfx_volume
-            self.save_manager.save()
+            # 音量是机器级设置，走 set("settings") 路由到 config（跨存档槽共享）
+            self.save_manager.set("settings", {
+                "bgm_volume": self.bgm_volume,
+                "sfx_volume": self.sfx_volume,
+            })
         except Exception:
             pass
 

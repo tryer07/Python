@@ -287,6 +287,23 @@ def auto_strip(im, name="", prefer="auto"):
     return strip_flat_bg(im)
 
 
+def patch_watermark(im, wm_w=300, wm_h=90):
+    """用「水印区域正上方同尺寸的一块」盖掉右下角的 AI 水印文字。
+
+    与 kill_watermark(置透明) 不同，这里不产生透明角，适合整幅背景图：
+    背景右下角通常是地面/街景，从上方复制一块能自然延续纹理。
+    """
+    im = im.convert("RGBA")
+    w, h = im.size
+    wm_w = min(wm_w, w)
+    wm_h = min(wm_h, h // 2)
+    src_box = (w - wm_w, h - wm_h * 2, w, h - wm_h)   # 水印正上方一块
+    dst_box = (w - wm_w, h - wm_h)                    # 水印所在角
+    patch = im.crop(src_box)
+    im.paste(patch, dst_box)
+    return im
+
+
 def kill_watermark(im, wm_w=230, wm_h=70):
     """抹掉右下角水印"""
     im = im.convert("RGBA")
@@ -341,6 +358,38 @@ def make_body_seg(src_path, dst_path, size=(512, 512), taper=0.62, aspect=0.34, 
     im = Image.open(src_path).convert("RGBA")
     im = auto_strip(im, prefer=prefer)
     im = autocrop(im)
+    # 生图常把鳞片条带画成「3D 缎带」：正面是鳞片、下缘带一条低饱和灰白背面。
+    # 背面与主体连通、泛洪吃不掉，会混进中心条带。这里按行统计饱和度/亮度，
+    # 只保留真正有鳞片内容的行区间（饱和度高 或 偏暗），裁掉灰白背面。
+    w, h = im.size
+    px = im.load()
+    step = max(1, w // 64)
+    rows = []
+    for y in range(h):
+        sat = lum = n = 0
+        for x in range(0, w, step):
+            r, g, b, a = px[x, y]
+            if a <= 8:
+                continue
+            sat += max(r, g, b) - min(r, g, b)
+            lum += (r + g + b) // 3
+            n += 1
+        if n == 0:
+            rows.append(False)
+            continue
+        rows.append(sat / n > 15 or lum / n < 180)
+    best_s = best_e = -1
+    s = -1
+    for y in range(h + 1):
+        ok = y < h and rows[y]
+        if ok and s < 0:
+            s = y
+        elif not ok and s >= 0:
+            if y - s > best_e - best_s:
+                best_s, best_e = s, y
+            s = -1
+    if best_s >= 0 and best_e - best_s >= max(16, h // 8):
+        im = im.crop((0, best_s, w, best_e))
     w, h = im.size
     band_h = max(24, int(w * aspect))
     top = (h - band_h) // 2
@@ -398,6 +447,8 @@ def main():
             im = Image.open(src)
             if wm:
                 im = kill_watermark(im)
+            else:
+                im = patch_watermark(im)
             im = fit(im, size)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             im.save(dst, "PNG", optimize=True)
@@ -410,11 +461,20 @@ def main():
                 fail += 1
 
     # 角色三件套：head(不裁边保构图) / tail_tip(裁边) / body_seg(梯形条带)
+    # 另：full(全身立绘，供角色选择/详情/抽卡展示，裁边)
     for key, cid in CHARACTERS:
         cdir = os.path.join(AST, "characters", cid)
         up = os.path.join(AST, f"characters/{key}_src_upper.png")
         sc = os.path.join(AST, f"characters/{key}_src_scale.png")
         tl = os.path.join(AST, f"characters/{key}_src_tail.png")
+        fl = os.path.join(AST, f"characters/{key}_src_full.png")
+        if os.path.exists(fl):
+            if _process(fl, os.path.join(cdir, "full.png"), (1024, 1536), True, True, "flood"):
+                ok += 1
+            else:
+                fail += 1
+        else:
+            print("[跳过] 源文件不存在:", f"{key}_src_full.png")
         if _process(up, os.path.join(cdir, "head.png"), (1024, 1024), True, False, "flood"):
             ok += 1
         else:

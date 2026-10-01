@@ -344,10 +344,27 @@ class Mob:
         self.t = random.random() * 6.28
         self.jitter = random.uniform(0.85, 1.15)  # 个体速度差，避免整齐划一
 
+        # ---- 持续状态（减速 / 灼烧）：由 battle 施加，减速在 update 内自结算 ----
+        self.slow_mult = 1.0
+        self.slow_t = 0.0
+        self.burn_dps = 0.0
+        self.burn_t = 0.0
+        self.burn_acc = 0.0
+        # ---- 精英标记（普通小怪为 False）----
+        self.is_elite = False
+        self.elite_name = ""
+        self.drop_count = 1
+
     def update(self, dt, player_pos, world_w, world_h, mobs=None):
         if self.hit_flash > 0:
             self.hit_flash -= dt
         self.t += dt * 3.0
+
+        # 减速状态到期自动恢复
+        if self.slow_t > 0:
+            self.slow_t = max(0.0, self.slow_t - dt)
+            if self.slow_t <= 0:
+                self.slow_mult = 1.0
 
         # 击退衰减
         kx, ky = self.knock
@@ -364,7 +381,7 @@ class Mob:
         dy = player_pos[1] - self.pos[1]
         d = math.hypot(dx, dy)
         if d > 1.0:
-            sp = self.speed * self.jitter
+            sp = self.speed * self.jitter * self.slow_mult
             self.pos[0] += dx / d * sp * dt
             self.pos[1] += dy / d * sp * dt
 
@@ -403,6 +420,39 @@ class Mob:
         d = math.hypot(dx, dy) or 1.0
         self.knock = [dx / d * strength, dy / d * strength]
 
+    def apply_slow(self, mult, time):
+        """被减速：保留更强的倍率与更长的剩余时间。"""
+        mult = max(0.1, min(1.0, mult))
+        if self.slow_t <= 0 or mult < self.slow_mult:
+            self.slow_mult = mult
+        self.slow_t = max(self.slow_t, time)
+
+    def apply_burn(self, dps, time):
+        """被灼烧：保留更高 DoT 与更长剩余时间。"""
+        self.burn_dps = max(self.burn_dps, dps)
+        self.burn_t = max(self.burn_t, time)
+
     @property
     def draw_pos(self):
         return (self.pos[0], self.pos[1])
+
+
+# ======================================================================
+#  精英怪（剧情模式定时登场）
+# ======================================================================
+class EliteMob(Mob):
+    """精英怪：体型更大、血量更厚、碰触更痛，死亡多掉落，头顶常驻名字与血条。"""
+
+    def __init__(self, pos, hp_mult=1.0, speed=100.0, atk=None, radius=None,
+                 name="精英"):
+        base_radius = radius if radius is not None else S.MOB_RADIUS
+        super().__init__(
+            pos,
+            hp_mult=hp_mult * S.ELITE_HP_MULT,
+            speed=speed * S.ELITE_SPEED_MULT,
+            atk=atk if atk is not None else S.ELITE_ATK,
+            radius=base_radius * S.ELITE_SIZE_MULT,
+        )
+        self.is_elite = True
+        self.elite_name = name
+        self.drop_count = S.ELITE_DROPS

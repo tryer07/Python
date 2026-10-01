@@ -14,6 +14,7 @@ tools/playsim.py —— 自动试玩，用来验证平衡（自由移动版）
 
 import math
 import os
+import shutil
 import sys
 import tempfile
 
@@ -25,6 +26,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 import pygame  # noqa: E402
 
 import settings as S  # noqa: E402
+import core.save_manager as _sm  # noqa: E402
 from core.game import Game  # noqa: E402
 from scenes.battle import BattleScene  # noqa: E402
 
@@ -109,35 +111,32 @@ def nearest_mob_dist(scene):
 
 
 def auto_pick_card(scene):
-    """三选一：优先补满 6 个技能，技能齐了再叠被动。"""
-    overlay = scene.card_overlay
-    if not overlay:
-        return
-    skill_idx = next((i for i, c in enumerate(overlay)
-                      if c.get("type") == "skill"
-                      and not scene.skills.has(c.get("ref"))), None)
-    if skill_idx is None and scene.skills.count >= 6:
-        skill_idx = next((i for i, c in enumerate(overlay)
-                          if c.get("type") == "skill"), None)
-    idx = skill_idx if skill_idx is not None else 0
-    scene._choose_card(idx)
+    """三选一：卡池已只剩通用属性卡，直接选第一张。"""
+    if scene.card_overlay:
+        scene._choose_card(0)
 
 
 def cast_ready_skills(scene):
+    """专属主动只有一个（绑 1 键），冷却好了就放。"""
     cdr = scene.stats["cdr"]
-    for key in range(1, 7):
-        sid = scene.skills.sid_at_key(key)
-        if sid and scene.skills.ready(sid, cdr):
-            scene.cast_skill(key)
+    sid = scene.skills.active_sid
+    if sid and scene.skills.ready(sid, cdr):
+        scene.cast_skill(1)
 
 
-def run_once(max_seconds=300):
+def run_once(mode="endless", level=1, max_seconds=300):
+    # 存档隔离：把 SAVES_DIR 指向临时目录，绝不污染真实 saves/
+    tmp = tempfile.mkdtemp(prefix="sg_playsim_")
+    _sm.SAVES_DIR = tmp
     game = Game()
     game.register_scene("battle", BattleScene)
-    tmp = tempfile.mkdtemp(prefix="sg_playsim_")
-    game.save_manager.save_path = os.path.join(tmp, "save_data.json")
     game.save_manager.data["selected_character"] = "sakura"
     game.save_manager.data["selected_scene"] = "campus_garden"
+    game.save_manager.data["tutorial_done"] = True   # 试玩不弹新手指引
+    if mode == "story":
+        game.pending_run = {"mode": "story", "level": level}
+    else:
+        game.pending_run = {"mode": "endless", "scene": "campus_garden"}
     game.change_scene("battle")
     scene = game.current_scene
 
@@ -176,8 +175,10 @@ def run_once(max_seconds=300):
                 break
     finally:
         pygame.key.get_pressed = real_get_pressed
+        shutil.rmtree(tmp, ignore_errors=True)
 
     return {
+        "mode": mode,
         "time": scene.elapsed,
         "level": scene.snake.level,
         "attack": scene.player_damage,
@@ -194,17 +195,25 @@ def run_once(max_seconds=300):
 
 
 def main():
-    runs = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+    args = sys.argv[1:]
+    runs = int(args[0]) if args else 3
+    mode = args[1] if len(args) > 1 else "mixed"
     print("=" * 64)
-    print(" 自动试玩 · 平衡性检查（自由移动版）")
+    print(" 自动试玩 · 平衡性检查（专属技能包 + 剧情/无尽）")
     print("=" * 64)
     rows = []
     for i in range(runs):
-        r = run_once()
+        if mode == "mixed":
+            m = "story" if i == 0 else "endless"
+        else:
+            m = mode
+        cap = 960 if m == "story" else 300
+        r = run_once(mode=m, level=1, max_seconds=cap)
         rows.append(r)
         end = "通关" if r["victory"] else ("存活" if r["alive"] else "阵亡")
-        print(f"第{i + 1}局  存活 {r['time']:5.1f}s  等级 {r['level']:2d}  "
-              f"技能 {r['skills']}/6  击杀 {r['kills']:3d}  得分 {r['score']:6d}  "
+        tag = "剧情" if r["mode"] == "story" else "无尽"
+        print(f"第{i + 1}局[{tag}]  存活 {r['time']:5.1f}s  等级 {r['level']:2d}  "
+              f"击杀 {r['kills']:3d}  得分 {r['score']:6d}  "
               f"受伤 {r['hurt']:2d}  结局 {end}")
 
     if rows:
@@ -216,14 +225,7 @@ def main():
         print("-" * 64)
         print(f"平均存活 {avg_t:.1f}s   平均等级 {avg_l:.1f}   "
               f"平均击杀 {avg_k:.0f}   通关 {wins}/{n}")
-        print("\n目标参考：能活到 Boss 触发（~60s）并有输赢悬念；"
-              "会走位的玩家通关率不宜 0% 也不宜 100%")
-        if avg_t < 40:
-            print(">> 偏难：生存时间过短，建议调低 MOB_HP_GROWTH / 放慢刷怪 / 加闪避")
-        elif wins == n and avg_t > 200:
-            print(">> 偏易：稳定通关且耗时很长，建议上调怪物成长或 Boss 血量")
-        else:
-            print(">> 节奏在合理区间")
+        print(">> 验证目标：剧情/无尽两种模式均无异常报错，能正常推进与结算")
     pygame.quit()
     return 0
 

@@ -1,12 +1,25 @@
 import os
 import json
+import time
 from settings import SAVES_DIR, ENHANCE_MAX_LAYER
 
 
 class SaveManager:
-    """管理游戏存档的读写"""
+    """管理游戏存档的读写（多存档槽）。
+
+    目录结构：
+      saves/config.json        —— 机器级配置：display + settings(音量) + active_slot
+      saves/slots/<id>.json    —— 每个存档槽的游戏进度（角色/星尘/战绩/剧情解锁…）
+      saves/save_data.json     —— 旧版单存档；首次运行且无槽时自动导入为 slot_1
+
+    路由约定：
+      get/set("settings" | "display")  -> config（跨槽共享）
+      其余 key                          -> 当前激活槽的 self.data
+    """
 
     DEFAULT_SAVE = {
+        "slot_name": "存档",
+        "created_at": 0,
         "player_name": "玩家",
         "currency": 0,
         "gacha_tickets": 5,
@@ -20,10 +33,10 @@ class SaveManager:
                 "skill_points": 0
             }
         },
-        "settings": {
-            "bgm_volume": 0.7,
-            "sfx_volume": 0.8
-        },
+        # ===== 剧情关卡进度 =====
+        "story_unlocked": 1,      # 已解锁到第几关（1 起）
+        "story_cleared": [],      # 已通关的关卡 index 列表
+        "tutorial_done": False,   # 新手指引是否已看过
         # ===== 战斗战绩 =====
         "progress": {
             "best_score": 0,
@@ -36,15 +49,69 @@ class SaveManager:
         }
     }
 
+    DEFAULT_CONFIG = {
+        "active_slot": None,
+        "settings": {"bgm_volume": 0.7, "sfx_volume": 0.8},
+        "display": {},
+    }
+
+    # 这些 key 存在机器级 config，不随存档槽切换
+    CONFIG_KEYS = ("settings", "display")
+
     def __init__(self):
         os.makedirs(SAVES_DIR, exist_ok=True)
-        self.save_path = os.path.join(SAVES_DIR, "save_data.json")
-        self.data = self._load()
+        self.slots_dir = os.path.join(SAVES_DIR, "slots")
+        os.makedirs(self.slots_dir, exist_ok=True)
+        self.config_path = os.path.join(SAVES_DIR, "config.json")
+        self.legacy_path = os.path.join(SAVES_DIR, "save_data.json")
 
-    def _load(self):
-        if os.path.exists(self.save_path):
+        self.config = self._load_config()
+        self._migrate_legacy()
+
+        # 选定激活槽：config 记录的 -> 已存在的第一个 -> 新建一个
+        self.active_slot = self.config.get("active_slot")
+        if not self.active_slot or not self._slot_exists(self.active_slot):
+            slots = self.list_slots()
+            if slots:
+                self.active_slot = slots[0]["id"]
+            else:
+                self.active_slot = self.create_slot("存档 1", activate=False)
+            self.config["active_slot"] = self.active_slot
+            self._save_config()
+
+        self.save_path = self._slot_path(self.active_slot)
+        self.data = self._load_slot(self.active_slot)
+
+    # ======================== 路径 / 基础 IO ========================
+    def _slot_path(self, slot_id):
+        return os.path.join(self.slots_dir, f"{slot_id}.json")
+
+    def _slot_exists(self, slot_id):
+        return bool(slot_id) and os.path.exists(self._slot_path(slot_id))
+
+    def _load_config(self):
+        cfg = json.loads(json.dumps(self.DEFAULT_CONFIG))   # 深拷贝
+        if os.path.exists(self.config_path):
             try:
-                with open(self.save_path, "r", encoding="utf-8") as f:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                self._deep_update(cfg, saved)
+            except (json.JSONDecodeError, IOError):
+                pass
+        return cfg
+
+    def _save_config(self):
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, ensure_ascii=False, indent=2)
+        except IOError:
+            pass
+
+    def _load_slot(self, slot_id):
+        path = self._slot_path(slot_id)
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
                     saved = json.load(f)
                 merged = json.loads(json.dumps(self.DEFAULT_SAVE))   # 深拷贝
                 self._deep_update(merged, saved)
@@ -52,7 +119,9 @@ class SaveManager:
                 return merged
             except (json.JSONDecodeError, IOError):
                 pass
-        return json.loads(json.dumps(self.DEFAULT_SAVE))
+        fresh = json.loads(json.dumps(self.DEFAULT_SAVE))
+        self._migrate(fresh)
+        return fresh
 
     # ====== 旧 ID -> 新 ID。改角色/场景命名时在这里加映射，老存档不会失效 ======
     ID_MAP = {
@@ -100,6 +169,12 @@ class SaveManager:
                 cd[cid] = entry
             entry["enhance"] = max(0, min(ENHANCE_MAX_LAYER, int(entry.get("enhance", 0) or 0)))
 
+        # 剧情 / 新手指引字段：老存档没有则补默认
+        data.setdefault("story_unlocked", 1)
+        if not isinstance(data.get("story_cleared"), list):
+            data["story_cleared"] = []
+        data.setdefault("tutorial_done", False)
+
     @staticmethod
     def _deep_update(base, incoming):
         """递归合并，这样老存档缺了新字段也不会丢数据"""
@@ -111,8 +186,211 @@ class SaveManager:
         return base
 
     def save(self):
-        with open(self.save_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, ensure_ascii=False, indent=2)
+        """写回当前激活槽。"""
+        try:
+            with open(self.save_path, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, ensure_ascii=False, indent=2)
+        except IOError:
+            pass
+
+    # ======================== 旧单存档迁移 ========================
+    def _migrate_legacy(self):
+        """若存在旧 saves/save_data.json 且尚无任何槽，导入为 slot_1「测试存档」。
+
+        同时把旧存档里的 display / settings 提升到机器级 config。
+        迁移完成后把旧文件改名为 .imported，保证只导入一次。"""
+        if not os.path.exists(self.legacy_path):
+            return
+        if self.list_slots():
+            return
+        try:
+            with open(self.legacy_path, "r", encoding="utf-8") as f:
+                legacy = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return
+        if not isinstance(legacy, dict):
+            return
+
+        # display / settings 提升到 config（仅当 config 里还是空默认时）
+        if legacy.get("display") and not self.config.get("display"):
+            self.config["display"] = legacy["display"]
+        if legacy.get("settings"):
+            self.config["settings"] = legacy["settings"]
+
+        slot_data = json.loads(json.dumps(self.DEFAULT_SAVE))
+        # 剔除已提升到 config 的机器级字段，其余并入槽数据
+        for k, v in legacy.items():
+            if k in self.CONFIG_KEYS:
+                continue
+            slot_data[k] = v
+        slot_data["slot_name"] = legacy.get("slot_name") or "测试存档"
+        slot_data.setdefault("created_at", time.time())
+
+        slot_id = "slot_1"
+        self._migrate(slot_data)
+        try:
+            with open(self._slot_path(slot_id), "w", encoding="utf-8") as f:
+                json.dump(slot_data, f, ensure_ascii=False, indent=2)
+        except IOError:
+            return
+
+        self.config["active_slot"] = slot_id
+        self._save_config()
+        # 旧文件改名，避免重复导入
+        try:
+            os.replace(self.legacy_path, self.legacy_path + ".imported")
+        except OSError:
+            pass
+
+    # ======================== 多存档槽管理 ========================
+    def _next_slot_id(self):
+        """扫描 slots 目录，返回下一个可用的 slot_N。"""
+        max_n = 0
+        try:
+            for fn in os.listdir(self.slots_dir):
+                if fn.startswith("slot_") and fn.endswith(".json"):
+                    try:
+                        max_n = max(max_n, int(fn[len("slot_"):-len(".json")]))
+                    except ValueError:
+                        pass
+        except OSError:
+            pass
+        return f"slot_{max_n + 1}"
+
+    def list_slots(self):
+        """返回所有存档槽摘要（按创建时间升序）。
+
+        每项：{id, name, selected_character, story_unlocked, story_cleared,
+              currency, best_score, total_runs, created_at}
+        """
+        out = []
+        try:
+            files = os.listdir(self.slots_dir)
+        except OSError:
+            files = []
+        for fn in files:
+            if not (fn.startswith("slot_") and fn.endswith(".json")):
+                continue
+            slot_id = fn[:-len(".json")]
+            try:
+                with open(os.path.join(self.slots_dir, fn), "r", encoding="utf-8") as f:
+                    d = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                continue
+            if not isinstance(d, dict):
+                continue
+            prog = d.get("progress", {}) or {}
+            out.append({
+                "id": slot_id,
+                "name": d.get("slot_name", slot_id),
+                "selected_character": d.get("selected_character", "sakura"),
+                "story_unlocked": d.get("story_unlocked", 1),
+                "story_cleared": d.get("story_cleared", []),
+                "currency": d.get("currency", 0),
+                "best_score": prog.get("best_score", 0),
+                "total_runs": prog.get("total_runs", 0),
+                "created_at": d.get("created_at", 0),
+            })
+        out.sort(key=lambda s: (s.get("created_at", 0), s["id"]))
+        return out
+
+    def create_slot(self, name="新存档", activate=True):
+        """以 DEFAULT_SAVE 起一个新槽，标记 tutorial_done=False、story_unlocked=1。
+
+        返回新槽 id。activate=True 时立即切换到该槽。"""
+        slot_id = self._next_slot_id()
+        data = json.loads(json.dumps(self.DEFAULT_SAVE))
+        data["slot_name"] = name or "新存档"
+        data["created_at"] = time.time()
+        data["story_unlocked"] = 1
+        data["story_cleared"] = []
+        data["tutorial_done"] = False
+        self._migrate(data)
+        try:
+            with open(self._slot_path(slot_id), "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except IOError:
+            return None
+        if activate:
+            self.switch_slot(slot_id)
+        return slot_id
+
+    def delete_slot(self, slot_id):
+        """删除指定槽。若删的是激活槽，则手动切到剩余的第一个
+        （都没有就新建）。切走时绝不能 save() 回写已删的槽。"""
+        if not self._slot_exists(slot_id):
+            return False
+        was_active = (self.active_slot == slot_id)
+        try:
+            os.remove(self._slot_path(slot_id))
+        except OSError:
+            return False
+        if was_active:
+            remaining = self.list_slots()          # 已不含被删槽
+            if remaining:
+                target = remaining[0]["id"]
+            else:
+                target = self.create_slot("存档 1", activate=False)
+            # 手动切换，不走 switch_slot（避免它 self.save() 重建被删文件）
+            self.active_slot = target
+            self.save_path = self._slot_path(target)
+            self.data = self._load_slot(target)
+            self.config["active_slot"] = target
+            self._save_config()
+        return True
+
+    def switch_slot(self, slot_id):
+        """保存当前槽 -> 切换到目标槽 -> 重载数据 -> 回写 config.active_slot。"""
+        if not self._slot_exists(slot_id):
+            return False
+        self.save()                       # 落盘当前槽
+        self.active_slot = slot_id
+        self.save_path = self._slot_path(slot_id)
+        self.data = self._load_slot(slot_id)
+        self.config["active_slot"] = slot_id
+        self._save_config()
+        return True
+
+    @property
+    def active_slot_name(self):
+        return self.data.get("slot_name", self.active_slot)
+
+    def rename_slot(self, slot_id, name):
+        """重命名指定槽（激活槽直接改内存并落盘；非激活槽读写其文件）。"""
+        if slot_id == self.active_slot:
+            self.data["slot_name"] = name
+            self.save()
+            return True
+        path = self._slot_path(slot_id)
+        if not os.path.exists(path):
+            return False
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            d["slot_name"] = name
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(d, f, ensure_ascii=False, indent=2)
+        except (json.JSONDecodeError, IOError):
+            return False
+        return True
+
+    # ======================== 剧情进度接口 ========================
+    def record_level_clear(self, level_index):
+        """通关第 level_index 关：记入 story_cleared 并解锁下一关。"""
+        if level_index <= 0:
+            return
+        cleared = self.data.setdefault("story_cleared", [])
+        if level_index not in cleared:
+            cleared.append(level_index)
+        self.data["story_unlocked"] = max(int(self.data.get("story_unlocked", 1)),
+                                          level_index + 1)
+        self.save()
+
+    def get_story_progress(self):
+        return {
+            "unlocked": int(self.data.get("story_unlocked", 1)),
+            "cleared": list(self.data.get("story_cleared", [])),
+        }
 
     # ======================== 战斗结算接口 ========================
     def add_stardust(self, amount):
@@ -147,11 +425,17 @@ class SaveManager:
         self.save()
 
     def get(self, key, default=None):
+        if key in self.CONFIG_KEYS:
+            return self.config.get(key, default)
         return self.data.get(key, default)
 
     def set(self, key, value):
-        self.data[key] = value
-        self.save()
+        if key in self.CONFIG_KEYS:
+            self.config[key] = value
+            self._save_config()
+        else:
+            self.data[key] = value
+            self.save()
 
     # ======================== 强化养成接口 ========================
     def get_enhance(self, char_id):
@@ -177,5 +461,6 @@ class SaveManager:
         return cur + 1, False
 
     def reset(self):
-        self.data = self.DEFAULT_SAVE.copy()
+        self.data = json.loads(json.dumps(self.DEFAULT_SAVE))
+        self._migrate(self.data)
         self.save()

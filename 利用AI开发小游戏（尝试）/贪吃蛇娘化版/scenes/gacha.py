@@ -176,6 +176,11 @@ class GachaScene(Scene):
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 self._on_back()
                 return
+            # 结果浮层展示中：任意按键 / 点击立即关闭，不用干等 4 秒
+            if self.result_timer > 0 and event.type in (
+                    pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                self.result_timer = 0.0
+                return
             self.back_btn.handle_event(event)
             self.btn_single.handle_event(event)
             self.btn_ten.handle_event(event)
@@ -258,7 +263,7 @@ class GachaScene(Scene):
 
         roster = self._roster()
         ch = self._char_by_id(roster[int(self.time / 2.0) % max(1, len(roster))])
-        head = ch.get("head") or "characters/sakura/head.png"
+        head = ch.get("full") or ch.get("head") or "characters/sakura/head.png"
         img = self.assets.get_scaled(head, height=self.s(330))
         import math
         k = 1.0 + math.sin(self.time * 1.6) * 0.015
@@ -277,8 +282,9 @@ class GachaScene(Scene):
         screen.blit(veil, (0, 0))
 
         n = len(self.result)
+        # 下移一点，避开底层页头副标题（隔着一层暗纱也不叠字）
         t = self.font_sub.render("抽卡结果", True, COLOR_TEXT)
-        screen.blit(t, t.get_rect(center=(self.W // 2, self.s(160))))
+        screen.blit(t, t.get_rect(center=(self.W // 2, self.s(188))))
 
         cols = min(5, n)
         cw, chh = self.s(190), self.s(230)
@@ -296,7 +302,7 @@ class GachaScene(Scene):
             pygame.draw.rect(screen, color, rect, 3, border_radius=12)
 
             ch = self._char_by_id(char_id)
-            img = self.assets.get_scaled(ch.get("head") or "characters/sakura/head.png",
+            img = self.assets.get_scaled(ch.get("full") or ch.get("head") or "characters/sakura/head.png",
                                          height=self.s(110))
             screen.blit(img, img.get_rect(center=(rect.centerx, rect.y + self.s(78))))
 
@@ -311,8 +317,9 @@ class GachaScene(Scene):
             t = self.font_small.render(label, True, label_color)
             screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(200))))
 
-        t = self.font_small.render("按任意方向键关闭", True, COLOR_TEXT_DIM)
-        screen.blit(t, t.get_rect(center=(self.W // 2, self.H - self.s(90))))
+        t = self.font_small.render("按任意键或点击关闭", True, COLOR_TEXT_DIM)
+        # 放在抽卡按钮下方，不再压住按钮文字
+        screen.blit(t, t.get_rect(center=(self.W // 2, self.H - self.s(52))))
 
     def _on_back(self):
         self.game.change_scene("main_menu")

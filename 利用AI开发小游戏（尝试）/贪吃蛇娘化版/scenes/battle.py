@@ -23,9 +23,9 @@ import pygame
 
 import settings as S
 from core.scene import Scene
-from game_logic.entities import Drop, Mob, PlayerBullet, SnakeGirl
+from game_logic.entities import Drop, EliteMob, Mob, PlayerBullet, SnakeGirl
 from game_logic.boss import Boss, boss_trigger_met, load_boss_cfg
-from game_logic.skills import SkillEngine, all_skill_ids, skill_info
+from game_logic.skills import SkillEngine, skill_info
 from ui.button import Button
 from settings import (
     COLOR_ACCENT, COLOR_ACCENT_DARK, COLOR_BG, COLOR_BG_LIGHT, COLOR_DANGER,
@@ -107,7 +107,24 @@ class BattleScene(Scene):
     def reset(self):
         self.game.audio.play_bgm("battle")
         char_id = self.game.save_manager.get("selected_character", "sakura")
-        self.scene_id = self.game.save_manager.get("selected_scene", "campus_garden")
+
+        # ---- 本局模式：剧情 / 无尽，由关卡选择场景写入 game.pending_run ----
+        run = getattr(self.game, "pending_run", None) or {}
+        self.mode = run.get("mode", "endless")
+        self.level_cfg = None
+        self.level_index = 0
+        if self.mode == "story":
+            self.level_index = int(run.get("level", 1))
+            self.level_cfg = self._load_level(self.level_index)
+            if self.level_cfg:
+                self.scene_id = self.level_cfg.get("scene", "campus_garden")
+                self.level_index = int(self.level_cfg.get("index", self.level_index))
+            else:
+                self.scene_id = self.game.save_manager.get(
+                    "selected_scene", "campus_garden")
+        else:
+            self.scene_id = run.get("scene") or self.game.save_manager.get(
+                "selected_scene", "campus_garden")
         self.snake_name, self.snake_rarity = self._char_label(char_id)
         self._load_skin(char_id, self.scene_id)
 
@@ -134,16 +151,23 @@ class BattleScene(Scene):
             self.snake.hp_max = max(1, int(round(self.snake.hp_max * hp_mult)))
             self.snake.hp = self.snake.hp_max
         self.skills = SkillEngine()
+        self.skills.load_kit(char_id)
+        self.passive_kind = self.skills.passive_kind
+        self._dmg_accum = 0.0            # 月见「静夜」减伤的小数累加
         self.skill_toast = []
         self._cards_cache = None
+        # 常驻被动落地：御风(移速+) 直接进 stats，其余在对应结算处按 passive_kind 生效
+        if self.passive_kind == "speed":
+            self.stats["speed"] *= S.PASSIVE_GALE_SPEED
 
         # ---- 实体容器 ----
         self.drops = []
         self.mobs = []
-        self.bullets = []          # 玩家普攻 / 大招弹
+        self.bullets = []          # 玩家普攻 / 专属主动弹
         self.projectiles = []      # Boss 弹幕
         self.particles = []
         self.floaters = []
+        self.effects = []          # 技能特效（环 / 光束 / 扇形 / 拖影）
 
         # ---- 计时 / 计分 ----
         self.elapsed = 0.0
@@ -164,11 +188,38 @@ class BattleScene(Scene):
         self.card_rects = []
 
         # ---- Boss 战状态 ----
-        self.boss_cfg = load_boss_cfg(self.scene_id)
+        # 剧情模式：撑满 story_duration 触发 Boss；无尽模式：无 Boss 纯生存。
+        self.story_duration = float(S.STORY_DURATION)
+        self.elite_interval = float(S.ELITE_INTERVAL)
+        if self.level_cfg:
+            self.story_duration = float(self.level_cfg.get("duration", S.STORY_DURATION))
+            self.elite_interval = float(
+                self.level_cfg.get("elite_interval", S.ELITE_INTERVAL))
+        if self.mode == "story":
+            self.boss_cfg = load_boss_cfg(self.scene_id)
+            if self.boss_cfg:
+                self.boss_cfg = dict(self.boss_cfg)
+                self.boss_cfg["trigger"] = {"mode": "time",
+                                            "value": self.story_duration}
+        else:
+            self.boss_cfg = None
         self.boss = None
         self.boss_spawned = False
         self.boss_hit_cd = 0.0
         self.boss_banner = 0.0
+        # ---- 剧情节奏计时 ----
+        self.elite_timer = self.elite_interval
+        self.elites_spawned = 0
+
+        # ---- 新手指引：当前槽未看过时，开局按序播放定时浮层 ----
+        self.tutorial_hints = list(getattr(S, "TUTORIAL_HINTS", []))
+        self.tutorial_index = 0
+        self.tutorial_timer = 0.0
+        try:
+            done = bool(self.game.save_manager.get("tutorial_done", False))
+        except Exception:
+            done = True
+        self.tutorial_active = (not done) and bool(self.tutorial_hints)
 
         # ---- 摄像机 ----
         self.cam = [self.snake.pos[0] - self.W / 2, self.snake.pos[1] - self.H / 2]
@@ -194,6 +245,20 @@ class BattleScene(Scene):
         except (IOError, json.JSONDecodeError, AttributeError, TypeError):
             pass
         return char_id, char_id
+
+    def _load_level(self, index):
+        """按关卡序号读 data/levels.json 配置，取不到返回 None。"""
+        try:
+            path = os.path.join(S.DATA_DIR, "levels.json")
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            items = raw.get("levels", raw) if isinstance(raw, dict) else raw
+            for lv in items:
+                if isinstance(lv, dict) and int(lv.get("index", -1)) == int(index):
+                    return lv
+        except (IOError, json.JSONDecodeError, AttributeError, TypeError, ValueError):
+            pass
+        return None
 
     def _load_skin(self, char_id, scene_id):
         default_head = "characters/sakura/head.png"
@@ -246,7 +311,9 @@ class BattleScene(Scene):
     # ================================================================ 派生属性
     @property
     def player_speed(self):
-        return S.PLAYER_SPEED * self.S * self.stats["speed"]
+        # 薄荷「疾风连闪」主动释放后的短时移速爆发
+        burst = S.GALE_SPEED_MULT if self.skills.gale_active else 1.0
+        return S.PLAYER_SPEED * self.S * self.stats["speed"] * burst
 
     @property
     def player_damage(self):
@@ -334,6 +401,25 @@ class BattleScene(Scene):
             radius=self.s(S.MOB_RADIUS),
         ))
 
+    def _spawn_elite(self):
+        """刷一只精英怪，登场带警示环与震屏。"""
+        self.elites_spawned += 1
+        pos = self._offscreen_pos()
+        e = EliteMob(
+            pos,
+            hp_mult=self._mob_hp_mult(),
+            speed=self._mob_speed(),
+            atk=S.ELITE_ATK,
+            radius=self.s(S.MOB_RADIUS),
+            name=f"精英 · 第{self.elites_spawned}波",
+        )
+        self.mobs.append(e)
+        self._fx_ring(pos[0], pos[1], self.s(150), (255, 90, 120), life=0.6)
+        self.shake = max(self.shake, 0.45)
+        self.game.audio.play("boss_appear", throttle=0.1)
+        self._float("精英怪出现!", self.snake.pos[0],
+                    self.snake.pos[1] - self.s(90), (255, 90, 120), 34)
+
     def _roll_kind(self):
         r = random.random()
         if r < S.DROP_EXP:
@@ -379,7 +465,7 @@ class BattleScene(Scene):
         self._update_bullets(dt)
         self._update_mobs(dt)
         self._update_items(dt)
-        self._update_skill_fields(dt)
+        self._update_mob_status(dt)
         self._handle_mob_contact()
         self._update_boss(dt)
 
@@ -388,11 +474,15 @@ class BattleScene(Scene):
 
         self.particles = list(self._tick_particles(dt))
         self.floaters = list(self._tick_floaters(dt))
+        for e in self.effects:
+            e["life"] -= dt
+        self.effects = [e for e in self.effects if e["life"] > 0]
         for t in self.skill_toast:
             t["life"] -= dt
         self.skill_toast = [t for t in self.skill_toast if t["life"] > 0]
 
         self._update_cam(dt)
+        self._update_tutorial(dt)
 
         # 升级选卡：攒着的卡在这里弹出（可能一次升多级）
         if self.pending_cards > 0 and self.card_overlay is None:
@@ -400,6 +490,7 @@ class BattleScene(Scene):
 
         if not self.snake.alive:
             self.finished = True
+            self._finish_tutorial()
             self.game.audio.play("gameover")
             self.game.audio.play_bgm("gameover")
             self.game.save_manager.add_stardust(self.stardust)
@@ -458,6 +549,8 @@ class BattleScene(Scene):
             wyp = mouse_pos[1] + self.cam[1]
             dirn = (wxp - self.snake.pos[0], wyp - self.snake.pos[1])
         if self.snake.start_dodge(dirn):
+            if self.passive_kind == "speed":
+                self.snake.dodge_cd *= S.PASSIVE_GALE_DODGE_CD
             self.game.audio.play("dodge", throttle=0.05)
             self._burst(self.snake.pos[0], self.snake.pos[1], (180, 220, 255), 14)
 
@@ -499,6 +592,7 @@ class BattleScene(Scene):
                 if math.hypot(b.pos[0] - m.pos[0], b.pos[1] - m.pos[1]) <= b.radius + m.radius:
                     b.hit_ids.add(m.uid)
                     self._hurt_mob(m, b.dmg, m.pos[0], m.pos[1], color=b.color, spark=6)
+                    self._apply_onhit_passive(m)
                     if b.pierce <= 0:
                         b.alive = False
                         break
@@ -527,6 +621,14 @@ class BattleScene(Scene):
             self.mob_spawn_timer = interval
             self._spawn_mob()
 
+        # 剧情模式：每 elite_interval 秒刷一只精英怪，直到 Boss 登场
+        if (self.mode == "story" and self.boss is None and not self.boss_spawned
+                and self.elapsed < self.story_duration):
+            self.elite_timer -= dt
+            if self.elite_timer <= 0:
+                self.elite_timer += self.elite_interval
+                self._spawn_elite()
+
         for m in self.mobs:
             m.update(dt, self.snake.pos, self.world_w, self.world_h, mobs=self.mobs)
 
@@ -545,7 +647,7 @@ class BattleScene(Scene):
                 continue
             if math.hypot(m.pos[0] - px, m.pos[1] - py) <= pr + m.radius:
                 m.knockback(self.snake.pos, 180.0)
-                if self.snake.take_damage(m.atk):
+                if self._snake_hurt(m.atk):
                     self._on_hurt()
 
     # ------------------------------------------------------------ 道具
@@ -593,74 +695,133 @@ class BattleScene(Scene):
 
     # ------------------------------------------------------------ 技能释放
     def cast_skill(self, key):
-        sid = self.skills.sid_at_key(key)
-        if sid is None:
+        """专属主动绑 1 键。key!=1 直接忽略。"""
+        if key != 1:
             return
-        cdr = self.stats["cdr"]
-        if not self.skills.ready(sid, cdr):
-            return
-        ev = self.skills.cast(sid, self.snake.pos, cdr)
+        ev = self.skills.cast(self.snake.pos, self.stats["cdr"])
         if ev:
             self._apply_skill_event(ev)
 
     def _apply_skill_event(self, ev):
         t = ev["type"]
         px, py = self.snake.pos
-        if t == "dash":
+        dx, dy = self.snake.aim_dir
+        base_ang = math.atan2(dy, dx)
+        if t == "petal_slash":
+            # 樱落：前冲斩 + 短护盾
             dist = ev["dist"] * self.S
-            dx, dy = self.snake.aim_dir
             x2 = min(max(px + dx * dist, self.snake.radius), self.world_w - self.snake.radius)
             y2 = min(max(py + dy * dist, self.snake.radius), self.world_h - self.snake.radius)
             self.game.audio.play("skill_dash")
             self._damage_segment(px, py, x2, y2, ev["dmg"], (255, 150, 190))
             self.snake.pos[0], self.snake.pos[1] = x2, y2
-            self._burst(x2, y2, (255, 150, 190), 22)
-            self.shake = max(self.shake, 0.3)
-            self._float("樱花冲锋", px, py - self.s(50), (255, 150, 190), 30)
-        elif t == "spike":
-            self.game.audio.play("skill_spike")
-            self._float("荆棘尾", px, py - self.s(50), (180, 120, 255), 30)
-            self._burst(px, py, (180, 120, 255), 18)
-        elif t == "shield":
-            self.snake.invincible = max(self.snake.invincible, ev["time"])
-            self.game.audio.play("skill_shield")
-            self._float("护盾", px, py - self.s(54), (130, 210, 255), 30)
-            self._burst(px, py, (130, 210, 255), 24)
-        elif t == "thorn":
-            scaled = ev["radius"] * self.S
-            n = len(ev["positions"])
-            for th in self.skills.thorns[-n:]:
-                th.radius = scaled
-            self.game.audio.play("skill_thorn")
-            self._float("蔓生荆棘", px, py - self.s(50), (140, 220, 140), 30)
-        elif t == "storm":
+            self.snake.invincible = max(self.snake.invincible, ev["shield"])
+            self._burst(x2, y2, (255, 150, 190), 24)
+            self._fx_trail(px, py, x2, y2, (255, 150, 190))
+            self.shake = max(self.shake, 0.32)
+            self._float("落萚·绉斩", px, py - self.s(54), (255, 150, 190), 30)
+        elif t == "gale_dash":
+            # 薄荷：多段突进 + 移速爆发
+            self.game.audio.play("skill_dash")
+            cx, cy = px, py
+            n = max(1, ev["count"])
+            for i in range(n):
+                ang = base_ang + (i - (n - 1) / 2.0) * 0.4
+                step = ev["dist"] * self.S
+                nx = min(max(cx + math.cos(ang) * step, self.snake.radius),
+                         self.world_w - self.snake.radius)
+                ny = min(max(cy + math.sin(ang) * step, self.snake.radius),
+                         self.world_h - self.snake.radius)
+                self._damage_segment(cx, cy, nx, ny, ev["dmg"], (150, 240, 190))
+                self._fx_trail(cx, cy, nx, ny, (150, 240, 190), life=0.26)
+                self._burst(nx, ny, (150, 240, 190), 12)
+                cx, cy = nx, ny
+            self.snake.pos[0], self.snake.pos[1] = cx, cy
+            self._float("疾风连闪", px, py - self.s(54), (150, 240, 190), 30)
+            self.shake = max(self.shake, 0.25)
+        elif t == "tide_surge":
+            # 潮汐：环形水浪 击退+减速+伤害
             r = ev["radius"] * self.S
             self.game.audio.play("skill_storm")
-            self._float("樱花风暴", px, py - self.s(60), (255, 200, 120), 34)
-            self._burst(px, py, (255, 200, 120), 48)
-            self.shake = max(self.shake, 0.45)
+            self._fx_ring(px, py, r, (120, 200, 255), life=0.5)
             for m in list(self.mobs):
-                if m.alive and math.hypot(m.pos[0] - px, m.pos[1] - py) <= r + m.radius:
+                if not m.alive:
+                    continue
+                if math.hypot(m.pos[0] - px, m.pos[1] - py) <= r + m.radius:
+                    m.apply_slow(ev["slow_mult"], ev["slow_time"])
+                    m.knockback((px, py), ev["knock"])
                     self._hurt_mob(m, ev["dmg"], m.pos[0], m.pos[1],
-                                   color=(255, 200, 120), spark=8)
+                                   color=(120, 200, 255), spark=8)
             self.mobs = [m for m in self.mobs if m.alive]
             if self.boss is not None and self.boss.alive:
                 bx, by = self.boss.pos
                 if math.hypot(bx - px, by - py) <= r + self.boss.radius_px:
-                    self._damage_boss(ev["dmg"], color=(255, 200, 120))
-        elif t == "bloom":
-            n = ev["count"]
+                    self._damage_boss(ev["dmg"], color=(120, 200, 255))
+            self._float("沧澜涌潮", px, py - self.s(58), (120, 200, 255), 32)
+            self.shake = max(self.shake, 0.35)
+        elif t == "ember_lash":
+            # 绯焰：扇形火焰鞭 + 灼烧
+            self.game.audio.play("skill_storm")
+            rng = ev["range"] * self.S
+            half = ev["angle"]
+            self._fx_fan(px, py, rng, base_ang, half, (255, 140, 80), life=0.4)
+            for m in list(self.mobs):
+                if not m.alive:
+                    continue
+                vx, vy = m.pos[0] - px, m.pos[1] - py
+                d0 = math.hypot(vx, vy)
+                if d0 <= rng + m.radius:
+                    da = abs((math.atan2(vy, vx) - base_ang + math.pi) % math.tau - math.pi)
+                    if d0 <= m.radius + self.s(12) or da <= half:
+                        m.apply_burn(ev["burn_dps"], ev["burn_time"])
+                        self._hurt_mob(m, ev["dmg"], m.pos[0], m.pos[1],
+                                       color=(255, 140, 80), spark=8)
+            self.mobs = [m for m in self.mobs if m.alive]
+            if self.boss is not None and self.boss.alive:
+                bx, by = self.boss.pos
+                if math.hypot(bx - px, by - py) <= rng + self.boss.radius_px:
+                    self._damage_boss(ev["dmg"], color=(255, 140, 80))
+            self._float("燎原火鞭", px, py - self.s(58), (255, 140, 80), 32)
+            self.shake = max(self.shake, 0.32)
+        elif t == "star_chain":
+            # 星璃：多枚追踪星弹，锁定不同敌人
             spd = ev["speed"] * self.S
-            for i in range(n):
-                ang = i * math.tau / n
+            targets = self._nearest_mobs(ev["count"])
+            for i in range(ev["count"]):
+                if i < len(targets):
+                    m = targets[i]
+                    ax, ay = m.pos[0] - px, m.pos[1] - py
+                else:
+                    ang = base_ang + (i - (ev["count"] - 1) / 2.0) * 0.5
+                    ax, ay = math.cos(ang), math.sin(ang)
+                d0 = math.hypot(ax, ay) or 1.0
                 self.bullets.append(PlayerBullet(
-                    (px, py), (math.cos(ang) * spd, math.sin(ang) * spd),
-                    ev["dmg"], self.s(11), life=ev["life"],
-                    color=(210, 180, 255), pierce=ev["pierce"]))
+                    (px, py), (ax / d0 * spd, ay / d0 * spd), ev["dmg"],
+                    self.s(10), life=ev["life"], color=(190, 150, 255), pierce=1))
             self.game.audio.play("skill_bloom")
-            self._float("月华绽放", px, py - self.s(64), (200, 170, 255), 36)
-            self._burst(px, py, (200, 170, 255), 40)
-            self.shake = max(self.shake, 0.4)
+            self._burst(px, py, (190, 150, 255), 20)
+            self._float("星陨链", px, py - self.s(58), (190, 150, 255), 32)
+        elif t == "moon_ward":
+            # 月见：穿透月光束 + 护盾
+            length = ev["length"] * self.S
+            halfw = ev["width"] * self.S * 0.5
+            x2, y2 = px + dx * length, py + dy * length
+            self.game.audio.play("skill_shield")
+            self._fx_beam(px, py, x2, y2, halfw * 2, (200, 210, 255), life=0.35)
+            for m in list(self.mobs):
+                if not m.alive:
+                    continue
+                if _seg_dist(m.pos[0], m.pos[1], px, py, x2, y2) <= halfw + m.radius:
+                    self._hurt_mob(m, ev["dmg"], m.pos[0], m.pos[1],
+                                   color=(200, 210, 255), spark=8)
+            self.mobs = [m for m in self.mobs if m.alive]
+            if self.boss is not None and self.boss.alive:
+                bx, by = self.boss.pos
+                if _seg_dist(bx, by, px, py, x2, y2) <= halfw + self.boss.radius_px:
+                    self._damage_boss(ev["dmg"], color=(200, 210, 255))
+            self.snake.invincible = max(self.snake.invincible, ev["shield"])
+            self._float("月华结界", px, py - self.s(58), (200, 210, 255), 32)
+            self.shake = max(self.shake, 0.3)
 
     def _damage_segment(self, x1, y1, x2, y2, dmg, color):
         reach = self.s(18)
@@ -669,51 +830,65 @@ class BattleScene(Scene):
                 continue
             if _seg_dist(m.pos[0], m.pos[1], x1, y1, x2, y2) <= m.radius + reach:
                 self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=8)
+                self._apply_onhit_passive(m)
         self.mobs = [m for m in self.mobs if m.alive]
         if self.boss is not None and self.boss.alive:
             bx, by = self.boss.pos
             if _seg_dist(bx, by, x1, y1, x2, y2) <= self.boss.radius_px + reach:
                 self._damage_boss(dmg, color=color)
 
-    def _update_skill_fields(self, dt):
-        """荆棘尾光环 + 蔓生荆棘地形：每帧对范围内敌人结算伤害。"""
+    def _nearest_mobs(self, count):
         px, py = self.snake.pos
-        if self.skills.spike_active:
-            r = self.skills.spike_radius * self.S
-            for m in list(self.mobs):
-                if not m.alive:
-                    continue
-                if math.hypot(m.pos[0] - px, m.pos[1] - py) <= r + m.radius:
-                    if self.skills.spike_ready(m.uid):
-                        self.skills.mark_spike(m.uid)
-                        self.game.audio.play("skill_spike", throttle=0.12)
-                        self._hurt_mob(m, self.skills.spike_dmg, m.pos[0], m.pos[1],
-                                       color=(180, 120, 255), spark=6)
-            self.mobs = [m for m in self.mobs if m.alive]
-            if self.boss is not None and self.boss.alive:
-                bx, by = self.boss.pos
-                if (math.hypot(bx - px, by - py) <= r + self.boss.radius_px
-                        and self.skills.spike_ready("boss")):
-                    self.skills.mark_spike("boss")
-                    self.game.audio.play("skill_spike", throttle=0.12)
-                    self._damage_boss(self.skills.spike_dmg, color=(180, 120, 255))
+        pool = [m for m in self.mobs if m.alive]
+        pool.sort(key=lambda m: math.hypot(m.pos[0] - px, m.pos[1] - py))
+        return pool[:max(0, int(count))]
 
-        if self.skills.thorns:
-            for m in list(self.mobs):
-                if not m.alive:
-                    continue
-                dmg = self.skills.thorn_damage_at(m.pos, m.uid, extra=m.radius * 0.5)
-                if dmg > 0:
-                    self.game.audio.play("skill_thorn", throttle=0.12)
-                    self._hurt_mob(m, dmg, m.pos[0], m.pos[1],
-                                   color=(140, 220, 140), spark=5)
-            self.mobs = [m for m in self.mobs if m.alive]
-            if self.boss is not None and self.boss.alive:
-                dmg = self.skills.thorn_damage_at(self.boss.pos, "boss",
-                                                  extra=self.boss.radius_px * 0.5)
-                if dmg > 0:
-                    self.game.audio.play("skill_thorn", throttle=0.12)
-                    self._damage_boss(dmg, color=(140, 220, 140))
+    def _apply_onhit_passive(self, m):
+        """普攻/技能命中时按被动附加减速(寒流)或灼烧(余烬)。"""
+        if not getattr(m, "alive", False):
+            return
+        if self.passive_kind == "slow":
+            m.apply_slow(S.PASSIVE_COLD_SLOW, S.PASSIVE_COLD_TIME)
+        elif self.passive_kind == "burn":
+            m.apply_burn(S.PASSIVE_EMBER_BURN_DPS, S.PASSIVE_EMBER_BURN_TIME)
+
+    def _update_mob_status(self, dt):
+        """灼烧 DoT 结算（减速在 Mob.update 内自结算）。"""
+        for m in list(self.mobs):
+            if not m.alive or m.burn_t <= 0:
+                continue
+            m.burn_t = max(0.0, m.burn_t - dt)
+            m.burn_acc += m.burn_dps * dt
+            whole = int(m.burn_acc)
+            if whole > 0:
+                m.burn_acc -= whole
+                self._burst(m.pos[0], m.pos[1], (255, 140, 80), 2)
+                if m.take_damage(whole):
+                    self._on_mob_killed(m, m.pos[0], m.pos[1])
+            if m.burn_t <= 0:
+                m.burn_dps = 0.0
+                m.burn_acc = 0.0
+        self.mobs = [m for m in self.mobs if m.alive]
+
+    # ------------------------------------------------------------ 特效辅助
+    def _fx_ring(self, x, y, r, color, life=0.45):
+        self.effects.append({"type": "ring", "x": x, "y": y, "r": r,
+                             "color": color, "life": life, "max_life": life})
+
+    def _fx_beam(self, x1, y1, x2, y2, width, color, life=0.35):
+        self.effects.append({"type": "beam", "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                             "width": width, "color": color, "life": life,
+                             "max_life": life})
+
+    def _fx_trail(self, x1, y1, x2, y2, color, life=0.3):
+        self.effects.append({"type": "trail", "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                             "width": self.s(16), "color": color, "life": life,
+                             "max_life": life})
+
+    def _fx_fan(self, x, y, rng, ang, half, color, life=0.4):
+        self.effects.append({"type": "fan", "x": x, "y": y, "range": rng, "ang": ang,
+                             "half": half, "color": color, "life": life,
+                             "max_life": life})
 
     # ------------------------------------------------------------ 伤害结算
     def _hurt_mob(self, m, dmg, mx, my, color=COLOR_GOLD, spark=0):
@@ -730,7 +905,38 @@ class BattleScene(Scene):
         self.game.audio.play("kill", throttle=0.04)
         self.score += 60
         self._burst(mx, my, (200, 130, 255), 20)
-        self._drop_from_mob(m)
+        # 掉落：精英多掉（drop_count），普通怪 1 个
+        n_drop = max(1, int(getattr(m, "drop_count", 1)))
+        for _ in range(n_drop):
+            jx = m.pos[0] + random.uniform(-self.s(30), self.s(30))
+            jy = m.pos[1] + random.uniform(-self.s(30), self.s(30))
+            self.drops.append(Drop(self._roll_kind(), (jx, jy),
+                                   tier=self._item_tier()))
+        if getattr(m, "is_elite", False):
+            self.score += 400
+            self._burst(mx, my, (255, 90, 120), 40)
+            self.shake = max(self.shake, 0.4)
+        # 被动：花守(击杀概率回血) / 星辉(击杀减主动 CD)
+        if self.passive_kind == "heal":
+            if (self.snake.hp < self.snake.hp_max
+                    and random.random() < S.PASSIVE_BLOOM_HEAL_CHANCE):
+                self.snake.hp += 1
+                self._float("+1 HP", mx, my - self.s(20), COLOR_HP)
+        elif self.passive_kind == "cdr":
+            self.skills.reduce_cd(S.PASSIVE_STARLIGHT_CDR)
+
+    def _snake_hurt(self, amount):
+        """玩家承伤入口：月见「静夜」被动按倍率减免（小数累加避免小额被吞）。"""
+        if self.snake.invincible > 0 or not self.snake.alive:
+            return False
+        amt = amount
+        if self.passive_kind == "guard":
+            self._dmg_accum += amount * S.PASSIVE_NIGHT_REDUCE
+            amt = int(self._dmg_accum)
+            self._dmg_accum -= amt
+        if amt <= 0:
+            return False
+        return self.snake.take_damage(amt)
 
     def _on_hurt(self):
         self.game.audio.play("hurt")
@@ -806,7 +1012,7 @@ class BattleScene(Scene):
         self.shake = max(self.shake, 0.5)
         px, py = self.snake.pos
         if math.hypot(px - ex, py - ey) <= r + self.snake.radius:
-            if self.snake.take_damage(1):
+            if self._snake_hurt(1):
                 self._on_hurt()
 
     def _handle_projectile_hits(self):
@@ -820,7 +1026,7 @@ class BattleScene(Scene):
             if math.hypot(p.pos[0] - px, p.pos[1] - py) <= p.radius + pr:
                 p.alive = False
                 self._burst(p.pos[0], p.pos[1], (255, 120, 150), 8)
-                if self.snake.take_damage(p.damage):
+                if self._snake_hurt(p.damage):
                     self._on_hurt()
         self.projectiles = [p for p in self.projectiles if p.alive]
 
@@ -832,7 +1038,7 @@ class BattleScene(Scene):
         if math.hypot(px - bx, py - by) > self.boss.radius_px + self.snake.radius:
             return
         if self.boss.charge_active:
-            if self.snake.take_damage(1):
+            if self._snake_hurt(1):
                 self._on_hurt()
                 self.shake = max(self.shake, 0.5)
             return
@@ -855,6 +1061,7 @@ class BattleScene(Scene):
             return
         self.victory = True
         self.finished = True
+        self._finish_tutorial()
         self.projectiles = []
         bx, by = self.boss.draw_pos
         self._burst(bx, by, (255, 220, 140), 60)
@@ -867,6 +1074,11 @@ class BattleScene(Scene):
         self.game.save_manager.record_victory(
             self.scene_id, self.score, self.snake.level,
             self.kills, int(self.elapsed))
+        # 剧情模式：击败 Boss 通关，解锁下一关
+        if self.mode == "story" and self.level_index > 0:
+            rec = getattr(self.game.save_manager, "record_level_clear", None)
+            if rec:
+                rec(self.level_index)
 
     # ================================================================ 摄像机
     def _update_cam(self, dt):
@@ -909,21 +1121,66 @@ class BattleScene(Scene):
             if f["life"] > 0:
                 yield f
 
+    # ================================================================ 新手指引
+    def _update_tutorial(self, dt):
+        """按 TUTORIAL_HINT_DURATION 逐条推进提示；走完则标记完成。"""
+        if not self.tutorial_active:
+            return
+        self.tutorial_timer += dt
+        if self.tutorial_timer >= S.TUTORIAL_HINT_DURATION:
+            self.tutorial_timer = 0.0
+            self.tutorial_index += 1
+            if self.tutorial_index >= len(self.tutorial_hints):
+                self.tutorial_active = False
+                self._finish_tutorial()
+
+    def _finish_tutorial(self):
+        """首局结束或提示走完：把当前槽标记为已看过指引并存盘（幂等）。"""
+        self.tutorial_active = False
+        try:
+            if not self.game.save_manager.get("tutorial_done", False):
+                self.game.save_manager.set("tutorial_done", True)
+        except Exception:
+            pass
+
+    def _draw_tutorial(self):
+        if not self.tutorial_active:
+            return
+        if self.tutorial_index >= len(self.tutorial_hints):
+            return
+        text = self.tutorial_hints[self.tutorial_index]
+        screen = self.screen
+        dur = S.TUTORIAL_HINT_DURATION
+        t = self.tutorial_timer
+        if t < 0.4:
+            fade = t / 0.4
+        elif t > dur - 0.6:
+            fade = max(0.0, (dur - t) / 0.6)
+        else:
+            fade = 1.0
+        label = f"新手指引  {self.tutorial_index + 1}/{len(self.tutorial_hints)}"
+        tsurf = self.f_body.render(text, True, (255, 255, 255))
+        lsurf = self.f_small.render(label, True, COLOR_GOLD)
+        pad = self.s(20)
+        w = max(tsurf.get_width(), lsurf.get_width()) + pad * 2
+        h = lsurf.get_height() + tsurf.get_height() + pad * 2 + self.s(6)
+        panel = pygame.Surface((w, h), pygame.SRCALPHA)
+        panel.fill((20, 18, 32, 225))
+        pygame.draw.rect(panel, (*COLOR_ACCENT, 255), panel.get_rect(),
+                         self.s(2), border_radius=self.s(10))
+        panel.blit(lsurf, (pad, pad))
+        panel.blit(tsurf, (pad, pad + lsurf.get_height() + self.s(6)))
+        panel.set_alpha(int(255 * fade))
+        x = (self.W - w) // 2
+        # 上移到技能槽名字标签之上，避免浮层压住底部技能栏文字
+        y = self.H - self.s(216)
+        screen.blit(panel, (x, y))
+
     # ================================================================ 升级选卡
     def _roll_cards(self):
-        pool = self._card_pool()
-        candidates = []
-        for c in pool:
-            if c.get("type") == "skill":
-                sid = c.get("ref")
-                if self.skills.has(sid):
-                    w = 3 if self.skills.level(sid) < S.SKILL_MAX_LEVEL else 0
-                else:
-                    w = 6 if self.skills.count < 6 else 0
-            else:
-                w = 2
-            if w > 0:
-                candidates.append((c, w))
+        # 卡池已只剩通用属性卡（技能改为角色专属固定包，不再抽卡）
+        candidates = [(c, 2) for c in self._card_pool()
+                      if c.get("type") != "skill"]
         result = []
         while len(result) < S.CARD_CHOICES and candidates:
             total = sum(w for _c, w in candidates)
@@ -964,15 +1221,8 @@ class BattleScene(Scene):
         if index < 0 or index >= len(self.card_overlay):
             return
         card = self.card_overlay[index]
-        if card.get("type") == "skill":
-            sid = card.get("ref")
-            self.skills.unlock(sid)
-            self.game.audio.play("skill_unlock")
-            self.skill_toast.append({"sid": sid, "life": 3.0})
-            self.flash = max(self.flash, 0.35)
-        else:
-            self._apply_passive(card.get("stat"))
-            self.game.audio.play("card_pick")
+        self._apply_passive(card.get("stat"))
+        self.game.audio.play("card_pick")
         self.pending_cards = max(0, self.pending_cards - 1)
         self.card_overlay = None
         self.card_rects = []
@@ -1010,7 +1260,7 @@ class BattleScene(Scene):
 
         self._draw_background(screen, sx, sy)
         self._draw_world_border(screen, sx, sy)
-        self._draw_thorns(screen, sx, sy)
+        self._draw_effects(screen, sx, sy)
         self._draw_boss_telegraph(screen, sx, sy)
         self._draw_drops(screen, sx, sy)
         self._draw_mobs(screen, sx, sy)
@@ -1029,6 +1279,7 @@ class BattleScene(Scene):
         self._draw_hud()
         self._draw_boss_banner()
         self._draw_skill_toast()
+        self._draw_tutorial()
 
         if self.card_overlay:
             self._draw_card_overlay()
@@ -1055,26 +1306,50 @@ class BattleScene(Scene):
                            self.world_w, self.world_h)
         pygame.draw.rect(screen, COLOR_ACCENT_DARK, rect, max(2, self.s(3)))
 
-    def _draw_thorns(self, screen, sx, sy):
-        for t in self.skills.thorns:
-            cx = self.wx(t.pos[0], sx)
-            cy = self.wy(t.pos[1], sy)
-            r = max(4, int(t.radius))
-            a = int(210 * t.alpha_ratio)
+    def _draw_effects(self, screen, sx, sy):
+        """专属主动的瞬时特效：环(潮汐) / 光束(月见) / 扇形(绯焰) / 拖影(樱落薄荷)。"""
+        if not self.effects:
+            return
+        ov = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
+        for e in self.effects:
+            ratio = max(0.0, min(1.0, e["life"] / e["max_life"]))
+            prog = 1.0 - ratio
+            a = int(215 * ratio)
             if a <= 0:
                 continue
-            layer = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
-            mid = r + 2
-            pygame.draw.circle(layer, (70, 130, 80, int(a * 0.32)), (mid, mid), r)
-            for k in range(7):
-                ang = k * math.tau / 7
-                tip = (mid + math.cos(ang) * r * 0.9, mid + math.sin(ang) * r * 0.9)
-                b1 = (mid + math.cos(ang + 2.2) * r * 0.34,
-                      mid + math.sin(ang + 2.2) * r * 0.34)
-                b2 = (mid + math.cos(ang - 2.2) * r * 0.34,
-                      mid + math.sin(ang - 2.2) * r * 0.34)
-                pygame.draw.polygon(layer, (150, 220, 150, a), (tip, b1, b2))
-            screen.blit(layer, layer.get_rect(center=(int(cx), int(cy))))
+            col = e["color"]
+            if e["type"] == "ring":
+                r = max(2, int(e["r"] * (0.35 + 0.65 * prog)))
+                x = self.wx(e["x"], sx)
+                y = self.wy(e["y"], sy)
+                pygame.draw.circle(ov, (*col, a), (int(x), int(y)), r,
+                                   max(2, self.s(5)))
+                pygame.draw.circle(ov, (*col, int(a * 0.18)), (int(x), int(y)), r)
+            elif e["type"] in ("beam", "trail"):
+                x1 = self.wx(e["x1"], sx)
+                y1 = self.wy(e["y1"], sy)
+                x2 = self.wx(e["x2"], sx)
+                y2 = self.wy(e["y2"], sy)
+                w = max(2, int(e.get("width", self.s(10)) *
+                               (ratio if e["type"] == "trail" else 1.0)))
+                pygame.draw.line(ov, (*col, a), (x1, y1), (x2, y2), w)
+                pygame.draw.line(ov, (255, 255, 255, int(a * 0.5)),
+                                 (x1, y1), (x2, y2), max(1, w // 3))
+            elif e["type"] == "fan":
+                x = self.wx(e["x"], sx)
+                y = self.wy(e["y"], sy)
+                rng = e["range"] * (0.55 + 0.45 * prog)
+                a0 = e["ang"] - e["half"]
+                a1 = e["ang"] + e["half"]
+                pts = [(int(x), int(y))]
+                steps = 14
+                for k in range(steps + 1):
+                    aa = a0 + (a1 - a0) * k / steps
+                    pts.append((int(x + math.cos(aa) * rng),
+                                int(y + math.sin(aa) * rng)))
+                pygame.draw.polygon(ov, (*col, int(a * 0.4)), pts)
+                pygame.draw.polygon(ov, (*col, a), pts, max(2, self.s(3)))
+        screen.blit(ov, (0, 0))
 
     def _draw_drops(self, screen, sx, sy):
         for d in self.drops:
@@ -1107,13 +1382,33 @@ class BattleScene(Scene):
             sh = pygame.Surface((size, max(3, size // 3)), pygame.SRCALPHA)
             pygame.draw.ellipse(sh, (0, 0, 0, 95), sh.get_rect())
             screen.blit(sh, sh.get_rect(center=(rect.centerx, rect.bottom - self.s(4))))
+            if getattr(m, "is_elite", False):
+                glow = pygame.Surface((size + self.s(24), size + self.s(24)),
+                                      pygame.SRCALPHA)
+                pygame.draw.circle(glow, (255, 90, 120, 70),
+                                   (glow.get_width() // 2, glow.get_height() // 2),
+                                   size // 2 + self.s(6))
+                screen.blit(glow, glow.get_rect(center=rect.center))
             screen.blit(img, rect)
             if m.hit_flash > 0:
                 fl = img.copy()
                 fl.fill((255, 255, 255, int(190 * (m.hit_flash / 0.18))),
                         special_flags=pygame.BLEND_RGBA_MULT)
                 screen.blit(fl, rect)
-            if m.hp < m.hp_max:
+            if getattr(m, "is_elite", False):
+                # 精英：常驻名字 + 加宽血条
+                bw, bh = max(40, int(size * 1.1)), self.s(7)
+                bx = rect.centerx - bw / 2
+                by = rect.top - self.s(16)
+                pygame.draw.rect(screen, (30, 20, 40), (bx, by, bw, bh), border_radius=2)
+                pygame.draw.rect(screen, (255, 90, 120),
+                                 (bx, by, bw * max(0.0, m.hp / m.hp_max), bh),
+                                 border_radius=2)
+                pygame.draw.rect(screen, (255, 200, 210), (bx, by, bw, bh), 1,
+                                 border_radius=2)
+                nm = self.f_tiny.render(m.elite_name or "精英", True, (255, 150, 170))
+                screen.blit(nm, nm.get_rect(midbottom=(rect.centerx, by - self.s(1))))
+            elif m.hp < m.hp_max:
                 bw, bh = max(16, int(size * 0.9)), self.s(5)
                 bx = rect.centerx - bw / 2
                 by = rect.top - self.s(10)
@@ -1363,7 +1658,17 @@ class BattleScene(Scene):
         screen.blit(t, (x, y))
 
     def _draw_topcenter_info(self, screen):
-        txt = f"{int(self.elapsed)}s    击杀 {self.kills}    得分 {self.score}"
+        if self.mode == "story":
+            name = self.level_cfg.get("name", "剧情关") if self.level_cfg else "剧情关"
+            if self.boss is not None or self.boss_spawned:
+                head = f"{name}    Boss 战!"
+            else:
+                remain = max(0, int(self.story_duration - self.elapsed))
+                mm, ss = divmod(remain, 60)
+                head = f"{name}    距 Boss {mm:02d}:{ss:02d}"
+            txt = f"{head}    击杀 {self.kills}    得分 {self.score}"
+        else:
+            txt = f"无尽 {int(self.elapsed)}s    击杀 {self.kills}    得分 {self.score}"
         t = self.f_body.render(txt, True, COLOR_TEXT)
         x = self.W // 2 - t.get_width() // 2
         bg = pygame.Surface((t.get_width() + self.s(24), t.get_height() + self.s(8)),
@@ -1371,11 +1676,19 @@ class BattleScene(Scene):
         bg.fill((*COLOR_BG_LIGHT, 150))
         screen.blit(bg, (x - self.s(12), self.s(8)))
         screen.blit(t, (x, self.s(12)))
+        sub_y = self.s(12) + t.get_height() + self.s(4)
+        # 剧情模式：未出 Boss 时显示下一精英倒计时
+        if (self.mode == "story" and self.boss is None and not self.boss_spawned
+                and self.elapsed < self.story_duration):
+            ne = max(0, int(self.elite_timer))
+            w = self.f_tiny.render(
+                f"下一精英 {ne}s   已讨伐精英 {self.elites_spawned}", True, COLOR_DANGER)
+            screen.blit(w, (self.W // 2 - w.get_width() // 2, sub_y))
+            sub_y += w.get_height() + self.s(2)
         tp = self._time_pressure()
         if tp > 1.05:
             w = self.f_tiny.render(f"压力 x{tp:.1f}", True, COLOR_DANGER)
-            screen.blit(w, (self.W // 2 - w.get_width() // 2,
-                            self.s(12) + t.get_height() + self.s(4)))
+            screen.blit(w, (self.W // 2 - w.get_width() // 2, sub_y))
 
     def _draw_minimap(self, screen):
         pad = self.s(12)
@@ -1419,28 +1732,21 @@ class BattleScene(Scene):
 
     def _draw_skill_bar(self, screen):
         slot = self.s(58)
-        gap = self.s(8)
-        n = 6
-        total = slot * n + gap * (n - 1)
+        gap = self.s(12)
+        cdr = self.stats["cdr"]
+        total = slot * 2 + gap
         x0 = self.W // 2 - total // 2
         y0 = self.H - slot - self.s(16)
-        cdr = self.stats["cdr"]
-        for i in range(n):
-            key = i + 1
-            sid = self.skills.sid_at_key(key)
-            rect = pygame.Rect(x0 + i * (slot + gap), y0, slot, slot)
-            pygame.draw.rect(screen, (26, 22, 38, 210), rect, border_radius=self.s(8))
-            if sid is None:
-                pygame.draw.rect(screen, (70, 66, 86), rect, 2, border_radius=self.s(8))
-                num = self.f_small.render(str(key), True, (110, 106, 126))
-                screen.blit(num, num.get_rect(center=rect.center))
-                continue
+        # --- 主动槽（绑 1 键）---
+        sid = self.skills.active_sid
+        rect = pygame.Rect(x0, y0, slot, slot)
+        pygame.draw.rect(screen, (26, 22, 38, 210), rect, border_radius=self.s(8))
+        if sid:
             info = skill_info(sid)
             color = info["color"]
             pygame.draw.rect(screen, color, rect, 2, border_radius=self.s(8))
-            self._draw_skill_icon(screen, sid, rect.centerx, rect.centery - self.s(4),
-                                  color, slot * 0.62)
-            # 冷却遮罩（从顶部往下盖，就绪时不盖）
+            self._draw_skill_icon(screen, info.get("vfx", ""), rect.centerx,
+                                  rect.centery - self.s(4), color, slot * 0.62)
             ratio = self.skills.cd_ratio(sid, cdr)
             if ratio < 1.0:
                 cover = pygame.Surface((slot, int(slot * (1.0 - ratio))), pygame.SRCALPHA)
@@ -1450,15 +1756,26 @@ class BattleScene(Scene):
                 if left > 0.05:
                     cd = self.f_tiny.render(f"{left:.0f}", True, COLOR_TEXT)
                     screen.blit(cd, cd.get_rect(center=rect.center))
-            # 键位数字
-            num = self.f_tiny.render(str(key), True, COLOR_TEXT_DIM)
+            num = self.f_tiny.render("1", True, COLOR_TEXT_DIM)
             screen.blit(num, (rect.x + self.s(4), rect.y + self.s(2)))
-            # 等级小点
-            lv = self.skills.level(sid)
-            for k in range(lv):
-                pygame.draw.circle(screen, COLOR_GOLD,
-                                   (rect.x + slot - self.s(8) - k * self.s(7),
-                                    rect.bottom - self.s(7)), max(1, self.s(2)))
+            nm = self.f_tiny.render(info["name"], True, color)
+            screen.blit(nm, nm.get_rect(
+                midtop=(rect.centerx, rect.y - nm.get_height() - self.s(2))))
+        # --- 被动槽（常驻）---
+        pid = self.skills.passive_id
+        rect2 = pygame.Rect(x0 + slot + gap, y0, slot, slot)
+        pygame.draw.rect(screen, (26, 22, 38, 210), rect2, border_radius=self.s(8))
+        if pid:
+            pinfo = skill_info(pid)
+            pcolor = pinfo["color"]
+            pygame.draw.rect(screen, pcolor, rect2, 2, border_radius=self.s(8))
+            self._draw_skill_icon(screen, pinfo.get("vfx", ""), rect2.centerx,
+                                  rect2.centery - self.s(4), pcolor, slot * 0.56)
+            tag = self.f_tiny.render("被动", True, COLOR_TEXT_DIM)
+            screen.blit(tag, (rect2.x + self.s(4), rect2.y + self.s(2)))
+            nm2 = self.f_tiny.render(pinfo["name"], True, pcolor)
+            screen.blit(nm2, nm2.get_rect(
+                midtop=(rect2.centerx, rect2.y - nm2.get_height() - self.s(2))))
 
     def _draw_dodge_indicator(self, screen):
         sn = self.snake
@@ -1477,46 +1794,69 @@ class BattleScene(Scene):
             pygame.draw.rect(screen, col, (x, y, int(w * ratio), h), border_radius=h // 2)
         pygame.draw.rect(screen, (90, 80, 110), (x, y, w, h), 1, border_radius=h // 2)
 
-    def _draw_skill_icon(self, screen, sid, cx, cy, color, size=None):
+    def _draw_skill_icon(self, screen, key, cx, cy, color, size=None):
+        """按 vfx / 卡片 icon 标识绘制图标（主动/被动/属性卡共用）。"""
         r = (size or self.s(44)) * 0.5
         cx, cy = int(cx), int(cy)
-        if sid == "dash":
-            for k in range(5):
-                a = k * 2 * math.pi / 5 - math.pi / 2
-                px = cx + math.cos(a) * r * 0.52
-                py = cy + math.sin(a) * r * 0.52
-                pygame.draw.circle(screen, color, (int(px), int(py)), max(2, int(r * 0.42)))
-            pygame.draw.circle(screen, (255, 240, 220), (cx, cy), max(1, int(r * 0.24)))
-        elif sid == "spike":
-            k = r * 0.8
-            pygame.draw.polygon(screen, color, [(cx, cy - k), (cx - k, cy + k * 0.7),
-                                                (cx + k, cy + k * 0.7)])
-        elif sid == "shield":
-            k = r * 0.9
-            pts = [(cx, cy - k), (cx + k * 0.8, cy - k * 0.45), (cx + k * 0.8, cy + k * 0.2),
-                   (cx, cy + k), (cx - k * 0.8, cy + k * 0.2), (cx - k * 0.8, cy - k * 0.45)]
+        if key in ("slash", "atk"):
+            # 斩击 / 攻击：斜刃
+            pygame.draw.line(screen, color, (cx - r * 0.7, cy + r * 0.7),
+                             (cx + r * 0.7, cy - r * 0.7), max(2, int(r * 0.22)))
+            pygame.draw.line(screen, color, (cx - r * 0.15, cy + r * 0.8),
+                             (cx + r * 0.8, cy - r * 0.15), max(1, int(r * 0.12)))
+        elif key in ("wind", "speed", "atkspd"):
+            # 风 / 移速 / 攻速：三道流线
+            for k in range(3):
+                yy = cy - r * 0.5 + k * r * 0.5
+                pygame.draw.line(screen, color, (cx - r * 0.8, yy),
+                                 (cx + r * (0.8 - k * 0.18), yy), max(2, int(r * 0.16)))
+        elif key in ("wave", "slow", "pickup"):
+            # 水浪 / 减速 / 拾取：同心弧
+            for rr in (r * 0.85, r * 0.55, r * 0.28):
+                rect = pygame.Rect(int(cx - rr), int(cy - rr), int(rr * 2), int(rr * 2))
+                pygame.draw.arc(screen, color, rect, math.pi * 0.15, math.pi * 0.95,
+                                max(2, int(r * 0.14)))
+        elif key in ("flame", "burn"):
+            # 火 / 灼烧：火苗
+            pygame.draw.polygon(screen, color, [
+                (cx, cy - r * 0.85), (cx + r * 0.55, cy + r * 0.1),
+                (cx + r * 0.22, cy + r * 0.05), (cx + r * 0.35, cy + r * 0.78),
+                (cx - r * 0.35, cy + r * 0.78), (cx - r * 0.28, cy + r * 0.02),
+                (cx - r * 0.55, cy + r * 0.15)])
+        elif key in ("star", "cdr"):
+            # 星 / 冷却：五角星
+            pts = []
+            for k in range(10):
+                a = -math.pi / 2 + k * math.pi / 5
+                rr = r * (0.88 if k % 2 == 0 else 0.4)
+                pts.append((cx + math.cos(a) * rr, cy + math.sin(a) * rr))
+            pygame.draw.polygon(screen, color, pts)
+        elif key in ("moon", "guard"):
+            # 月 / 守护：盾形
+            k = r * 0.85
+            pts = [(cx, cy - k), (cx + k * 0.78, cy - k * 0.4),
+                   (cx + k * 0.78, cy + k * 0.2), (cx, cy + k),
+                   (cx - k * 0.78, cy + k * 0.2), (cx - k * 0.78, cy - k * 0.4)]
             pygame.draw.polygon(screen, color, pts)
             pygame.draw.polygon(screen, (255, 255, 255), pts, 1)
-        elif sid == "thorn":
-            k = r * 0.8
-            pygame.draw.line(screen, color, (cx - k, cy + k), (cx + k, cy - k), 2)
-            for d in (-r * 0.4, 0, r * 0.4):
-                pygame.draw.line(screen, color, (cx + d, cy - d),
-                                 (cx + d + r * 0.45, cy - d - r * 0.2), 2)
-        elif sid == "storm":
-            for k, rr in enumerate((r * 0.85, r * 0.58, r * 0.3)):
-                rect = pygame.Rect(cx - rr, cy - r * 0.55 + k * r * 0.5,
-                                   rr * 2, max(3, int(r * 0.5)))
-                pygame.draw.arc(screen, color, rect, math.pi * 0.15, math.pi * 0.95, 2)
-        elif sid == "bloom":
-            for k in range(8):
-                a = k * math.tau / 8
-                pygame.draw.line(screen, color, (cx, cy),
-                                 (cx + math.cos(a) * r * 0.9, cy + math.sin(a) * r * 0.9),
-                                 max(1, int(r * 0.16)))
-            pygame.draw.circle(screen, (255, 250, 235), (cx, cy), max(1, int(r * 0.28)))
+        elif key == "heal":
+            # 治疗：十字
+            w = max(2, int(r * 0.32))
+            pygame.draw.rect(screen, color, (cx - w // 2, int(cy - r * 0.72), w,
+                                             int(r * 1.44)))
+            pygame.draw.rect(screen, color, (int(cx - r * 0.72), cy - w // 2,
+                                             int(r * 1.44), w))
+        elif key == "hp":
+            # 生命：心形（近似）
+            pygame.draw.circle(screen, color, (int(cx - r * 0.3), int(cy - r * 0.22)),
+                               max(2, int(r * 0.4)))
+            pygame.draw.circle(screen, color, (int(cx + r * 0.3), int(cy - r * 0.22)),
+                               max(2, int(r * 0.4)))
+            pygame.draw.polygon(screen, color, [
+                (cx - r * 0.66, cy - r * 0.05), (cx + r * 0.66, cy - r * 0.05),
+                (cx, cy + r * 0.78)])
         else:
-            # 被动卡 / 未知图标：菱形宝石
+            # 未知图标：菱形宝石
             k = r * 0.75
             pygame.draw.polygon(screen, color, [(cx, cy - k), (cx + k, cy),
                                                 (cx, cy + k), (cx - k, cy)])
@@ -1633,12 +1973,10 @@ class BattleScene(Scene):
             screen.blit(panel, rect.topleft)
             pygame.draw.rect(screen, color, rect, self.s(3), border_radius=self.s(14))
             # 图标
-            icon_id = card.get("ref") if card.get("type") == "skill" else card.get("icon")
-            self._draw_skill_icon(screen, icon_id, rect.centerx,
+            self._draw_skill_icon(screen, card.get("icon", ""), rect.centerx,
                                   rect.top + self.s(84), color, self.s(90))
             # 类型标签
-            tag = "技能" if card.get("type") == "skill" else "被动"
-            tt = self.f_tiny.render(tag, True, color)
+            tt = self.f_tiny.render("强化", True, color)
             screen.blit(tt, tt.get_rect(center=(rect.centerx, rect.top + self.s(24))))
             # 名称
             nm = self.f_body.render(card.get("name", ""), True, COLOR_TEXT)
@@ -1682,11 +2020,12 @@ class BattleScene(Scene):
         rows = [
             ("最终得分", f"{self.score}", COLOR_TEXT),
             ("抵达等级", f"Lv.{self.snake.level}", COLOR_GOLD),
-            ("获得技能", f"{self.skills.count} / {len(all_skill_ids())}", (255, 150, 190)),
             ("击杀小怪", f"{self.kills}", COLOR_DANGER),
             ("存活时间", f"{int(self.elapsed)} 秒", (120, 210, 200)),
             ("获得星尘", f"{self.stardust}", (206, 168, 255)),
         ]
+        if self.mode == "story" and self.elites_spawned > 0:
+            rows.insert(3, ("讨伐精英", f"{self.elites_spawned}", (255, 90, 120)))
         if self.victory:
             boss_name = self.boss.name if self.boss else "Boss"
             rows.insert(0, ("击败 Boss", boss_name, title_color))

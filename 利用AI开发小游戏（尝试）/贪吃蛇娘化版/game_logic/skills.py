@@ -1,285 +1,221 @@
 # -*- coding: utf-8 -*-
 """
-game_logic/skills.py —— 主动技能系统（自由移动版）
+game_logic/skills.py —— 角色专属技能包（固定，无共通技能）
 
-设计变更（相较旧网格版）：
-  · 技能不再是「升级自动解锁的被动」，而是**主动释放**：按键 1-6。
-  · 技能通过「升级选卡」获得；按获得顺序绑定键位 1/2/3/4/5/6。
-  · 每个技能有独立冷却与等级（1..SKILL_MAX_LEVEL），升级选到同名技能卡即强化。
-  · SkillEngine 只管：解锁/等级/冷却计时、以及持续型效果的状态（荆棘地形、
-    荆棘尾光环）。瞬发效果通过 cast() 返回一个「事件字典」，由 battle 落地
-    （施加伤害 / 位移 / 生成弹丸），这样技能逻辑可单测、不依赖 battle 内部。
+设计变更（相较旧「共通技能 + 选卡解锁」版）：
+  · 每名角色拥有自己的一套「专属技能包」：1 个主动（绑 1 键，有冷却）+ 1 个常驻被动。
+  · 技能不再通过升级选卡获得；选卡只给通用属性。技能 id / 名字 / 颜色 / 特效
+    全部走 data/characters.json 的 kit 字段，数值走 settings.py。
+  · SkillEngine 只管：当前角色 kit、主动冷却计时、以及少量持续态（薄荷移速爆发）。
+    瞬发效果通过 cast() 返回「事件字典」，由 battle 落地（施加伤害/位移/生成弹丸/
+    附加减速灼烧），这样技能逻辑可单测、不依赖 battle 内部。
+  · 减速 / 灼烧等持续状态挂在 Mob 上（见 entities.py），引擎不持有。
 
-坐标系：荆棘地形 pos 用世界像素，与实体一致。
+坐标系：与实体一致，世界像素。
 """
 
 import json
-import math
 import os
-import random
 
 import settings as S
 
+_KIT_CACHE = None      # {char_id: {"active": {...}, "passive": {...}}}
+_INFO_CACHE = None     # {sid: {name,color,desc,vfx,key}}
 
-# ======================================================================
-#  技能展示信息（名字 / 说明 / 颜色 / 键位）
-# ======================================================================
-_FALLBACK_INFO = {
-    "dash":   {"name": "樱花冲锋", "color": (255, 150, 190), "desc": "向前突进碾过敌人"},
-    "spike":  {"name": "荆棘尾",   "color": (180, 120, 255), "desc": "周身荆棘光环持续刺伤"},
-    "shield": {"name": "星辉护盾", "color": (130, 210, 255), "desc": "获得一段无敌护盾"},
-    "thorn":  {"name": "蔓生荆棘", "color": (140, 220, 140), "desc": "地面催生伤害荆棘"},
-    "storm":  {"name": "樱花风暴", "color": (255, 200, 120), "desc": "周身范围爆发伤害"},
-    "bloom":  {"name": "月华绽放", "color": (200, 170, 255), "desc": "绽射穿透弹贯穿群敌"},
-}
 
-_info_cache = None
+def _load_kits():
+    """读 data/characters.json，构建 角色->kit 与 sid->展示信息 两张表。"""
+    global _KIT_CACHE, _INFO_CACHE
+    if _KIT_CACHE is not None:
+        return _KIT_CACHE, _INFO_CACHE
+    kits, info = {}, {}
+    try:
+        path = os.path.join(S.DATA_DIR, "characters.json")
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        items = raw.get("characters", raw) if isinstance(raw, dict) else raw
+        for ch in items:
+            if not isinstance(ch, dict):
+                continue
+            cid = ch.get("id")
+            kit = ch.get("kit")
+            if not cid or not isinstance(kit, dict):
+                continue
+            active = kit.get("active") or {}
+            passive = kit.get("passive") or {}
+            kits[cid] = {"active": active, "passive": passive}
+            if active.get("id"):
+                info[active["id"]] = {
+                    "name": active.get("name", active["id"]),
+                    "color": tuple((active.get("color") or [255, 255, 255])[:3]),
+                    "desc": active.get("desc", ""),
+                    "vfx": active.get("vfx", ""),
+                    "key": active.get("key", 1),
+                    "kind": "active",
+                }
+            if passive.get("id"):
+                info[passive["id"]] = {
+                    "name": passive.get("name", passive["id"]),
+                    "color": tuple((passive.get("color") or [255, 255, 255])[:3]),
+                    "desc": passive.get("desc", ""),
+                    "vfx": passive.get("vfx", ""),
+                    "key": 0,
+                    "kind": "passive",
+                }
+    except (IOError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        kits, info = {}, {}
+    _KIT_CACHE, _INFO_CACHE = kits, info
+    return kits, info
+
+
+def kit_of(char_id):
+    """取某角色的技能包 {"active":..., "passive":...}，取不到返回空 dict 结构。"""
+    kits, _ = _load_kits()
+    return kits.get(char_id) or {"active": {}, "passive": {}}
 
 
 def skill_info(sid):
-    """取技能的展示信息。返回 dict：name / color / desc / detail / key"""
-    global _info_cache
-    if _info_cache is None:
-        _info_cache = {k: dict(v) for k, v in _FALLBACK_INFO.items()}
-        try:
-            path = os.path.join(S.DATA_DIR, "skills.json")
-            with open(path, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            for item in raw.get("skills", []):
-                sid_key = item.get("id")
-                if not sid_key:
-                    continue
-                colors = item.get("color") or [255, 255, 255]
-                info = _info_cache.setdefault(sid_key, {})
-                info["name"] = item.get("name", info.get("name", sid_key))
-                info["color"] = tuple(colors[:3])
-                info["desc"] = item.get("desc", info.get("desc", ""))
-                info["detail"] = item.get("detail", "")
-                info["key"] = item.get("key")
-        except (IOError, json.JSONDecodeError, KeyError, TypeError):
-            _info_cache = {k: dict(v) for k, v in _FALLBACK_INFO.items()}
-    info = dict(_info_cache.get(sid, {"name": sid, "color": (255, 255, 255), "desc": ""}))
-    info.setdefault("name", sid)
-    info.setdefault("color", (255, 255, 255))
-    info.setdefault("desc", "")
-    return info
+    """取技能（主动或被动）的展示信息。返回 dict：name/color/desc/vfx/key/kind。"""
+    _, info = _load_kits()
+    got = info.get(sid)
+    if got:
+        return dict(got)
+    return {"name": sid, "color": (255, 255, 255), "desc": "", "vfx": "",
+            "key": 0, "kind": "active"}
 
 
-def all_skill_ids():
-    """全部主动技能 id，按键位顺序（1-6）"""
-    return list(S.SKILL_ORDER)
-
-
-def skill_key(sid):
-    """技能默认展示键位（1-6）。实际绑定以引擎获得顺序为准。"""
-    try:
-        return S.SKILL_ORDER.index(sid) + 1
-    except ValueError:
-        return skill_info(sid).get("key") or 0
-
-
-# 各技能基础冷却（秒），集中在此便于查
+# 各专属主动的基础冷却（秒），集中在此便于查
 _BASE_CD = {
-    "dash": lambda: S.DASH_CD,
-    "spike": lambda: S.SPIKE_CD,
-    "shield": lambda: S.SHIELD_CD,
-    "thorn": lambda: S.THORN_CD,
-    "storm": lambda: S.STORM_CD,
-    "bloom": lambda: S.BLOOM_CD,
+    "petal_slash": lambda: S.PETAL_SLASH_CD,
+    "gale_dash": lambda: S.GALE_DASH_CD,
+    "tide_surge": lambda: S.TIDE_SURGE_CD,
+    "ember_lash": lambda: S.EMBER_LASH_CD,
+    "star_chain": lambda: S.STAR_CHAIN_CD,
+    "moon_ward": lambda: S.MOON_WARD_CD,
 }
 
 
-class Thorn:
-    """蔓生荆棘留在场上的一块地形（世界像素坐标）"""
-
-    def __init__(self, pos, radius, dmg):
-        self.pos = (float(pos[0]), float(pos[1]))
-        self.radius = float(radius)
-        self.dmg = dmg
-        self.life = S.THORN_LIFE
-        self.max_life = S.THORN_LIFE
-        self.hit_cd = {}          # {key: 剩余冷却}
-
-    def update(self, dt):
-        self.life -= dt
-        for k in list(self.hit_cd):
-            self.hit_cd[k] -= dt
-            if self.hit_cd[k] <= 0:
-                del self.hit_cd[k]
-        return self.life > 0
-
-    def ready_for(self, key):
-        return self.hit_cd.get(key, 0.0) <= 0.0
-
-    def mark(self, key):
-        self.hit_cd[key] = S.THORN_TICK
-
-    def contains(self, pos, extra=0.0):
-        return math.hypot(pos[0] - self.pos[0], pos[1] - self.pos[1]) <= self.radius + extra
-
-    @property
-    def alpha_ratio(self):
-        if self.life > 1.5:
-            return 1.0
-        return max(0.0, self.life / 1.5)
-
-
 class SkillEngine:
-    """主动技能状态机。挂在战斗场景上，每帧 update 一次。"""
+    """角色专属技能状态机。挂在战斗场景上，每帧 update 一次。"""
 
     def __init__(self):
         self.reset()
 
     def reset(self):
-        self.order = []                 # 已获得技能 id，按获得顺序（index=键位-1）
-        self.levels = {}                # {sid: 1..SKILL_MAX_LEVEL}
-        self.cds = {}                   # {sid: 剩余冷却秒}
-        self.thorns = []                # [Thorn]
-        # 荆棘尾光环（持续型）
-        self.spike_left = 0.0           # 光环剩余秒数
-        self.spike_radius = 0.0
-        self.spike_dmg = 0
-        self.spike_cd = {}              # {mob_uid: 剩余结算冷却}
-        self.pending_shield = 0.0       # 本帧要给的无敌时长（battle 消费）
-        self.newly_unlocked = []
+        self.char_id = None
+        self.active = {}            # 主动 dict（来自 kit）
+        self.passive = {}           # 被动 dict（来自 kit）
+        self.active_sid = None
+        self.passive_id = None
+        self.cds = {}               # {active_sid: 剩余冷却秒}
+        self.gale_left = 0.0        # 薄荷「疾风连闪」移速爆发剩余秒
+        self.newly_unlocked = []    # 兼容旧接口（固定包不再解锁，恒为空）
 
-    # ------------------------------------------------------------ 解锁 / 查询
-    def unlock(self, sid):
-        """获得技能（首次）或升级（已拥有）。返回本次操作后的键位（1-based）；
-        已达满级返回其键位但不升级。"""
-        if sid not in self.order:
-            if len(self.order) >= 6:
-                return None
-            self.order.append(sid)
-            self.levels[sid] = 1
-            self.cds[sid] = 0.0
-            self.newly_unlocked.append(sid)
-        else:
-            if self.levels.get(sid, 1) < S.SKILL_MAX_LEVEL:
-                self.levels[sid] = self.levels.get(sid, 1) + 1
-        return self.order.index(sid) + 1
+    # ------------------------------------------------------------ kit 装载
+    def load_kit(self, char_id):
+        """按角色装载专属技能包。战斗 reset 时调用。"""
+        self.reset()
+        self.char_id = char_id
+        kit = kit_of(char_id)
+        self.active = kit.get("active") or {}
+        self.passive = kit.get("passive") or {}
+        self.active_sid = self.active.get("id")
+        self.passive_id = self.passive.get("id")
+        if self.active_sid:
+            self.cds[self.active_sid] = 0.0
 
+    @property
+    def passive_kind(self):
+        """当前被动的 vfx 标记（battle 用来施加常驻效果/普攻附加）。"""
+        return self.passive.get("vfx") or ""
+
+    # ------------------------------------------------------------ 查询
     def has(self, sid):
-        return sid in self.order
-
-    def level(self, sid):
-        return self.levels.get(sid, 0)
+        return sid in (self.active_sid, self.passive_id)
 
     @property
     def count(self):
-        return len(self.order)
+        """兼容旧接口：固定包视为已拥有 1 个主动。"""
+        return 1 if self.active_sid else 0
 
-    def key_of(self, sid):
-        """技能当前绑定的键位（1-based），未获得返回 0"""
-        return self.order.index(sid) + 1 if sid in self.order else 0
-
-    def sid_at_key(self, key):
-        """键位（1-based）对应的技能 id，没有返回 None"""
-        idx = key - 1
-        if 0 <= idx < len(self.order):
-            return self.order[idx]
-        return None
-
-    def cooldown_max(self, sid, cdr=0.0):
-        """技能冷却总时长（含冷却缩减）"""
+    def cooldown_max(self, sid=None, cdr=0.0):
+        sid = sid or self.active_sid
+        if not sid:
+            return 0.0
         base = _BASE_CD.get(sid, lambda: 6.0)()
         return max(0.3, base * (1.0 - min(0.75, cdr)))
 
-    def cooldown_left(self, sid):
+    def cooldown_left(self, sid=None):
+        sid = sid or self.active_sid
         return self.cds.get(sid, 0.0)
 
-    def cd_ratio(self, sid, cdr=0.0):
-        """冷却进度 0(刚放)..1(就绪)，供 HUD 转圈"""
+    def cd_ratio(self, sid=None, cdr=0.0):
+        """冷却进度 0(刚放)..1(就绪)，供 HUD 转圈。"""
+        sid = sid or self.active_sid
         total = self.cooldown_max(sid, cdr)
         if total <= 0:
             return 1.0
         return max(0.0, min(1.0, 1.0 - self.cds.get(sid, 0.0) / total))
 
-    def ready(self, sid, cdr=0.0):
-        return self.has(sid) and self.cds.get(sid, 0.0) <= 0.0
+    def ready(self, sid=None, cdr=0.0):
+        sid = sid or self.active_sid
+        return bool(sid) and self.cds.get(sid, 0.0) <= 0.0
+
+    @property
+    def gale_active(self):
+        return self.gale_left > 0.0
 
     # ------------------------------------------------------------ 每帧
     def update(self, dt):
-        """推进冷却、荆棘地形、荆棘尾光环。不直接造成伤害。"""
         for sid in list(self.cds):
             if self.cds[sid] > 0:
                 self.cds[sid] = max(0.0, self.cds[sid] - dt)
-        if self.spike_left > 0:
-            self.spike_left = max(0.0, self.spike_left - dt)
-            for k in list(self.spike_cd):
-                self.spike_cd[k] -= dt
-                if self.spike_cd[k] <= 0:
-                    del self.spike_cd[k]
-        self.thorns = [t for t in self.thorns if t.update(dt)]
+        if self.gale_left > 0:
+            self.gale_left = max(0.0, self.gale_left - dt)
+
+    def reduce_cd(self, amount):
+        """星璃「星辉」被动：击杀缩短主动冷却。"""
+        if self.active_sid and self.cds.get(self.active_sid, 0.0) > 0:
+            self.cds[self.active_sid] = max(
+                0.0, self.cds[self.active_sid] - amount)
 
     # ------------------------------------------------------------ 释放
-    def cast(self, sid, pos, cdr=0.0):
+    def cast(self, pos, cdr=0.0):
         """
-        尝试释放技能。成功返回事件字典并进入冷却，失败（未拥有/冷却中）返回 None。
-        pos = 玩家当前世界像素位置（荆棘尾/蔓生荆棘布点用）。
+        尝试释放当前角色专属主动。成功返回事件字典并进入冷却，
+        失败（无主动/冷却中）返回 None。pos = 玩家世界像素位置。
         """
-        if not self.ready(sid, cdr):
+        sid = self.active_sid
+        if not sid or not self.ready(sid, cdr):
             return None
-        lv = self.level(sid)
         self.cds[sid] = self.cooldown_max(sid, cdr)
 
-        if sid == "dash":
-            return {"type": "dash",
-                    "dist": S.DASH_DIST, "time": S.DASH_TIME,
-                    "dmg": S.DASH_DMG + S.DASH_DMG_PER_LV * (lv - 1)}
-        if sid == "spike":
-            self.spike_left = S.SPIKE_DURATION
-            self.spike_radius = S.SPIKE_RADIUS * (1.0 + 0.12 * (lv - 1))
-            self.spike_dmg = S.SPIKE_DMG + S.SPIKE_DMG_PER_LV * (lv - 1)
-            self.spike_cd.clear()
-            return {"type": "spike", "radius": self.spike_radius,
-                    "duration": S.SPIKE_DURATION, "dmg": self.spike_dmg}
-        if sid == "shield":
-            t = S.SHIELD_TIME + S.SHIELD_TIME_PER_LV * (lv - 1)
-            self.pending_shield = t
-            return {"type": "shield", "time": t}
-        if sid == "thorn":
-            dmg = S.THORN_DMG + S.THORN_DMG_PER_LV * (lv - 1)
-            radius = S.THORN_RADIUS
-            n = S.THORN_CHARGES + (lv - 1)
-            placed = []
-            for i in range(n):
-                ang = random.random() * math.tau if i == 0 else (i / n) * math.tau
-                dist = 0 if i == 0 else radius * 1.1
-                p = (pos[0] + math.cos(ang) * dist, pos[1] + math.sin(ang) * dist)
-                self.thorns.append(Thorn(p, radius, dmg))
-                placed.append(p)
-            if len(self.thorns) > S.THORN_MAX:
-                self.thorns = self.thorns[-S.THORN_MAX:]
-            return {"type": "thorn", "positions": placed, "radius": radius, "dmg": dmg}
-        if sid == "storm":
-            return {"type": "storm",
-                    "radius": S.STORM_RADIUS * (1.0 + 0.15 * (lv - 1)),
-                    "dmg": S.STORM_DMG + S.STORM_DMG_PER_LV * (lv - 1)}
-        if sid == "bloom":
-            return {"type": "bloom",
-                    "count": S.BLOOM_COUNT + 2 * (lv - 1),
-                    "dmg": S.BLOOM_DMG + S.BLOOM_DMG_PER_LV * (lv - 1),
-                    "speed": S.BLOOM_BULLET_SPEED, "life": S.BLOOM_BULLET_LIFE,
-                    "pierce": S.BLOOM_PIERCE + (lv - 1)}
+        if sid == "petal_slash":
+            return {"type": "petal_slash",
+                    "dist": S.PETAL_SLASH_DIST, "dmg": S.PETAL_SLASH_DMG,
+                    "shield": S.PETAL_SLASH_SHIELD}
+        if sid == "gale_dash":
+            self.gale_left = S.GALE_SPEED_TIME
+            return {"type": "gale_dash",
+                    "count": S.GALE_DASH_COUNT, "dist": S.GALE_DASH_DIST,
+                    "dmg": S.GALE_DASH_DMG}
+        if sid == "tide_surge":
+            return {"type": "tide_surge",
+                    "radius": S.TIDE_SURGE_RADIUS, "dmg": S.TIDE_SURGE_DMG,
+                    "slow_mult": S.TIDE_SLOW_MULT, "slow_time": S.TIDE_SLOW_TIME,
+                    "knock": S.TIDE_KNOCK}
+        if sid == "ember_lash":
+            return {"type": "ember_lash",
+                    "range": S.EMBER_LASH_RANGE, "angle": S.EMBER_LASH_ANGLE,
+                    "dmg": S.EMBER_LASH_DMG,
+                    "burn_dps": S.EMBER_BURN_DPS, "burn_time": S.EMBER_BURN_TIME}
+        if sid == "star_chain":
+            return {"type": "star_chain",
+                    "count": S.STAR_CHAIN_COUNT, "dmg": S.STAR_CHAIN_DMG,
+                    "speed": S.STAR_CHAIN_SPEED, "life": S.STAR_CHAIN_LIFE}
+        if sid == "moon_ward":
+            return {"type": "moon_ward",
+                    "length": S.MOON_WARD_LEN, "width": S.MOON_WARD_WIDTH,
+                    "dmg": S.MOON_WARD_DMG, "shield": S.MOON_WARD_SHIELD}
         self.cds[sid] = 0.0
         return None
-
-    # ------------------------------------------------------------ 持续效果查询
-    @property
-    def spike_active(self):
-        return self.spike_left > 0
-
-    def spike_ready(self, key):
-        return self.spike_cd.get(key, 0.0) <= 0.0
-
-    def mark_spike(self, key):
-        self.spike_cd[key] = S.SPIKE_TICK
-
-    def thorn_damage_at(self, pos, key, extra=0.0):
-        """某个单位站在 pos，是否踩到荆棘。返回伤害值（0 表示没有）。"""
-        for t in self.thorns:
-            if t.contains(pos, extra) and t.ready_for(key):
-                t.mark(key)
-                return t.dmg
-        return 0

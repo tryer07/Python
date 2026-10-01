@@ -13,11 +13,29 @@
       "body": ["腰这里…是鳞片开始的地方，痒痒的。", "别、别乱摸啦，人家会害羞的。"],
       "tail": ["尾巴是我的骄傲，轻一点哦。", "尾尖扫过之处，会有新芽冒出来呢。"]
     },
+    "kit": {
+      "active": {
+        "id": "petal_slash",
+        "name": "落樱·绯斩",
+        "desc": "向前突进斩击，路径敌人受伤，并获得短暂护盾。",
+        "color": [255, 150, 190],
+        "vfx": "slash",
+        "key": 1
+      },
+      "passive": {
+        "id": "p_bloom_guard",
+        "name": "花守",
+        "desc": "击杀敌人有概率回复 1 点生命。",
+        "color": [255, 190, 210],
+        "vfx": "heal"
+      }
+    },
     "head": "characters/sakura/head.png",
+    "full": "characters/sakura/full.png",
     "body_seg": "characters/sakura/body_seg.png",
     "tail_tip": "characters/sakura/tail_tip.png",
     "level": 1,
-    "skill": "冲刺斩",
+    "skill": "落樱·绯斩",
     "tint": [255, 200, 220]
   },
   {
@@ -34,11 +52,29 @@
       "body": ["痒—！别挠我腰，我会笑到停不下来的！", "风一样的腰肢，抓不住的哦。"],
       "tail": ["尾巴一甩就能起飞，要试试吗？", "嘘——我的尾巴正踩着风呢。"]
     },
+    "kit": {
+      "active": {
+        "id": "gale_dash",
+        "name": "疾风连闪",
+        "desc": "连续三段突进碾过敌人，并在短时间内提升移速。",
+        "color": [150, 240, 190],
+        "vfx": "wind",
+        "key": 1
+      },
+      "passive": {
+        "id": "p_gale",
+        "name": "御风",
+        "desc": "常驻移速提升，闪避冷却缩短。",
+        "color": [180, 240, 200],
+        "vfx": "speed"
+      }
+    },
     "head": "characters/lamia_mint/head.png",
+    "full": "characters/lamia_mint/full.png",
     "body_seg": "characters/lamia_mint/body_seg.png",
     "tail_tip": "characters/lamia_mint/tail_tip.png",
     "level": 1,
-    "skill": "疾风步",
+    "skill": "疾风连闪",
     "tint": [180, 240, 200]
   },
   {
@@ -55,11 +91,29 @@
       "body": ["水做的腰肢，凉凉的对吧？", "别怕，我的浪只会托住你，不会打翻你。"],
       "tail": ["尾尖一点，就能掀起一朵浪。", "听，我的尾巴里有潮汐的声音。"]
     },
+    "kit": {
+      "active": {
+        "id": "tide_surge",
+        "name": "沧澜涌潮",
+        "desc": "掀起环形水浪，击退并减速周围敌人，造成伤害。",
+        "color": [120, 200, 255],
+        "vfx": "wave",
+        "key": 1
+      },
+      "passive": {
+        "id": "p_cold",
+        "name": "寒流",
+        "desc": "普攻命中附带减速效果。",
+        "color": [150, 200, 255],
+        "vfx": "slow"
+      }
+    },
     "head": "characters/lamia_tide/head.png",
+    "full": "characters/lamia_tide/full.png",
     "body_seg": "characters/lamia_tide/body_seg.png",
     "tail_tip": "characters/lamia_tide/tail_tip.png",
     "level": 1,
-    "skill": "涌流冲击",
+    "skill": "沧澜涌潮",
     "tint": [150, 200, 255]
   },
   {
@@ -76,11 +130,29 @@
       "body": ["喂！腰是禁区…再摸我就烧你眉毛！", "啧，算你运气好，我今天心情不错。"],
       "tail": ["尾尖扫过就是一线余烬，怕了吧？", "我的尾巴，比夜市的灯还烫哦。"]
     },
+    "kit": {
+      "active": {
+        "id": "ember_lash",
+        "name": "燎原火鞭",
+        "desc": "向前方扇形挥出火焰鞭，灼烧范围内敌人。",
+        "color": [255, 140, 80],
+        "vfx": "flame",
+        "key": 1
+      },
+      "passive": {
+        "id": "p_ember",
+        "name": "余烬",
+        "desc": "普攻命中附带灼烧持续伤害。",
+        "color": [255, 160, 100],
+        "vfx": "burn"
+      }
+    },
     "head": "characters/lamia_flare/head.png",
+    "full": "characters/lamia_flare/full.png",
     "body_seg": "characters/lamia_flare/body_seg.png",
     "tail_tip": "characters/lamia_flare/tail_tip.png",
     "level": 1,
-    "skill": "燎原鞭",
+    "skill": "燎原火鞭",
     "tint": [255, 140, 90]
   },
   {
@@ -97,7 +169,25 @@
       "body": ["别动，我在数你命里的星子。", "腰间的星辉，只在我心动时才会亮。"],
       "tail": ["尾尖划过，就是一道新的星轨。", "想看流星吗？我的尾巴可以画给你。"]
     },
+    "kit": {
+      "active": {
+        "id": "star_chain",
+        "name": "星陨链",
+        "desc": "射出多枚追踪星弹，自动锁定并贯穿敌人。",
+        "color": [190, 150, 255],
+        "vfx": "star",
+        "key": 1
+      },
+      "passive": {
+        "id": "p_starlight",
+        "name": "星辉",
+        "desc": "击杀敌人缩短专属主动的冷却。",
+        "color": [200, 170, 255],
+        "vfx": "cdr"
+      }
+    },
     "head": "characters/lamia_stella/head.png",
+    "full": "characters/lamia_stella/full.png",
     "body_seg": "characters/lamia_stella/body_seg.png",
     "tail_tip": "characters/lamia_stella/tail_tip.png",
     "level": 1,
@@ -118,11 +208,29 @@
       "body": ["靠近的话…会沾一身月色哦。", "我不习惯被触碰。但…你可以例外。"],
       "tail": ["尾尖的月光，只照亮归人。", "别声张，我的尾巴正替你看着夜路。"]
     },
+    "kit": {
+      "active": {
+        "id": "moon_ward",
+        "name": "月华结界",
+        "desc": "沿朝向释放穿透月光束，并获得一段护盾。",
+        "color": [200, 210, 255],
+        "vfx": "moon",
+        "key": 1
+      },
+      "passive": {
+        "id": "p_night",
+        "name": "静夜",
+        "desc": "常驻受到伤害降低。",
+        "color": [210, 215, 255],
+        "vfx": "guard"
+      }
+    },
     "head": "characters/lamia_luna/head.png",
+    "full": "characters/lamia_luna/full.png",
     "body_seg": "characters/lamia_luna/body_seg.png",
     "tail_tip": "characters/lamia_luna/tail_tip.png",
     "level": 1,
-    "skill": "月华闪",
+    "skill": "月华结界",
     "tint": [200, 210, 255]
   }
 ]

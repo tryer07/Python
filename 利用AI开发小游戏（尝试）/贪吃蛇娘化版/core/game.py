@@ -224,12 +224,42 @@ class Game:
                 pass
 
     def _disable_ime(self):
-        """禁用输入法，免得打字时弹出候选框挡住游戏"""
+        """禁用输入法，免得打字时弹出候选框挡住游戏。
+
+        首次调用时把系统原本的输入法上下文句柄存下来，
+        供 set_text_input(True) 临时恢复（存档命名等自由输入场景）。"""
         try:
             hwnd = pygame.display.get_wm_info()["window"]
-            ctypes.windll.imm32.ImmAssociateContext(hwnd, None)
+            if not hasattr(self, "_ime_himc"):
+                self._ime_himc = ctypes.windll.imm32.ImmAssociateContext(hwnd, None)
+            else:
+                ctypes.windll.imm32.ImmAssociateContext(hwnd, None)
         except Exception:
             pass
+
+    def set_text_input(self, enabled):
+        """开启/关闭自由文本输入（仅 Windows 有意义）。
+
+        开启：恢复输入法关联 + start_text_input，场景才能收到
+        pygame.TEXTINPUT（含中文 IME 提交）；
+        关闭：stop_text_input + 重新禁用输入法，回到纯游戏按键状态。"""
+        if enabled:
+            try:
+                hwnd = pygame.display.get_wm_info()["window"]
+                ctypes.windll.imm32.ImmAssociateContext(
+                    hwnd, getattr(self, "_ime_himc", None))
+            except Exception:
+                pass
+            try:
+                pygame.key.start_text_input()
+            except Exception:
+                pass
+        else:
+            try:
+                pygame.key.stop_text_input()
+            except Exception:
+                pass
+            self._disable_ime()
 
     # ==================== 场景管理 ====================
     def register_scene(self, name, scene_class):

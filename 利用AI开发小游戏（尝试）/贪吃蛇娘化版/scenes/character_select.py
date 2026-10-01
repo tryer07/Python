@@ -159,7 +159,7 @@ class CharacterSelectScene(Scene):
             border, bw = rc, self.s(3)
         else:
             border, bw = (62, 58, 82), self.s(2)
-        pygame.draw.rect(screen, border, rect, bw, border_radius=self.s(14))
+        pygame.draw.rect(screen, border, rect, max(1, bw), border_radius=self.s(14))
 
         # 稀有度角标（左上）
         badge = pygame.Rect(rect.x + self.s(14), rect.y + self.s(14), self.s(64), self.s(30))
@@ -177,7 +177,7 @@ class CharacterSelectScene(Scene):
             screen.blit(te, te.get_rect(center=eb.center))
 
         if owned:
-            img = self.assets.get_scaled(ch.get("head", "characters/sakura/head.png"),
+            img = self.assets.get_scaled(ch.get("full") or ch.get("head", "characters/sakura/head.png"),
                                          height=self.s(200))
             if selected:
                 import math
@@ -207,7 +207,7 @@ class CharacterSelectScene(Scene):
         if not owned:
             t = self.font_small.render("未解锁 · 前往抽卡", True, (230, 110, 120))
         elif selected:
-            t = self.font_body.render("✔ 出战中", True, COLOR_GOLD)
+            t = self.font_body.render("● 出战中", True, COLOR_GOLD)
         else:
             t = self.font_small.render("点击查看详情 / 出战", True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(rect.centerx, rect.bottom - self.s(20))))

@@ -208,54 +208,78 @@ ENHANCE_CDR_PER_LAYER = 0.006   # 每层冷却缩减 +0.6%（满层 +9%）
 ENHANCE_PICKUP_PER_LAYER = 0.01 # 每层拾取 +1%（满层 +15%）
 ENHANCE_HP_PER_LAYER = 0.02     # 每层最大生命 +2%（满层 +30%）
 
-# ==================== 主动技能（1-6 键释放，选卡解锁/升级） ====================
-# 技能键位按「获得顺序」绑定 1/2/3/4/5/6。数值集中在这里，改数字即可调平衡。
-SKILL_ORDER = ["dash", "spike", "shield", "thorn", "storm", "bloom"]
+# ==================== 角色专属技能包（每人 1 主动 + 1 被动，固定，无共通技能） ====================
+# 主动绑 1 键释放；被动常驻。技能 id / 展示文案见 data/characters.json 的 kit。
+# 数值集中在这里，改数字即可调平衡。
+# --- 樱落 · 落樱绯斩（前冲斩 + 短护盾）---
+PETAL_SLASH_CD = 6.0
+PETAL_SLASH_DIST = 300          # 突进距离（设计像素）
+PETAL_SLASH_DMG = 60
+PETAL_SLASH_SHIELD = 0.8        # 释放后无敌秒数
+# --- 薄荷 · 疾风连闪（三段突进 + 移速爆发）---
+GALE_DASH_CD = 5.0
+GALE_DASH_COUNT = 3             # 连闪段数
+GALE_DASH_DIST = 180            # 每段距离
+GALE_DASH_DMG = 30              # 每段路径伤害
+GALE_SPEED_MULT = 1.25          # 爆发期移速倍率
+GALE_SPEED_TIME = 3.0           # 爆发持续秒数
+# --- 潮汐 · 沧澜涌潮（环形水浪 击退+减速+伤害）---
+TIDE_SURGE_CD = 8.0
+TIDE_SURGE_RADIUS = 260         # 影响半径（设计像素）
+TIDE_SURGE_DMG = 40
+TIDE_SLOW_MULT = 0.5            # 减速后速度倍率
+TIDE_SLOW_TIME = 2.5
+TIDE_KNOCK = 260                # 击退强度
+# --- 绯焰 · 燎原火鞭（扇形火焰鞭 + 灼烧）---
+EMBER_LASH_CD = 7.0
+EMBER_LASH_RANGE = 320          # 鞭及距离（设计像素）
+EMBER_LASH_ANGLE = 0.7          # 扇形半角（弧度）
+EMBER_LASH_DMG = 50
+EMBER_BURN_DPS = 12             # 灼烧每秒伤害
+EMBER_BURN_TIME = 3.0
+# --- 星璃 · 星陨链（多枚追踪星弹）---
+STAR_CHAIN_CD = 9.0
+STAR_CHAIN_COUNT = 6            # 星弹数
+STAR_CHAIN_DMG = 35
+STAR_CHAIN_SPEED = 700          # 星弹速度（设计像素/秒）
+STAR_CHAIN_LIFE = 1.6
+# --- 月见 · 月华结界（穿透月光束 + 护盾）---
+MOON_WARD_CD = 12.0
+MOON_WARD_LEN = 520             # 光束长度（设计像素）
+MOON_WARD_WIDTH = 90            # 光束宽度
+MOON_WARD_DMG = 70
+MOON_WARD_SHIELD = 1.5          # 护盾无敌秒数
 
-# --- 樱花冲锋：向前突进一段，路径上的怪受伤 ---
-DASH_CD = 4.0
-DASH_DIST = 260                 # 突进距离（设计像素）
-DASH_TIME = 0.18                # 突进过程时长（秒）
-DASH_DMG = 26                   # 路径伤害
-DASH_DMG_PER_LV = 14            # 每级技能追加伤害
+# --- 被动数值 ---
+PASSIVE_BLOOM_HEAL_CHANCE = 0.12   # 花守：击杀回血概率
+PASSIVE_GALE_SPEED = 1.12          # 御风：常驻移速倍率
+PASSIVE_GALE_DODGE_CD = 0.8        # 御风：闪避冷却倍率
+PASSIVE_COLD_SLOW = 0.7            # 寒流：普攻减速倍率
+PASSIVE_COLD_TIME = 1.2
+PASSIVE_EMBER_BURN_DPS = 4         # 余烬：普攻灼烧每秒
+PASSIVE_EMBER_BURN_TIME = 2.0
+PASSIVE_STARLIGHT_CDR = 0.3        # 星辉：击杀减主动冷却秒
+PASSIVE_NIGHT_REDUCE = 0.85        # 静夜：受伤倍率
 
-# --- 荆棘尾：周身光环持续一段时间，靠近的怪持续受伤 ---
-SPIKE_CD = 8.0
-SPIKE_DURATION = 3.0            # 光环持续秒数
-SPIKE_RADIUS = 130              # 光环半径（设计像素）
-SPIKE_DMG = 12                  # 每次结算伤害
-SPIKE_DMG_PER_LV = 7
-SPIKE_TICK = 0.5                # 对同一只怪的伤害间隔
+# ==================== 剧情关卡节奏 ====================
+STORY_DURATION = 900          # 一关时长（秒）= 15 分钟
+ELITE_INTERVAL = 180          # 精英怪间隔（秒）= 3 分钟
+ELITE_HP_MULT = 12.0          # 精英血量倍率
+ELITE_SIZE_MULT = 1.8         # 精英体型倍率
+ELITE_SPEED_MULT = 0.9        # 精英速度倍率（略慢但更硬）
+ELITE_ATK = 2                 # 精英碰触伤害
+ELITE_DROPS = 4               # 精英死亡掉落数
 
-# --- 星辉护盾：获得一段无敌 ---
-SHIELD_CD = 12.0
-SHIELD_TIME = 2.0               # 无敌秒数
-SHIELD_TIME_PER_LV = 0.6        # 每级追加无敌时长
-
-# --- 蔓生荆棘：在当前位置放置伤害地形 ---
-THORN_CD = 3.0
-THORN_LIFE = 5.0                # 荆棘存在时长
-THORN_DMG = 16                  # 踩到伤害
-THORN_DMG_PER_LV = 8
-THORN_TICK = 0.5                # 对同一只怪的伤害间隔
-THORN_RADIUS = 78               # 荆棘判定半径（设计像素）
-THORN_MAX = 30                  # 场上荆棘上限
-THORN_CHARGES = 3               # 一次释放铺几个（围绕身位散布）
-
-# --- 樱花风暴：周身范围爆发伤害 ---
-STORM_CD = 9.0
-STORM_RADIUS = 210              # 影响半径（设计像素）
-STORM_DMG = 40
-STORM_DMG_PER_LV = 22
-
-# --- 月华绽放（大招）：向多个方向发射穿透弹 ---
-BLOOM_CD = 16.0
-BLOOM_COUNT = 12                # 发射多少道
-BLOOM_DMG = 34
-BLOOM_DMG_PER_LV = 18
-BLOOM_BULLET_SPEED = 620        # 穿透弹速度（设计像素/秒）
-BLOOM_BULLET_LIFE = 1.3
-BLOOM_PIERCE = 4                # 每道弹可穿透几只怪
+# ==================== 新手指引 ====================
+# 新存档首局按顺序播放的提示文案（定时浮层）
+TUTORIAL_HINTS = [
+    "WASD / 方向键 移动你的蛇娘",
+    "按住左键 或 点击 进行闪避（有无敌帧）",
+    "按 1 释放你的专属主动技能",
+    "吃地上的道具升级，升级后选一张强化卡",
+    "剧情目标：撑到时间结束并击败 Boss！",
+]
+TUTORIAL_HINT_DURATION = 4.5    # 每条新手指引浮层停留时长（秒）
 
 # ==================== Boss 战 ====================
 # 生存到场景阈值后，专属 Boss 登场，击败它即通关结算。

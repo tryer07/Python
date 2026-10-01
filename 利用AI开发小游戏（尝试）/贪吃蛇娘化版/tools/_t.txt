@@ -1,3 +1,0 @@
-pygame 2.6.1 (SDL 2.28.4, Python 3.13.12)
-Hello from the pygame community. https://www.pygame.org/contribute.html
-时长110.0s 等级5 攻击24 小怪14 击杀3 血2

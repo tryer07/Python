@@ -30,8 +30,8 @@ class MainMenuScene(Scene):
         gap = self.s(82)
 
         self.buttons = [
-            Button("开始战斗", cx - btn_w // 2, start_y,
-                   btn_w, btn_h, on_click=lambda: self._go("battle")),
+            Button("开始游戏", cx - btn_w // 2, start_y,
+                   btn_w, btn_h, on_click=lambda: self._go("level_select")),
             Button("角色选择", cx - btn_w // 2, start_y + gap,
                    btn_w, btn_h, on_click=lambda: self._go("character_select")),
             Button("场景选择", cx - btn_w // 2, start_y + gap * 2,
@@ -40,7 +40,9 @@ class MainMenuScene(Scene):
                    btn_w, btn_h, on_click=lambda: self._go("gacha")),
             Button("显示设置", cx - btn_w // 2, start_y + gap * 4,
                    btn_w, btn_h, on_click=lambda: self._go("display_settings")),
-            Button("退出游戏", cx - btn_w // 2, start_y + gap * 5,
+            Button("存档管理", cx - btn_w // 2, start_y + gap * 5,
+                   btn_w, btn_h, on_click=lambda: self._go("save_manager")),
+            Button("退出游戏", cx - btn_w // 2, start_y + gap * 6,
                    btn_w, btn_h, on_click=self._on_quit),
         ]
 
@@ -88,8 +90,10 @@ class MainMenuScene(Scene):
 
         char_name = self._char_names.get(char_id, char_id)
         scene_name = self._scene_names.get(scene_id, scene_id)
+        slot_name = getattr(self.game.save_manager, "active_slot_name", "")
         t = self.font_small.render(
-            f"出战角色：{char_name}    ·    当前场景：{scene_name}", True, COLOR_TEXT_DIM)
+            f"存档：{slot_name}    ·    出战角色：{char_name}    ·    当前场景：{scene_name}",
+            True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(cx, self.s(336))))
 
         for b in self.buttons:

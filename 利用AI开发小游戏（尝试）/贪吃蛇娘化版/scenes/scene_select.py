@@ -94,6 +94,9 @@ class SceneSelectScene(Scene):
                     if rect.collidepoint(event.pos):
                         self.selected_scene = sc["id"]
                         self.game.save_manager.set("selected_scene", sc["id"])
+                        # 选图后以「无尽模式」开战（无 Boss、纯生存刷分）
+                        self.game.pending_run = {"mode": "endless", "scene": sc["id"]}
+                        self.game.change_scene("battle")
                         return
             self.back_btn.handle_event(event)
 
@@ -134,9 +137,9 @@ class SceneSelectScene(Scene):
         veil.fill((14, 12, 22, 206))
         screen.blit(veil, (0, 0))
 
-        title = self.font_title.render("选择作战场景", True, COLOR_ACCENT)
+        title = self.font_title.render("无尽模式 · 选择作战场景", True, COLOR_ACCENT)
         screen.blit(title, title.get_rect(center=(self.W // 2, self.s(78))))
-        t = self.font_small.render("不同场景的敌人配置与危险程度不同", True, COLOR_TEXT_DIM)
+        t = self.font_small.render("纯生存刷分，无 Boss、无终点；敌潮随时间不断加压", True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(self.W // 2, self.s(130))))
 
         for _, rect, sc in self._cards():
@@ -191,7 +194,7 @@ class SceneSelectScene(Scene):
             screen.blit(t, t.get_rect(midright=(rect.right - self.s(20), rect.y + self.s(182))))
 
         border = COLOR_ACCENT if selected else ((130, 120, 170) if hovered else (60, 56, 78))
-        bw = self.s(4) if selected else self.s(2)
+        bw = max(1, self.s(4)) if selected else max(1, self.s(2))
         pygame.draw.rect(screen, border, rect, bw, border_radius=self.s(12))
 
     def _on_back(self):
