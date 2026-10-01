@@ -1,0 +1,42 @@
+[
+  {
+    "index": 1,
+    "id": "lv1_sakura_court",
+    "name": "第一关 · 樱庭初醒",
+    "scene": "campus_garden",
+    "duration": 900,
+    "elite_interval": 180,
+    "desc": "樱花纷飞的校园后院。撑过 15 分钟，每 3 分钟一只精英怪，结尾击败樱之守护者。",
+    "unlock_hint": "初始解锁"
+  },
+  {
+    "index": 2,
+    "id": "lv2_neon_chase",
+    "name": "第二关 · 霓虹追逐",
+    "scene": "neon_night",
+    "duration": 900,
+    "elite_interval": 180,
+    "desc": "人潮与灯牌之间的追逐。敌潮更密，结尾击败霓虹夜主。",
+    "unlock_hint": "通关第一关解锁"
+  },
+  {
+    "index": 3,
+    "id": "lv3_deep_relic",
+    "name": "第三关 · 深海低语",
+    "scene": "deep_sea",
+    "duration": 900,
+    "elite_interval": 180,
+    "desc": "视野受限、尖刺密布的深海遗迹。敌血更厚，结尾击败深海遗主。",
+    "unlock_hint": "通关第二关解锁"
+  },
+  {
+    "index": 4,
+    "id": "lv4_divine_realm",
+    "name": "第四关 · 神域终章",
+    "scene": "sakura_realm",
+    "duration": 900,
+    "elite_interval": 180,
+    "desc": "樱花神域的最终试炼。掉落最丰厚，结尾击败神域主宰。",
+    "unlock_hint": "通关第三关解锁"
+  }
+]

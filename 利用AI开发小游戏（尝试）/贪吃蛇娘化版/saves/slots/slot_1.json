@@ -1,0 +1,79 @@
+{
+  "slot_name": "测试存档",
+  "created_at": 0,
+  "player_name": "玩家",
+  "currency": 1170,
+  "gacha_tickets": 5,
+  "owned_characters": [
+    "sakura",
+    "lamia_mint",
+    "lamia_tide",
+    "lamia_flare",
+    "lamia_luna",
+    "lamia_stella"
+  ],
+  "selected_character": "lamia_luna",
+  "selected_scene": "neon_night",
+  "character_data": {
+    "snake_basic": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0
+    },
+    "lamia_mint": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 0
+    },
+    "lamia_tide": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 0
+    },
+    "sakura": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 0
+    },
+    "lamia_flare": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 0
+    },
+    "lamia_luna": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 0
+    },
+    "lamia_stella": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 0
+    }
+  },
+  "story_unlocked": 1,
+  "story_cleared": [],
+  "tutorial_done": false,
+  "progress": {
+    "best_score": 84740,
+    "best_level": 21,
+    "total_kills": 2141,
+    "total_runs": 41,
+    "total_stardust": 1190,
+    "total_wins": 1,
+    "bosses_defeated": {
+      "campus_garden": 1
+    }
+  },
+  "gacha_pity": {
+    "count": 40,
+    "since_sr": 0,
+    "since_ssr": 40
+  }
+}

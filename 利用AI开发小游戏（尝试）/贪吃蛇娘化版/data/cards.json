@@ -1,0 +1,11 @@
+{
+  "_comment": "升级选卡卡池。技能已改为「角色专属固定包」(见 characters.json 的 kit)，不再通过卡片获得；卡片只保留可重复叠加的通用属性卡，stat 对应 battle 的 self.stats 键。数值步长在 settings.py。",
+  "cards": [
+    { "id": "p_atk",    "type": "passive", "stat": "atk",    "name": "锋锐之牙", "icon": "atk",    "color": [255, 120, 120], "desc": "攻击力 +14%" },
+    { "id": "p_speed",  "type": "passive", "stat": "speed",  "name": "疾风之翼", "icon": "speed",  "color": [140, 220, 255], "desc": "移动速度 +8%" },
+    { "id": "p_atkspd", "type": "passive", "stat": "atkspd", "name": "急促心跳", "icon": "atkspd", "color": [255, 200, 120], "desc": "攻击速度 +10%" },
+    { "id": "p_cdr",    "type": "passive", "stat": "cdr",    "name": "时之砂漏", "icon": "cdr",    "color": [180, 160, 255], "desc": "技能冷却缩减 +10%" },
+    { "id": "p_pickup", "type": "passive", "stat": "pickup", "name": "贪婪磁场", "icon": "pickup", "color": [200, 160, 255], "desc": "拾取范围 +30%" },
+    { "id": "p_hp",     "type": "passive", "stat": "hp",     "name": "生命之花", "icon": "hp",     "color": [226, 84, 110],  "desc": "最大生命 +1 并回满" }
+  ]
+}
