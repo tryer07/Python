@@ -1,0 +1,57 @@
+{
+  "player_name": "玩家",
+  "currency": 724,
+  "gacha_tickets": 5,
+  "owned_characters": [
+    "sakura",
+    "lamia_mint",
+    "lamia_tide"
+  ],
+  "selected_character": "sakura",
+  "selected_scene": "campus_garden",
+  "character_data": {
+    "snake_basic": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0
+    },
+    "lamia_mint": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0
+    },
+    "lamia_tide": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0
+    },
+    "sakura": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0
+    }
+  },
+  "settings": {
+    "bgm_volume": 0.7,
+    "sfx_volume": 0.8
+  },
+  "progress": {
+    "best_score": 8850,
+    "best_level": 9,
+    "total_kills": 32,
+    "total_runs": 11,
+    "total_stardust": 64
+  },
+  "gacha_pity": {
+    "count": 40,
+    "since_sr": 0,
+    "since_ssr": 40
+  },
+  "display": {
+    "mode": "windowed",
+    "resolution": [
+      1280,
+      720
+    ]
+  }
+}

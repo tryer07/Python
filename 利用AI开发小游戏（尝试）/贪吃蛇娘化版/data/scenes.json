@@ -1,0 +1,46 @@
+[
+  {
+    "id": "campus_garden",
+    "name": "校园庭院",
+    "desc": "樱花纷飞的校园后院",
+    "difficulty": "入门",
+    "bg": "backgrounds/campus_garden.png",
+    "accent": [222, 118, 158],
+    "enemy_density": 1.0,
+    "hp_growth": 0.22,
+    "note": "小怪温和，适合熟悉手感"
+  },
+  {
+    "id": "neon_night",
+    "name": "霓虹夜市",
+    "desc": "人潮与灯牌之间的追逐",
+    "difficulty": "普通",
+    "bg": "",
+    "accent": [150, 110, 240],
+    "enemy_density": 1.35,
+    "hp_growth": 0.30,
+    "note": "小怪数量明显变多"
+  },
+  {
+    "id": "deep_sea",
+    "name": "深海遗迹",
+    "desc": "视野受限，尖刺密布",
+    "difficulty": "困难",
+    "bg": "",
+    "accent": [80, 180, 210],
+    "enemy_density": 1.6,
+    "hp_growth": 0.42,
+    "note": "小怪血厚且刷得快"
+  },
+  {
+    "id": "sakura_realm",
+    "name": "樱花神域",
+    "desc": "活动区域会逐渐收窄",
+    "difficulty": "噩梦",
+    "bg": "",
+    "accent": [230, 130, 190],
+    "enemy_density": 1.9,
+    "hp_growth": 0.55,
+    "note": "高难，掉落最丰厚"
+  }
+]

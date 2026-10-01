@@ -1,0 +1,4 @@
+pygame 2.6.1 (SDL 2.28.4, Python 3.13.12)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[截图] 战斗     -> D:\Python\Python项目存放点\利用AI开发小游戏（尝试）\贪吃蛇娘化版\tools\_shots\battle.png
+[截图] 主菜单    -> D:\Python\Python项目存放点\利用AI开发小游戏（尝试）\贪吃蛇娘化版\tools\_shots\main_menu.png

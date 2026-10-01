@@ -1,0 +1,17 @@
+{
+  "rates": {
+    "R": 0.78,
+    "SR": 0.18,
+    "SSR": 0.04
+  },
+  "pool": {
+    "R": ["lamia_mint"],
+    "SR": ["lamia_tide"],
+    "SSR": ["sakura"]
+  },
+  "pity": {
+    "sr_guarantee": 10,
+    "ssr_guarantee": 60
+  },
+  "_comment": "rates 三项之和应为 1.0；ssr_guarantee 是必出 SSR 的抽数上限"
+}

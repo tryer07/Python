@@ -1,0 +1,43 @@
+[
+  {
+    "id": "sakura",
+    "name": "樱落",
+    "rarity": "SSR",
+    "title": "樱花神域的守护者",
+    "element": "樱",
+    "growth": "均衡",
+    "desc": "来自樱花神域的蛇娘，性格温柔。等级越高，斩击越锋利。",
+    "head": "characters/sakura/head.png",
+    "body_seg": "characters/sakura/body_seg.png",
+    "tail_tip": "characters/sakura/tail_tip.png",
+    "level": 1,
+    "skill": "冲刺斩",
+    "tint": [255, 200, 220]
+  },
+  {
+    "id": "lamia_mint",
+    "name": "薄荷",
+    "rarity": "R",
+    "title": "庭院里的新手蛇娘",
+    "element": "风",
+    "growth": "速度",
+    "desc": "刚踏上旅程的蛇娘，动作轻快。",
+    "head": "",
+    "level": 1,
+    "skill": "疾风步",
+    "tint": [180, 240, 200]
+  },
+  {
+    "id": "lamia_tide",
+    "name": "潮汐",
+    "rarity": "SR",
+    "title": "深海的低语者",
+    "element": "水",
+    "growth": "控制",
+    "desc": "擅长用水流牵制敌人。",
+    "head": "",
+    "level": 1,
+    "skill": "涌流冲击",
+    "tint": [150, 200, 255]
+  }
+]
