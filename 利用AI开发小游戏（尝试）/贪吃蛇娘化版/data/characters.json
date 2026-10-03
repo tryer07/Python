@@ -17,21 +17,21 @@
     "kit": {
       "active": {
         "id": "sakura_dash2",
-        "name": "落樱·绯斩",
-        "desc": "向前斩冲一段并获短护盾；再按在落点绽放花瓣范围伤害。",
+        "name": "花信",
+        "desc": "朝瞄准方向突进，沿途为敌人种下花瓣标记，落地获短护盾与起手无敌帧。",
         "color": [255, 150, 190],
         "vfx": "slash",
         "key": 1
       },
       "actives": [
-        {"id": "sakura_dash2", "type": "dash2", "name": "落樱·绯斩", "key": 1, "color": [255, 150, 190], "vfx": "slash", "desc": "向前斩冲一段并获短护盾；再按在落点绽放花瓣范围伤害。"},
-        {"id": "sakura_detonate", "type": "detonate", "name": "绽印", "key": 2, "color": [255, 180, 210], "vfx": "flame", "desc": "引爆范围内敌人的标记，按层数追加花瓣范围伤害；无标记者叠上一层印记。"},
-        {"id": "sakura_gather", "type": "gather", "name": "落樱引", "key": 3, "color": [255, 160, 200], "vfx": "wave", "desc": "把周围敌人拉向自己并减速，同时叠上一层印记。"},
-        {"id": "sakura_blade", "type": "blade", "name": "花瓣刃", "key": 4, "color": [255, 170, 200], "vfx": "star", "desc": "甩出多枚旋转花瓣刃，命中叠印记并造成伤害。"},
-        {"id": "sakura_channel", "type": "channel", "name": "樱舞鼓舞", "key": 5, "color": [255, 200, 220], "vfx": "speed", "desc": "吟唱片刻（可移动）后提升攻击与攻速。"}
+        {"id": "sakura_dash2", "type": "sakura_dash2", "name": "花信", "key": 1, "color": [255, 150, 190], "vfx": "slash", "desc": "朝瞄准方向突进 240，沿途每 60 距离为敌人种 1 层花瓣标记（单怪上限 2 层），中途留下樱分身；落地获 1.2s 护盾（吸收 8% 最大生命）并有 0.15s 起手无敌帧。"},
+        {"id": "sakura_detonate", "type": "sakura_detonate", "name": "催放", "key": 2, "color": [255, 180, 210], "vfx": "flame", "desc": "立即引爆半径 160 内所有花瓣标记（不等满层），每层追加 55% 伤害；引爆后 1.0s 对同批目标再补一跳 15% 的余震。"},
+        {"id": "sakura_gather", "type": "sakura_gather", "name": "落樱引", "key": 3, "color": [255, 160, 200], "vfx": "wave", "desc": "在指定点铺一片半径 180 的花圃，持续 6s：圃内敌人每 0.8s 叠 1 层花瓣标记，叠满 3 层立即绽放；站在花圃内的绽放伤害再 ×1.2。"},
+        {"id": "sakura_blade", "type": "sakura_blade", "name": "回旋花刃", "key": 4, "color": [255, 170, 200], "vfx": "star", "desc": "甩出花刃轮沿射程 620 往返 2 趟，每趟对走廊内敌人造成 42% 伤害并叠 1 层花瓣标记；命中已带标记者额外 +20% 伤害。"},
+        {"id": "sakura_channel", "type": "sakura_channel", "name": "花期", "key": 5, "color": [255, 200, 220], "vfx": "speed", "desc": "进入 6s 花期：期间普攻每段必叠 2 层花瓣标记（不只段3），且所有绽放半径 +50%。种花爆发的核心增益。"}
       ],
       "passives": [
-        {"id": "p_bloom_guard", "name": "花守", "desc": "击杀敌人有概率回复 1 点生命。", "color": [255, 190, 210], "vfx": "heal"},
+        {"id": "p_bloom_guard", "name": "花守", "desc": "每次花瓣绽放回复 5 点生命并叠 1 层花护（最多 5 层，每层减伤 2%）。绽放越多，越打越稳。", "color": [255, 190, 210], "vfx": "bloomguard"},
         {"id": "p_sakura_mark", "name": "樱之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即绽放自爆伤害周围敌人。", "color": [255, 190, 215], "vfx": "markstack"}
       ]
     },
@@ -55,7 +55,7 @@
     "body_seg": "characters/sakura/body_seg.png",
     "tail_tip": "characters/sakura/tail_tip.png",
     "level": 1,
-    "skill": "落樱·绯斩",
+    "skill": "花信",
     "tint": [255, 200, 220]
   },
   {

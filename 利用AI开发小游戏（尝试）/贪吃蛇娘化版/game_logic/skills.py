@@ -439,9 +439,9 @@ class SkillEngine:
         role = self.role or "hybrid"
         if role not in ("tank", "mage", "assassin"):
             return ev
-        # 潮汐切人五技能：数值按规格固定，不吃职业范围/射程/读条系数
-        # （局内强化仍由 _scale_event 统一放大，保证介绍与实战同源）。
-        if stype.startswith("tide_"):
+        # 潮汐切人五技能 / 樱落种花五技能：数值按规格固定，不吃职业范围/射程/读条系数
+        # （局内强化仍由 _scale_event 统一放大，保证介绍面板与实战同源）。
+        if stype.startswith("tide_") or stype.startswith("sakura_"):
             return ev
         area = S.ROLE_AREA_MULT.get(role, 1.0)
         for k in ("radius", "range", "length", "width"):
