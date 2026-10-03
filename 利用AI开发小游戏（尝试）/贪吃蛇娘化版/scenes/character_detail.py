@@ -33,6 +33,10 @@ ELEMENT_FX_COLORS = {
     "月": (214, 220, 255), "火": (255, 158, 110), "星": (255, 220, 140),
 }
 
+# 彩蛋台词气泡文字色：气泡底是近白粉 (250,244,250)，若沿用 COLOR_TEXT(纯白)
+# 会白字压白底看不清，故用深墨紫拉满对比度，又与樱落粉调同色系。
+EGG_TEXT_COLOR = (74, 42, 64)
+
 
 class CharacterDetailScene(Scene):
     """角色详情场景"""
@@ -298,10 +302,17 @@ class CharacterDetailScene(Scene):
         lines = (self.char.get("egg_lines") or {}).get(region) or []
         if not lines:
             return
-        text = random.choice(lines)
+        # 按下标选词：配音文件名 voice_<角色>_<部位>_<下标> 与台词一一对应
+        idx = random.randrange(len(lines))
+        text = lines[idx]
         self.egg = {"region": region, "text": text, "timer": 2.6}
         self.pulse = 1.0
-        self.game.audio.play("eat_heart")
+        # 配音：有该条语音文件（如樱落日语配音）就播语音，否则回退触碰音
+        vn = f"voice_{self.char_id}_{region}_{idx}"
+        if self.game.audio.has_sfx(vn):
+            self.game.audio.play(vn)
+        else:
+            self.game.audio.play("eat_heart")
 
     def update(self, dt):
         self.time += dt
@@ -965,7 +976,7 @@ class CharacterDetailScene(Scene):
         text = self.egg["text"]
         # 气泡
         pad = self.s(18)
-        surf = self.font_body.render(text, True, COLOR_TEXT)
+        surf = self.font_body.render(text, True, EGG_TEXT_COLOR)
         bw = surf.get_width() + pad * 2
         bh = surf.get_height() + pad * 2
         bx = head_rect.centerx - bw // 2

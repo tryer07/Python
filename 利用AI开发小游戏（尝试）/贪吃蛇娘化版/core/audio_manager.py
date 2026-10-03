@@ -585,6 +585,9 @@ class _NullAudio:
     def play(self, *a, **k):
         pass
 
+    def has_sfx(self, *a, **k):
+        return False
+
     def play_bgm(self, *a, **k):
         pass
 
@@ -719,6 +722,13 @@ class AudioManager:
             snd.play()
         except Exception:
             pass
+
+    def has_sfx(self, name):
+        """是否存在真实音效文件（不含合成占位）。
+
+        配音这类「有文件才播、没有就静默/回退」的资源用：合成占位音对
+        语音名无意义（只会给个中性提示音），故只认真实文件。"""
+        return self._find_file("sfx", name) is not None
 
     # ------------------------------------------------------------ BGM
     def play_bgm(self, name, fade_ms=BGM_FADE_MS):
