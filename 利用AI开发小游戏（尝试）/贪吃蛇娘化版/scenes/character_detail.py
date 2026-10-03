@@ -302,17 +302,12 @@ class CharacterDetailScene(Scene):
         lines = (self.char.get("egg_lines") or {}).get(region) or []
         if not lines:
             return
-        # 按下标选词：配音文件名 voice_<角色>_<部位>_<下标> 与台词一一对应
+        # 随机挑一句台词显示（TTS 配音暂不成熟，先只保留触碰音效）
         idx = random.randrange(len(lines))
         text = lines[idx]
         self.egg = {"region": region, "text": text, "timer": 2.6}
         self.pulse = 1.0
-        # 配音：有该条语音文件（如樱落日语配音）就播语音，否则回退触碰音
-        vn = f"voice_{self.char_id}_{region}_{idx}"
-        if self.game.audio.has_sfx(vn):
-            self.game.audio.play(vn)
-        else:
-            self.game.audio.play("eat_heart")
+        self.game.audio.play("eat_heart")
 
     def update(self, dt):
         self.time += dt
@@ -818,6 +813,10 @@ class CharacterDetailScene(Scene):
             return self._icon_cache[key]
         rel = f"effects/skills/{sid}.png"
         full = os.path.join(ASSETS_DIR, rel.replace("/", os.sep))
+        if not os.path.exists(full):
+            # 绯焰等双形态角色只有 <sid>_lamia/_human 成品图：详情页图标回退蛇形态版
+            rel = f"effects/skills/{sid}_lamia.png"
+            full = os.path.join(ASSETS_DIR, rel.replace("/", os.sep))
         img = None
         if os.path.exists(full):
             try:

@@ -542,6 +542,46 @@ SAKURA_BLOOM_HEAL = 5            # 花守：每次绽放回血
 SAKURA_GUARD_MAX = 5             # 花护上限层数
 SAKURA_GUARD_REDUCE = 0.02       # 花护每层减伤
 
+# ==================== 绯焰 · 灼烧引爆闭环五技能（火属性法师，flare_* 自定义 type） ====================
+# 核心＝「余烬叠层→引燃引爆」：技能命中叠余烬层（DOT，随时间自耗一层），
+# 引爆类技能按目标剩余层数一次性结算爆发伤害。全队只有绯焰能叠层与引爆。
+# 数值按规格固定，不吃职业范围/冷却系数（见 skills.cooldown_at 与 _apply_role 的 flare_ 豁免）。
+# --- 余烬（ember）：叠层 DOT 与引爆结算 ---
+FLARE_EMBER_MAX = 8              # 单目标余烬层数上限
+FLARE_EMBER_DECAY = 1.6          # 每层自然衰减周期（秒），到时自耗 1 层（引信烙印期间冻结）
+FLARE_EMBER_DPS = 4.0            # 每层每秒灼烧伤害（battle._update_flare 结算）
+FLARE_EMBER_BURST_MULT = 0.22    # 引爆伤害 = 基础 ×(1+0.22×层数)
+# --- 1 撒烬（flare_scatter）：中距离扇形撒火星，命中叠 1 层 ---
+FLARE_SCATTER_CD = 6.0
+FLARE_SCATTER_RANGE = 420        # 扇形射程（设计像素）
+FLARE_SCATTER_ANGLE = 0.9        # 扇形半角（弧度）
+FLARE_SCATTER_COUNT = 7          # 火星枚数（视觉）
+FLARE_SCATTER_MULT = 0.30        # 伤害倍率
+# --- 2 燃径（flare_trail）：直线火径烙地，踩踏敌人周期叠层 ---
+FLARE_TRAIL_CD = 12.0
+FLARE_TRAIL_LEN = 520            # 火径长度（设计像素）
+FLARE_TRAIL_WIDTH = 90           # 火径宽度（设计像素）
+FLARE_TRAIL_TIME = 4.0           # 烙地持续秒
+FLARE_TRAIL_TICK = 0.5           # 踩踏叠层周期（秒）
+FLARE_TRAIL_TICK_MULT = 0.20     # 每跳伤害倍率
+# --- 3 引信（flare_fuse）：单体烙印，锁定现有层数，延时自动引爆 ---
+FLARE_FUSE_CD = 9.0
+FLARE_FUSE_RANGE = 460           # 点刺射程（设计像素）
+FLARE_FUSE_MULT = 0.40           # 烙印即时伤害倍率
+FLARE_FUSE_DELAY = 3.0           # 自动引爆延迟（秒），期间余烬衰减冻结
+FLARE_FUSE_DET_MULT = 0.90       # 引爆基础倍率（层数加成另乘 FLARE_EMBER_BURST_MULT）
+# --- 4 缭焰（flare_ring）：自身环绕火环，近身敌人持续叠层并减速，引爆增伤 ---
+FLARE_RING_CD = 16.0
+FLARE_RING_RADIUS = 200          # 火环半径（设计像素）
+FLARE_RING_TIME = 5.0            # 环绕持续秒
+FLARE_RING_TICK = 0.6            # 环内叠层周期（秒）
+FLARE_RING_SLOW = 0.65           # 环内敌人减速倍率
+FLARE_RING_AMP = 0.30            # 期间引爆伤害提升 30%
+# --- 5 焚天（flare_burst）：大招全场引爆所有目标余烬层，逐人返还冷却 ---
+FLARE_BURST_CD = 30.0
+FLARE_BURST_MULT = 0.80          # 引爆基础倍率（层数加成另乘 FLARE_EMBER_BURST_MULT）
+FLARE_BURST_REFUND = 2.0         # 每引爆一个目标返还自身冷却（秒）
+
 # ==================== 标记被动（全员：技能叠标记，满 3 层自爆） ====================
 MARKPASSIVE_STACKS = 3          # 标记最多叠几层
 MARKPASSIVE_TIME = 6.0          # 标记持续秒

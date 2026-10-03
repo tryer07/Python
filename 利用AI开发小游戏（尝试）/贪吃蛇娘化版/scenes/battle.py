@@ -49,6 +49,14 @@ _EL_BULLET = {
     "火": "fire", "星": "star", "月": "moon",
 }
 
+# 元素 -> 远程普攻的弹丸光晕/枪口/火星拖尾主色。远程三段普攻原为樱落专用、
+# 主色硬编码成樱粉；绯焰(火)接入后按活跃元素取色，缺省回退樱粉——只有樱落
+# 配 ranged 时行为完全不变，火/水等各自拿到对味的主色（火=橙红，同其技能配色）。
+_EL_RANGED_COLOR = {
+    "樱": (255, 190, 215), "火": (255, 140, 80), "水": (120, 200, 255),
+    "风": (150, 240, 190), "星": (190, 150, 255), "月": (200, 210, 255),
+}
+
 # 旋转贴图查表档数：连续自旋（阵风/风实体/弹丸/技能贴图）每帧角度都在变，
 # 若每帧 pygame.transform.rotate/rotozoom 会整张图重采样，是技能掉帧主因。
 # 把角度吸附到这么多档位（每 7.5°一档，与 AssetManager.ROT_STEPS 一致），
@@ -249,6 +257,12 @@ class BattleScene(Scene):
         self.sakura_kaki_t = 0.0
         self.sakura_guard = 0
         self.sakura_delay = []
+        # 绯焰·灼烧引爆闭环持续态：燃径火径区域 / 引信烙印 / 缭焰火环
+        # （余烬层挂在 Mob/Boss 实体上；火径同潮汐水域不随切人消失）
+        self.flare_trails = []
+        self.flare_fuses = []
+        self.flare_ring_t = 0.0
+        self.flare_ring_amp = 0.0
         self.fx_sprites = []     # 一次性技能贴图特效（引爆/爆发等，缺图自动回退程序化 VFX）
         # 鼓舞(rally)增益：key5 技能释放后短时提升攻击/攻速，挂在场景上
         self.rally_t = 0.0
@@ -646,6 +660,10 @@ class BattleScene(Scene):
         self.sakura_kaki_t = 0.0
         self.sakura_guard = 0
         self.sakura_delay = []
+        # 绯焰·缭焰火环/引信烙印随切人清零（燃径火径同水域，留在场上烧完）
+        self.flare_fuses = []
+        self.flare_ring_t = 0.0
+        self.flare_ring_amp = 0.0
         self.fx_sprites = []
         self.role = m.get("role", "hybrid")
         self.role_armor = S.ROLE_ARMOR.get(self.role, 0.0)
@@ -986,6 +1004,7 @@ class BattleScene(Scene):
         self._update_channel(dt)
         self._update_gusts(dt)
         self._update_sakura(dt)
+        self._update_flare(dt)
         self._update_fx_sprites(dt)
         self._update_tide_fields(dt)
         # 生命再生：血条制下直接把 regen*dt 累加进 hp（浮点），整数变化时飘字
@@ -1496,7 +1515,7 @@ class BattleScene(Scene):
             curve = st["curve"] * (-1.0 if i % 2 == 0 else 1.0) if st["curve"] else 0.0
             b = PlayerBullet(
                 (px, py), (math.cos(a) * spd, math.sin(a) * spd), dmg, radius,
-                life=st["life"], color=(255, 190, 215),
+                life=st["life"], color=self._ranged_color(),
                 element=self._active_element(), curve=curve, spin=st["spin"])
             b.rot = math.degrees(a)
             b.trail = st["trail"] > 0
@@ -1517,7 +1536,7 @@ class BattleScene(Scene):
         1/2 段=扇形花瓣弧（第 2 段水平镜像反向回扫）；3 段=环形花瓣爆发扩散；
         双缺图回退矢量花瓣风，绝不拿技能级特效充数。
         """
-        color = (255, 190, 215)
+        color = self._ranged_color()
         rels = getattr(self, "_melee_fx_rel", {})
         am = self.party[self.active_idx]
         form = "human" if (self.char_human and am["form"] == "human") else "lamia"
@@ -1720,7 +1739,7 @@ class BattleScene(Scene):
                         "vx": random.uniform(-30, 30) * self.S,
                         "vy": random.uniform(-10, 50) * self.S,
                         "life": random.uniform(0.25, 0.45), "max_life": 0.45,
-                        "color": (255, 190, 215),
+                        "color": b.color,
                         "r": random.randint(self.s(2), self.s(4)),
                     })
         self._bullet_vs_mobs()
@@ -2334,6 +2353,16 @@ class BattleScene(Scene):
             self._skill_sakura_blade(ev, px, py, base_ang)
         elif t == "sakura_channel":
             self._skill_sakura_channel(ev, px, py)
+        elif t == "flare_scatter":
+            self._skill_flare_scatter(ev, px, py, base_ang)
+        elif t == "flare_trail":
+            self._skill_flare_trail(ev, px, py, dx, dy)
+        elif t == "flare_fuse":
+            self._skill_flare_fuse(ev, px, py)
+        elif t == "flare_ring":
+            self._skill_flare_ring(ev, px, py)
+        elif t == "flare_burst":
+            self._skill_flare_burst(ev, px, py)
 
     def _damage_segment(self, x1, y1, x2, y2, dmg, color, mark=False):
         reach = self.s(18)
@@ -3065,6 +3094,11 @@ class BattleScene(Scene):
         """当前活跃成员的元素（来自技能引擎 load_kit）。"""
         return getattr(self.skills, "element", "") or ""
 
+    def _ranged_color(self):
+        """远程普攻弹丸光晕/枪口/火星拖尾的主色：按活跃元素取色（樱=粉、火=橙红…），
+        缺省回退樱落粉，保证只有樱落配 ranged 时表现完全不变。"""
+        return _EL_RANGED_COLOR.get(self._active_element(), (255, 190, 215))
+
     def _apply_element_proc(self, m):
         """命中时按活跃成员元素概率触发对怪效果，让属性有实际意义。
         樱=叠花瓣标记满层绽放 / 风=击退+减速 / 水=减速+概率冻结 /
@@ -3421,6 +3455,297 @@ class BattleScene(Scene):
                     bed["acc"] -= bed["tick"]
                     self._sakura_bed_tick(bed)
             self.sakura_beds = [b for b in self.sakura_beds if b["t"] > 0]
+
+    # -------------------------------------------------- 绯焰·灼烧引爆闭环五技能
+    # 火属性法师：余烬叠层（DOT，随时间自耗一层）→ 引爆类技能按剩余层数一次性
+    # 结算爆发伤害。全队只有绯焰能叠层与引爆；数值固定不吃职业系数
+    # （见 skills.cooldown_at 豁免），伤害由 _flare_skill_dmg 按面板算。
+    def _flare_skill_dmg(self, ev, mult):
+        """绯焰技能伤害基数：同樱落，事件里没有 dmg，按当前面板 × 倍率计算。"""
+        lv = (ev or {}).get("lv", 0)
+        sd = self.stats.get("skilldmg", 1.0) * self.role_skilldmg
+        enh = 1.0 + S.SKILL_ENH_DMG_PER_LV * lv
+        return max(1, int(round(self.snake.attack * sd * enh * mult)))
+
+    def _ember_stack(self, obj, stacks=1):
+        """给目标叠余烬层（小怪/Boss 通吃），叠满封顶时冒个火圈提示。"""
+        full = obj.add_ember(stacks)
+        self._burst(obj.pos[0], obj.pos[1], (255, 217, 138), 3)
+        if full:
+            self._fx_ring(obj.pos[0], obj.pos[1],
+                          max(self.s(30), obj.radius * 1.6), (255, 201, 60), life=0.3)
+
+    def _ember_detonate(self, obj, base, is_boss, sid=None):
+        """引爆单个目标的余烬：伤害 = base ×(1+每层加成×层数)，缭焰期间再增伤。
+        返回被引爆的层数（0 = 目标身上没有余烬）。"""
+        stacks = obj.consume_ember()
+        if stacks <= 0:
+            return 0
+        amp = 1.0 + (self.flare_ring_amp if self.flare_ring_t > 0 else 0.0)
+        dmg = max(1, int(round(base * (1.0 + S.FLARE_EMBER_BURST_MULT * stacks) * amp)))
+        color = (255, 122, 46)
+        x, y = obj.pos[0], obj.pos[1]
+        if is_boss:
+            self._damage_boss(dmg, color=color)
+        else:
+            self._hurt_mob(obj, dmg, x, y, color=color, spark=14)
+        self._fx_nova(x, y, max(self.s(60), getattr(obj, "radius", self.s(20)) * 2.6),
+                      color, life=0.45)
+        self._spawn_fx_sprite(sid, x, y, max(self.s(110), self.s(40) * stacks),
+                              life=0.5, expand=1.8, spin=2.0)
+        self._float(f"引爆×{stacks}", x, y - self.s(46), (255, 201, 60), 26)
+        return stacks
+
+    def _skill_flare_scatter(self, ev, px, py, base_ang):
+        """① 撒烬：朝矄准方向扇形撒出火星雨，命中敌人造成小伤害并叠 1 层余烬。"""
+        rng = ev.get("range", S.FLARE_SCATTER_RANGE) * self.S
+        half = ev.get("angle", S.FLARE_SCATTER_ANGLE)
+        count = max(1, int(ev.get("count", S.FLARE_SCATTER_COUNT)))
+        mult = ev.get("mult", S.FLARE_SCATTER_MULT)
+        color = ev.get("color", (255, 140, 80))
+        self.game.audio.play("skill_storm")
+        self._fx_fan(px, py, rng, base_ang, half, color, life=0.4)
+        # 火星雨：扇形内随机撒 count 颗火星粒子（纯视觉）
+        for i in range(count):
+            a = base_ang + random.uniform(-half, half)
+            d = rng * random.uniform(0.45, 1.0)
+            self._burst(px + math.cos(a) * d, py + math.sin(a) * d, (255, 217, 138), 3)
+        self._spawn_fx_sprite(ev.get("sid"), px + math.cos(base_ang) * rng * 0.5,
+                              py + math.sin(base_ang) * rng * 0.5, self.s(170),
+                              life=0.45, expand=1.5, spin=1.5)
+        dmg = self._flare_skill_dmg(ev, mult)
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            vx, vy = m.pos[0] - px, m.pos[1] - py
+            d0 = math.hypot(vx, vy)
+            if d0 <= rng + m.radius:
+                da = abs((math.atan2(vy, vx) - base_ang + math.pi) % math.tau - math.pi)
+                if d0 <= m.radius + self.s(12) or da <= half:
+                    self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=6)
+                    if m.alive:
+                        self._ember_stack(m)
+        self.mobs = [m for m in self.mobs if m.alive]
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - px, by - py) <= rng + self.boss.radius_px:
+                self._damage_boss(dmg, color=color)
+                self._ember_stack(self.boss)
+        self._float(ev.get("name", "撒烬"), px, py - self.s(58), color, 30)
+        self.shake = max(self.shake, 0.2)
+
+    def _skill_flare_trail(self, ev, px, py, dx, dy):
+        """② 燃径：沿矄准方向烙一条直线火径 time 秒，踩踏敌人每 tick 叠 1 层余烬
+        并吃一跳小伤害。火径留在场上烧完（同潮汐水域，不随切人消失）；
+        视觉＝每次 tick 补一道贴地火线（life > tick，存续期内不断线）。"""
+        length = ev.get("length", S.FLARE_TRAIL_LEN) * self.S
+        width = ev.get("width", S.FLARE_TRAIL_WIDTH) * self.S
+        tt = ev.get("time", S.FLARE_TRAIL_TIME)
+        tick = max(0.05, ev.get("tick", S.FLARE_TRAIL_TICK))
+        tick_mult = ev.get("tick_mult", S.FLARE_TRAIL_TICK_MULT)
+        color = ev.get("color", (255, 122, 46))
+        x2 = min(max(px + dx * length, 0.0), self.world_w)
+        y2 = min(max(py + dy * length, 0.0), self.world_h)
+        self.game.audio.play("skill_storm")
+        self.flare_trails.append({
+            "x1": px, "y1": py, "x2": x2, "y2": y2, "half": width * 0.5,
+            "t": tt, "tick": tick, "acc": 0.0, "mult": tick_mult,
+            "color": color, "sid": ev.get("sid"), "lv": ev.get("lv", 0)})
+        # 视觉＝一道细火线：beam 辉光按 w*6 扩张，传判定区宽会糊成实心色块，
+        # 判定宽度只留在 zone 字典里供踩踏检测用
+        self._fx_beam(px, py, x2, y2, self.s(6), color, life=tick + 0.15)
+        self._spawn_fx_sprite(ev.get("sid"), (px + x2) / 2, (py + y2) / 2,
+                              max(self.s(140), length * 0.5), life=0.5,
+                              expand=1.2, spin=0.0)
+        self._float(ev.get("name", "燃径"), px, py - self.s(58), color, 30)
+
+    def _flare_trail_tick(self, tr):
+        """火径每 tick：对踩踏敌人叠 1 层余烬 + 一跳小伤害，并补一段火线维持视觉。"""
+        x1, y1, x2, y2 = tr["x1"], tr["y1"], tr["x2"], tr["y2"]
+        half, color = tr["half"], tr["color"]
+        self._fx_beam(x1, y1, x2, y2, self.s(6), color, life=tr["tick"] + 0.15)
+        dmg = self._flare_skill_dmg(tr, tr["mult"])
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if _seg_dist(m.pos[0], m.pos[1], x1, y1, x2, y2) <= half + m.radius:
+                self._ember_stack(m)
+                self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=4)
+        self.mobs = [m for m in self.mobs if m.alive]
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if _seg_dist(bx, by, x1, y1, x2, y2) <= half + self.boss.radius_px:
+                self._ember_stack(self.boss)
+                self._damage_boss(dmg, color=color)
+
+    def _skill_flare_fuse(self, ev, px, py):
+        """③ 引信：点刺射程内最近的单体烙印——即时小伤害，冻结其现有余烬层数
+        （delay 秒内不自然衰减），delay 秒后自动引爆（伤害按引爆时的剩余层数结算，
+        期间新叠的层也一并吃进；base 在施放时快照，切人后照常爆）。"""
+        rng = ev.get("range", S.FLARE_FUSE_RANGE) * self.S
+        mult = ev.get("mult", S.FLARE_FUSE_MULT)
+        delay = ev.get("delay", S.FLARE_FUSE_DELAY)
+        det_mult = ev.get("det_mult", S.FLARE_FUSE_DET_MULT)
+        color = ev.get("color", (255, 201, 60))
+        tgt = self._nearest_target(max_range=rng)
+        self.game.audio.play("skill_bloom")
+        if tgt is None:
+            # 空放：只在身前点一簇火星（CD 照走，鼓励对着目标放）
+            self._burst(px, py, (255, 217, 138), 10)
+            self._float("无目标…", px, py - self.s(54), color, 24)
+            return
+        kind, obj = tgt
+        tx, ty = obj.pos[0], obj.pos[1]
+        self._fx_beam(px, py, tx, ty, self.s(10), color, life=0.25)
+        dmg = self._flare_skill_dmg(ev, mult)
+        if kind == "boss":
+            self._damage_boss(dmg, color=color)
+        else:
+            self._hurt_mob(obj, dmg, tx, ty, color=color, spark=8)
+        if not getattr(obj, "alive", False):
+            return
+        # 烙印：锁定现有层数（冻结衰减），delay 秒后自动引爆
+        obj.freeze_ember(delay + 0.15)
+        locked = getattr(obj, "ember_stacks", 0)
+        base = max(1, int(round(self._flare_skill_dmg(ev, det_mult))))
+        self.flare_fuses.append({"t": delay, "obj": obj, "boss": kind == "boss",
+                                 "base": base, "sid": ev.get("sid"),
+                                 "color": color})
+        # 烙印火纹：环形法阵 + 贴图特效
+        rr = max(self.s(36), getattr(obj, "radius", self.s(16)) * 2.0)
+        self._fx_rune(tx, ty, rr, color, life=0.6)
+        self._spawn_fx_sprite(ev.get("sid"), tx, ty, rr * 2.4, life=0.6,
+                              expand=1.3, spin=1.8)
+        self._float(f"{ev.get('name', '引信')} 锁定×{locked}", px, py - self.s(58),
+                    color, 28)
+
+    def _skill_flare_ring(self, ev, px, py):
+        """④ 缭焰：自身环绕火环 time 秒——环内敌人每 tick 叠 1 层余烬并减速，
+        期间绯焰的引爆伤害提升 amp（缭焰增伤对引信/焚天都生效）。"""
+        r = ev.get("radius", S.FLARE_RING_RADIUS) * self.S
+        tt = ev.get("time", S.FLARE_RING_TIME)
+        tick = max(0.05, ev.get("tick", S.FLARE_RING_TICK))
+        slow = ev.get("slow", S.FLARE_RING_SLOW)
+        amp = ev.get("amp", S.FLARE_RING_AMP)
+        color = ev.get("color", (255, 160, 90))
+        self.flare_ring_t = max(self.flare_ring_t, tt)
+        self.flare_ring_amp = max(self.flare_ring_amp, amp)
+        self.flare_ring = {"r": r, "tick": tick, "acc": 0.0, "slow": slow,
+                           "color": color, "sid": ev.get("sid")}
+        self.game.audio.play("skill_shield")
+        self._fx_ring(px, py, r, color, life=tick + 0.2)
+        self._fx_aura(px, py, self.s(120), color, life=0.7)
+        self._spawn_fx_sprite(ev.get("sid"), px, py, r * 1.6, life=0.6,
+                              expand=1.2, spin=2.2)
+        self._float(ev.get("name", "缭焰") + f" 引爆+{int(round(amp * 100))}%!",
+                    px, py - self.s(58), color, 30)
+
+    def _flare_ring_tick(self):
+        """火环每 tick：环内敌人叠 1 层余烬 + 减速，并补一圈火环维持视觉。"""
+        ring = getattr(self, "flare_ring", None)
+        if ring is None:
+            return
+        r, color = ring["r"], ring["color"]
+        px, py = self.snake.pos
+        self._fx_ring(px, py, r, color, life=ring["tick"] + 0.2)
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if math.hypot(m.pos[0] - px, m.pos[1] - py) <= r + m.radius:
+                m.apply_slow(ring["slow"], ring["tick"] * 2.0)
+                self._ember_stack(m)
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - px, by - py) <= r + self.boss.radius_px:
+                self._ember_stack(self.boss)
+
+    def _skill_flare_burst(self, ev, px, py):
+        """⑤ 焚天（大招）：全场引爆所有目标的余烬层，每引爆一个目标返还自身
+        refund 秒冷却；无余烬目标不吃伤害。"""
+        mult = ev.get("mult", S.FLARE_BURST_MULT)
+        refund = ev.get("refund", S.FLARE_BURST_REFUND)
+        color = ev.get("color", (255, 122, 46))
+        sid = ev.get("sid")
+        base = self._flare_skill_dmg(ev, mult)
+        self.game.audio.play("skill_storm")
+        self._fx_ultimate(px, py, color)
+        self._spawn_fx_sprite(sid, px, py, self.s(260), life=0.8, expand=2.0, spin=1.0)
+        hit = 0
+        for m in list(self.mobs):
+            if m.alive and getattr(m, "ember_stacks", 0) > 0:
+                if self._ember_detonate(m, base, False, sid):
+                    hit += 1
+        self.mobs = [m for m in self.mobs if m.alive]
+        if (self.boss is not None and self.boss.alive
+                and getattr(self.boss, "ember_stacks", 0) > 0):
+            if self._ember_detonate(self.boss, base, True, sid):
+                hit += 1
+        # 逐人返还自身冷却（当前出战成员的技能引擎）
+        if hit > 0 and refund > 0 and sid:
+            cds = getattr(self.skills, "cds", None)
+            if isinstance(cds, dict) and sid in cds:
+                cds[sid] = max(0.0, cds[sid] - refund * hit)
+        self._float(ev.get("name", "焚天") + (f" 引爆×{hit}!" if hit else ""),
+                    px, py - self.s(64), (255, 201, 60), 34)
+        self.shake = max(self.shake, 0.5)
+
+    def _update_flare(self, dt):
+        """绯焰持续态每帧推进：余烬 DOT / 燃径火径 tick / 缭焰火环 / 引信自动引爆。
+        余烬挂在实体上，DOT 与火径不随切人停摆（全队只有绯焰能叠层，无需判活跃）。"""
+        # 余烬 DOT：每层每秒 FLARE_EMBER_DPS，仿灼烧用小数累加、整数掉血
+        for m in list(self.mobs):
+            if not m.alive or m.ember_stacks <= 0:
+                continue
+            m.ember_acc += S.FLARE_EMBER_DPS * m.ember_stacks * dt
+            whole = int(m.ember_acc)
+            if whole > 0:
+                m.ember_acc -= whole
+                self._burst(m.pos[0], m.pos[1], (255, 160, 90), 2)
+                if m.take_damage(whole):
+                    self._on_mob_killed(m, m.pos[0], m.pos[1])
+        self.mobs = [m for m in self.mobs if m.alive]
+        if self.boss is not None and self.boss.alive and self.boss.ember_stacks > 0:
+            b = self.boss
+            b.ember_acc += S.FLARE_EMBER_DPS * b.ember_stacks * dt
+            whole = int(b.ember_acc)
+            if whole > 0:
+                b.ember_acc -= whole
+                self._burst(b.pos[0], b.pos[1], (255, 160, 90), 2)
+                if b.take_damage(whole) and b.alive is False:
+                    self._on_boss_defeated()
+        # 燃径火径：每 tick 叠层+小伤，烧完即散
+        if self.flare_trails:
+            for tr in self.flare_trails:
+                tr["t"] -= dt
+                tr["acc"] += dt
+                if tr["acc"] >= tr["tick"]:
+                    tr["acc"] -= tr["tick"]
+                    self._flare_trail_tick(tr)
+            self.flare_trails = [t for t in self.flare_trails if t["t"] > 0]
+        # 缭焰火环：跟随自身，每 tick 叠层+减速
+        if self.flare_ring_t > 0:
+            self.flare_ring_t = max(0.0, self.flare_ring_t - dt)
+            if self.flare_ring_t <= 0:
+                self.flare_ring_amp = 0.0
+                self.flare_ring = None
+            elif getattr(self, "flare_ring", None) is not None:
+                ring = self.flare_ring
+                ring["acc"] += dt
+                if ring["acc"] >= ring["tick"]:
+                    ring["acc"] -= ring["tick"]
+                    self._flare_ring_tick()
+        # 引信烙印：到期自动引爆（base 施放时已快照）
+        if self.flare_fuses:
+            for f in self.flare_fuses:
+                f["t"] -= dt
+            due = [f for f in self.flare_fuses if f["t"] <= 0]
+            self.flare_fuses = [f for f in self.flare_fuses if f["t"] > 0]
+            for f in due:
+                obj = f["obj"]
+                if not getattr(obj, "alive", False):
+                    continue
+                self._ember_detonate(obj, f["base"], f["boss"], f.get("sid"))
+            self.mobs = [m for m in self.mobs if m.alive]
 
     def _fire_blast(self, mx, my):
         """火元素爆燃：小范围灼烧 + 即时伤害。"""
@@ -4822,6 +5147,36 @@ class BattleScene(Scene):
             img = self._rot_surf(base, math.degrees(a) + 90.0)
             screen.blit(img, img.get_rect(center=(int(px), int(py))))
 
+    def _ember_pip_surf(self, h):
+        """单颗余烬火星指示底图：金芯橙焰小火苗，按高度档缓存。"""
+        h = max(6, int(h))
+        key = ("emberpip", h)
+        if key in self._surf_cache:
+            return self._surf_cache[key]
+        w = max(4, int(h * 0.7))
+        s = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.ellipse(s, (255, 122, 46, 235), s.get_rect())
+        pygame.draw.ellipse(s, (255, 201, 60, 220),
+                            pygame.Rect(w // 5, h // 5, w - w * 2 // 5, h // 2))
+        pygame.draw.ellipse(s, (255, 217, 138, 200),
+                            pygame.Rect(w // 3, h // 3, w // 3, h // 3))
+        self._surf_cache[key] = s
+        return s
+
+    def _draw_ember_pips(self, screen, x, y, size, stacks):
+        """余烬层数指示：每层一颗火星横排贴在目标下方，随时间轻闪
+        （花瓣标记在上方、余烬在下方，两套叠层指示互不打架）。"""
+        pip = self._ember_pip_surf(self.s(10))
+        n = max(1, min(int(stacks), S.FLARE_EMBER_MAX))
+        gap = self.s(9)
+        y0 = y + size * 0.52
+        for k in range(n):
+            px = x + (k - (n - 1) / 2.0) * gap
+            flick = 0.75 + 0.25 * math.sin(self.elapsed * 7.0 + k * 1.9)
+            p = pip.copy()
+            p.set_alpha(int(255 * flick))
+            screen.blit(p, p.get_rect(center=(int(px), int(y0))))
+
     def _draw_mobs(self, screen, sx, sy):
         for m in self.mobs:
             size = max(12, int(m.radius * 2.2))
@@ -4848,6 +5203,9 @@ class BattleScene(Scene):
             # 花瓣标记指示：每层贴一片花瓣（贴身上方，随时间轻摆）
             if m.mark_t > 0 and m.mark_stacks > 0:
                 self._draw_mark_petals(screen, x, y + bob, size, m.mark_stacks)
+            # 余烬层指示：每层一颗火星横排贴在下方（绯焰灼烧引爆闭环）
+            if m.ember_stacks > 0:
+                self._draw_ember_pips(screen, x, y + bob, size, m.ember_stacks)
             if m.hit_flash > 0:
                 # 白闪=整体调透明度：缓存副本只 set_alpha，不每帧 copy+fill
                 fk = ("mflash", sprite, size)
@@ -4970,6 +5328,9 @@ class BattleScene(Scene):
         if key in self._surf_cache:
             return self._surf_cache[key]
         base = self._skill_fx_surf(sid, self.s(256))
+        if base is None:
+            # 绯焰等双形态角色只有 <sid>_lamia/_human 成品图：HUD 图标回退蛇形态版
+            base = self._skill_fx_surf(sid, self.s(256), "lamia")
         img = None
         if base is not None:
             w, h = base.get_size()
@@ -5253,6 +5614,8 @@ class BattleScene(Scene):
                 screen.blit(fl, rect)
             if b.mark_t > 0 and b.mark_stacks > 0:
                 self._draw_mark_petals(screen, bx, by, r * 2, b.mark_stacks)
+            if b.ember_stacks > 0:
+                self._draw_ember_pips(screen, bx, by, r * 2, b.ember_stacks)
             return
 
         tint = b.tint
@@ -5288,6 +5651,8 @@ class BattleScene(Scene):
             screen.blit(fl, fl.get_rect(center=(int(bx), int(by))))
         if b.mark_t > 0 and b.mark_stacks > 0:
             self._draw_mark_petals(screen, bx, by, r * 2, b.mark_stacks)
+        if b.ember_stacks > 0:
+            self._draw_ember_pips(screen, bx, by, r * 2, b.ember_stacks)
 
     # ================================================================ HUD
     def _draw_hud(self):

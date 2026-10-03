@@ -115,6 +115,10 @@ CAST_POSES = [
     # 饱和近 0），与樱落普攻同画像，用 TIDE_INK（ink_lum=174）让整片底可泛洪，
     # 深色描边与粉/白/金主体（sat>26 或被线稿隔断）作屏障保住花瓣高光。
     ("sakura", "sakura", 5, "TIDE_INK"),
+    # 绯焰「灼烧引爆五技能」双形态姿势：源图为浅灰白净底（#B8BCC0），
+    # 与绯焰普攻同画像，用 TIDE_INK 让整片底可泛洪，深红/橙金火焰主体
+    # （sat 高）与深色描边作屏障保住火星高光。
+    ("flare", "lamia_flare", 5, "TIDE_INK"),
 ]
 # 姿势图抠图参数：风环白芯与净底几乎同色，颜色泛洪必败，走线稿屏障；
 # 风环/刃扇与本体可能不连通，收尾用 keep_big 保块（只清碎斑不删特效）。
@@ -134,6 +138,10 @@ ATK_POSES = [
     # 樱落「飞樱散华」：1 指尖送单瓣 / 3 袖出花瓣雨（第 2 段由 battle 镜像第 1 段）；
     # 源图同为浅灰白净底（#B8BCC0，亮度约 188），用 TIDE_INK 避免整片底被当屏障。
     ("sakura", "sakura", (1, 3), "TIDE_INK"),
+    # 绯焰「焚烬连珠」远程火弹三段：1 单发大口径燃烬 / 3 齐射爆烬（第 2 段 battle 镜像第 1 段）；
+    # 源图为浅灰白净底（#B8BCC0，边角亮度实测约 200），与樱落同画像，用 TIDE_INK
+    # 让整片底可泛洪，深红/橙金火焰主体（sat 高）与深色描边作屏障保住火弹高光。
+    ("flare", "lamia_flare", (1, 3), "TIDE_INK"),
 ]
 # 潮汐源图净底是偏暗的浅灰（边框亮度实测 178~234，CAST_INK 的 ink_lum=215
 # 会把整片底误判成线稿屏障导致泛洪进不去）：ink_lum 压到边框最低亮度以下，
@@ -1785,6 +1793,19 @@ def main():
                     ok += 1
                 else:
                     fail += 1
+
+    # 常驻立绘亮度对齐：idle(full/full_human) 与姿势集(atk/cast)来自不同批次
+    # 源图、白平衡不同，战斗交叉淡入淡出时会露出肤色跳变（idle 偏暗）。以姿势集
+    # 均亮度为目标对 idle 做 gamma 提亮，使二者一致（幂等，详见该模块 docstring）。
+    # 只在重生成立绘/姿势时跑：单独调背景等无关节不必付这份开销。
+    if only is None or only in ("chars", "poses"):
+        try:
+            import normalize_idle_brightness as _nib
+            print("\n[亮度对齐] 常驻立绘 -> 姿势集均亮")
+            for _r in _nib.normalize_all(os.path.join(AST, "characters")):
+                print(_r)
+        except Exception as _e:
+            print("[警告] 亮度对齐跳过:", _e)
 
     print(f"\n成功 {ok} 个，失败 {fail} 个")
     return 0 if fail == 0 else 1

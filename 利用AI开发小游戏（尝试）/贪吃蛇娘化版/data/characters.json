@@ -186,24 +186,38 @@
     },
     "kit": {
       "active": {
-        "id": "flare_dash2",
-        "name": "焰步·燎",
-        "desc": "火步前冲并留下燃烧火痕；再按引爆火痕灼烧周围敌人。",
-        "color": [255, 140, 80],
+        "id": "flare_scatter",
+        "name": "撒烬",
+        "desc": "中距离扇形撒出火星雨，命中叠 1 层余烬。",
+        "color": [255, 201, 60],
         "vfx": "flame",
         "key": 1
       },
       "actives": [
-        {"id": "flare_dash2", "type": "dash2", "name": "焰步·燎", "key": 1, "color": [255, 140, 80], "vfx": "flame", "desc": "火步前冲并留下燃烧火痕；再按引爆火痕灼烧周围敌人。"},
-        {"id": "flare_detonate", "type": "detonate", "name": "焰印", "key": 2, "color": [255, 170, 100], "vfx": "flame", "desc": "引爆范围内敌人的标记造成燃烧爆发；无标记者叠上一层印记。"},
-        {"id": "flare_gather", "type": "gather", "name": "炎涡引", "key": 3, "color": [255, 150, 70], "vfx": "wave", "desc": "掀起炎涡把周围敌人拉向自己并灼烧，叠上一层印记。"},
-        {"id": "flare_blade", "type": "blade", "name": "余烬弹", "key": 4, "color": [255, 160, 90], "vfx": "star", "desc": "发射多枚爆燃火弹，叠印记并灼烧敌人。"},
-        {"id": "flare_channel", "type": "channel", "name": "烈焰鼓舞", "key": 5, "color": [255, 200, 140], "vfx": "speed", "desc": "吟唱片刻（可移动）后大幅提升技能与攻击伤害（法师）。"}
+        {"id": "flare_scatter", "type": "flare_scatter", "name": "撒烬", "key": 1, "color": [255, 201, 60], "vfx": "flame", "desc": "中距离扇形撒出火星雨，命中的敌人受小伤害并叠 1 层余烬（叠层主要手段，CD 短）。"},
+        {"id": "flare_trail", "type": "flare_trail", "name": "燃径", "key": 2, "color": [255, 122, 46], "vfx": "flame", "desc": "沿瞄准方向烙一条直线火径 4 秒，踩踏的敌人每 0.5 秒叠 1 层余烬并受一跳小伤害；火径留在场上烧完，不随切人消失。"},
+        {"id": "flare_fuse", "type": "flare_fuse", "name": "引信", "key": 3, "color": [255, 160, 80], "vfx": "flame", "desc": "点刺射程内最近的单体烙印：立即受小伤害，现有余烬层数被锁定（3 秒内不自然衰减），3 秒后自动引爆（按引爆时剩余层数结算，期间新叠的层也吃进）。"},
+        {"id": "flare_ring", "type": "flare_ring", "name": "缭焰", "key": 4, "color": [255, 140, 70], "vfx": "flame", "desc": "自身环绕火环 5 秒：近身敌人每 0.6 秒叠 1 层余烬并减速 35%，期间所有引爆类伤害（引信/焚天）提升 30%。"},
+        {"id": "flare_burst", "type": "flare_burst", "name": "焚天", "key": 5, "color": [194, 51, 31], "vfx": "flame", "desc": "大招：全场引爆所有目标的余烬层，伤害按各自剩余层数结算；每引爆一个目标返还自身 2 秒冷却。"}
       ],
       "passives": [
         {"id": "p_ember", "name": "余烬", "desc": "普攻命中附带灼烧持续伤害。", "color": [255, 160, 100], "vfx": "burn"},
         {"id": "p_flare_mark", "name": "焰之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即爆燃伤害周围敌人。", "color": [255, 175, 110], "vfx": "markstack"}
       ]
+    },
+    "ranged": {
+      "name": "焚烬连珠",
+      "range": 480,
+      "exit_range": 540,
+      "bullet_radius": 13,
+      "stages": [
+        {"count": 1, "spread_deg": 0, "speed": 660, "mult": 1.30, "life": 1.15, "curve": 0.0, "spin": 0.0, "trail": 0, "mark": 0},
+        {"count": 2, "spread_deg": 24, "speed": 620, "mult": 0.85, "life": 1.15, "curve": 0.0, "spin": 0.0, "trail": 0, "mark": 0},
+        {"count": 3, "spread_deg": 66, "speed": 540, "mult": 0.80, "life": 1.30, "curve": 0.0, "spin": 0.0, "trail": 1, "mark": 0}
+      ],
+      "hitstop": 0.10,
+      "shake_px": 2.5,
+      "shake_px_finisher": 4.0
     },
     "head": "characters/lamia_flare/head.png",
     "full": "characters/lamia_flare/full.png",
@@ -211,7 +225,7 @@
     "body_seg": "characters/lamia_flare/body_seg.png",
     "tail_tip": "characters/lamia_flare/tail_tip.png",
     "level": 1,
-    "skill": "焰步·燎",
+    "skill": "焚天",
     "tint": [255, 140, 90]
   },
   {

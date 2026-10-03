@@ -21,6 +21,7 @@ game_logic/skills.py —— 角色专属技能包（多主动 + 连招）
 """
 
 import json
+import math
 import os
 
 import settings as S
@@ -134,6 +135,12 @@ _BASE_CD = {
     "sakura_gather": lambda: S.SAKURA_GATHER_CD,
     "sakura_blade": lambda: S.SAKURA_BLADE_CD,
     "sakura_channel": lambda: S.SAKURA_CHANNEL_CD,
+    # 绯焰灼烧引爆闭环五技能（火属性法师，数值固定不吃职业系数）
+    "flare_scatter": lambda: S.FLARE_SCATTER_CD,
+    "flare_trail": lambda: S.FLARE_TRAIL_CD,
+    "flare_fuse": lambda: S.FLARE_FUSE_CD,
+    "flare_ring": lambda: S.FLARE_RING_CD,
+    "flare_burst": lambda: S.FLARE_BURST_CD,
 }
 
 
@@ -195,6 +202,18 @@ _STAT_FIELDS = {
                      ("marked_bonus", "对标记者", _f_pct)],
     "sakura_channel": [("time", "花期", _f_sec), ("stack", "每段叠层", _f_int),
                        ("bloom_mult", "绽放半径", _f_mult)],
+    # --- 绯焰灼烧引爆闭环五技能：伤害按面板算，此处只展机制参数 ---
+    "flare_scatter": [("range", "扇形射程", _f_int), ("angle", "半角(度)", lambda v: _f_int(math.degrees(v))),
+                      ("count", "火星枚数", _f_int), ("mult", "伤害倍率", _f_mult)],
+    "flare_trail": [("length", "火径长", _f_int), ("width", "火径宽", _f_int),
+                    ("time", "烙地", _f_sec), ("tick", "叠层间隔", _f_sec),
+                    ("tick_mult", "每跳倍率", _f_mult)],
+    "flare_fuse": [("range", "点刺射程", _f_int), ("mult", "烙印倍率", _f_mult),
+                   ("delay", "自动引爆", _f_sec), ("det_mult", "引爆倍率", _f_mult)],
+    "flare_ring": [("radius", "火环半径", _f_int), ("time", "环绕", _f_sec),
+                   ("tick", "叠层间隔", _f_sec), ("slow", "减速后", _f_mult),
+                   ("amp", "引爆增伤", _f_pct)],
+    "flare_burst": [("mult", "引爆倍率", _f_mult), ("refund", "逐人返CD", _f_sec)],
 }
 
 
@@ -287,9 +306,9 @@ class SkillEngine:
         """指定强化等级 lv 下的冷却秒数（数值表/介绍面板用）。
         职业系数：法师技能贵（CD ×1.30）、刺客技能勤（CD ×0.82）。"""
         base = _BASE_CD.get(self._type_of(sid), lambda: 6.0)()
-        # 樱落五技能：CD 按规格固定，不吃职业系数（刺客 CD 缩减会破坏种花节奏）
+        # 樱落/绯焰专属五技能：CD 按规格固定，不吃职业系数（会破坏闭环节奏）
         stype = self._type_of(sid)
-        role_cd = 1.0 if stype.startswith("sakura_") \
+        role_cd = 1.0 if stype.startswith("sakura_") or stype.startswith("flare_") \
             else S.ROLE_CD_MULT.get(self.role, 1.0)
         cd = (base * role_cd * (1.0 - min(0.75, cdr))
               * (1.0 - S.SKILL_ENH_CD_PER_LV * lv))
@@ -439,9 +458,10 @@ class SkillEngine:
         role = self.role or "hybrid"
         if role not in ("tank", "mage", "assassin"):
             return ev
-        # 潮汐切人五技能 / 樱落种花五技能：数值按规格固定，不吃职业范围/射程/读条系数
-        # （局内强化仍由 _scale_event 统一放大，保证介绍面板与实战同源）。
-        if stype.startswith("tide_") or stype.startswith("sakura_"):
+        # 潮汐切人五技能 / 樱落种花五技能 / 绯焰灼烧引爆五技能：数值按规格固定，
+        # 不吃职业范围/射程/读条系数（局内强化仍由 _scale_event 统一放大）。
+        if (stype.startswith("tide_") or stype.startswith("sakura_")
+                or stype.startswith("flare_")):
             return ev
         area = S.ROLE_AREA_MULT.get(role, 1.0)
         for k in ("radius", "range", "length", "width"):
@@ -813,4 +833,26 @@ class SkillEngine:
             return {"type": "sakura_channel",
                     "time": S.SAKURA_CHANNEL_TIME, "stack": S.SAKURA_CHANNEL_STACK,
                     "bloom_mult": S.SAKURA_CHANNEL_BLOOM_MULT}
+        # ---- 绯焰灼烧引爆闭环五技能（不带 dmg，伤害由 battle._flare_skill_dmg 按面板算）----
+        if stype == "flare_scatter":
+            return {"type": "flare_scatter",
+                    "range": S.FLARE_SCATTER_RANGE, "angle": S.FLARE_SCATTER_ANGLE,
+                    "count": S.FLARE_SCATTER_COUNT, "mult": S.FLARE_SCATTER_MULT}
+        if stype == "flare_trail":
+            return {"type": "flare_trail",
+                    "length": S.FLARE_TRAIL_LEN, "width": S.FLARE_TRAIL_WIDTH,
+                    "time": S.FLARE_TRAIL_TIME, "tick": S.FLARE_TRAIL_TICK,
+                    "tick_mult": S.FLARE_TRAIL_TICK_MULT}
+        if stype == "flare_fuse":
+            return {"type": "flare_fuse",
+                    "range": S.FLARE_FUSE_RANGE, "mult": S.FLARE_FUSE_MULT,
+                    "delay": S.FLARE_FUSE_DELAY, "det_mult": S.FLARE_FUSE_DET_MULT}
+        if stype == "flare_ring":
+            return {"type": "flare_ring",
+                    "radius": S.FLARE_RING_RADIUS, "time": S.FLARE_RING_TIME,
+                    "tick": S.FLARE_RING_TICK, "slow": S.FLARE_RING_SLOW,
+                    "amp": S.FLARE_RING_AMP}
+        if stype == "flare_burst":
+            return {"type": "flare_burst",
+                    "mult": S.FLARE_BURST_MULT, "refund": S.FLARE_BURST_REFUND}
         return None

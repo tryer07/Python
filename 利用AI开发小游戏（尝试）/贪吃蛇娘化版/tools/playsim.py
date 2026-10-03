@@ -133,12 +133,16 @@ def run_once(mode="endless", level=1, max_seconds=300, char_id="sakura"):
     game = Game()
     game.register_scene("battle", BattleScene)
     game.save_manager.data["selected_character"] = char_id
+    # 编队解析会用 owned_characters 过滤：新存档默认只拥有 sakura/snake_basic，
+    # 不显式播种目标角色就会被静默滤掉、回退成 sakura（试玩到的不是本尊）。
+    game.save_manager.data["owned_characters"] = [char_id]
     game.save_manager.data["selected_scene"] = "campus_garden"
     game.save_manager.data["tutorial_done"] = True   # 试玩不弹新手指引
     if mode == "story":
-        game.pending_run = {"mode": "story", "level": level}
+        game.pending_run = {"mode": "story", "level": level, "char_id": char_id}
     else:
-        game.pending_run = {"mode": "endless", "scene": "campus_garden"}
+        game.pending_run = {"mode": "endless", "scene": "campus_garden",
+                            "char_id": char_id}
     game.change_scene("battle")
     scene = game.current_scene
 
@@ -181,6 +185,7 @@ def run_once(mode="endless", level=1, max_seconds=300, char_id="sakura"):
 
     return {
         "mode": mode,
+        "char_loaded": scene.party[0]["char_id"] if scene.party else "?",
         "time": scene.elapsed,
         "level": scene.snake.level,
         "attack": scene.player_damage,
@@ -218,7 +223,8 @@ def main():
         rows.append(r)
         end = "通关" if r["victory"] else ("存活" if r["alive"] else "阵亡")
         tag = "剧情" if r["mode"] == "story" else "无尽"
-        print(f"第{i + 1}局[{tag}·{cid}]  存活 {r['time']:5.1f}s  等级 {r['level']:2d}  "
+        flag = "" if r.get("char_loaded", cid) == cid else f"[!实际{r.get('char_loaded')}]"
+        print(f"第{i + 1}局[{tag}·{cid}]{flag}  存活 {r['time']:5.1f}s  等级 {r['level']:2d}  "
               f"击杀 {r['kills']:3d}  得分 {r['score']:6d}  "
               f"受伤 {r['hurt']:2d}  结局 {end}")
 

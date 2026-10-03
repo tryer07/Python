@@ -1,0 +1,72 @@
+{
+  "slot_name": "全解锁测试",
+  "created_at": 1791045642.974423,
+  "player_name": "测试员",
+  "currency": 999999,
+  "gacha_tickets": 999,
+  "owned_characters": [
+    "sakura",
+    "lamia_mint",
+    "lamia_tide",
+    "lamia_flare",
+    "lamia_stella",
+    "lamia_luna"
+  ],
+  "selected_character": "lamia_flare",
+  "selected_scene": "campus_garden",
+  "character_data": {
+    "sakura": {
+      "level": 10,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_mint": {
+      "level": 10,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_tide": {
+      "level": 10,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_flare": {
+      "level": 10,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_stella": {
+      "level": 10,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_luna": {
+      "level": 10,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    }
+  },
+  "story_unlocked": 4,
+  "story_cleared": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "tutorial_done": true,
+  "progress": {
+    "best_score": 0,
+    "best_level": 0,
+    "total_kills": 0,
+    "total_runs": 0,
+    "total_stardust": 0,
+    "total_wins": 0,
+    "bosses_defeated": {}
+  }
+}

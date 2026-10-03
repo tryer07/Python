@@ -110,6 +110,13 @@ class Boss:
         # 湿身（潮汐领域）易伤：期间受到的伤害放大 wet_amp
         self.wet_t = 0.0
         self.wet_amp = 0.0
+        # 余烬（绯焰灼烧引爆闭环）：叠层 DOT，自然衰减可被引信烙印冻结，
+        # DOT 由 battle._update_flare 结算（同 Mob）
+        self.ember_stacks = 0
+        self.ember_decay = S.FLARE_EMBER_DECAY
+        self.ember_decay_t = 0.0
+        self.ember_acc = 0.0
+        self.ember_frozen = 0.0
 
     # ------------------------------------------------------------ 几何
     @property
@@ -192,6 +199,25 @@ class Boss:
             self.wet_amp = amp
         self.wet_t = max(self.wet_t, time)
 
+    def add_ember(self, stacks=1):
+        """叠余烬层（绯焰专属）：封顶 FLARE_EMBER_MAX，新叠层重置衰减计时。"""
+        self.ember_stacks = min(S.FLARE_EMBER_MAX, self.ember_stacks + stacks)
+        self.ember_decay_t = 0.0
+        return self.ember_stacks >= S.FLARE_EMBER_MAX
+
+    def freeze_ember(self, time):
+        """引信烙印：冻结余烬自然衰减 time 秒（等自动引爆）。"""
+        self.ember_frozen = max(self.ember_frozen, time)
+
+    def consume_ember(self):
+        """引爆结算：取走当前层数并清空余烬状态，返回被引爆的层数。"""
+        n = self.ember_stacks
+        self.ember_stacks = 0
+        self.ember_decay_t = 0.0
+        self.ember_acc = 0.0
+        self.ember_frozen = 0.0
+        return n
+
     # ------------------------------------------------------------ 每帧
     def update(self, dt, snake_cell, ctx):
         """
@@ -218,6 +244,18 @@ class Boss:
             self.wet_t = max(0.0, self.wet_t - dt)
             if self.wet_t <= 0:
                 self.wet_amp = 0.0
+
+        # 余烬：非冻结期间按周期自耗一层，层数归零后清空（同 Mob）
+        if self.ember_frozen > 0:
+            self.ember_frozen = max(0.0, self.ember_frozen - dt)
+        elif self.ember_stacks > 0:
+            self.ember_decay_t += dt
+            while self.ember_decay_t >= self.ember_decay and self.ember_stacks > 0:
+                self.ember_decay_t -= self.ember_decay
+                self.ember_stacks -= 1
+            if self.ember_stacks <= 0:
+                self.ember_decay_t = 0.0
+                self.ember_acc = 0.0
 
         if self.intro > 0:
             self.intro -= dt
