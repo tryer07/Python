@@ -1,19 +1,21 @@
 import os
 import json
 import time
-from settings import SAVES_DIR, ENHANCE_MAX_LAYER
+from settings import SAVES_DIR, ENHANCE_MAX_LAYER, PARTY_MAX, HUMAN_FORM_ENHANCE_REQ
 
 
 class SaveManager:
     """管理游戏存档的读写（多存档槽）。
 
     目录结构：
-      saves/config.json        —— 机器级配置：display + settings(音量) + active_slot
+      saves/config.json        —— 机器级配置：display + settings(音量) + controls(按键绑定) + active_slot
       saves/slots/<id>.json    —— 每个存档槽的游戏进度（角色/星尘/战绩/剧情解锁…）
+      saves/suspend/<key>.json —— 战斗「返回主菜单」的挂起进度，按 (模式,场景) 各自独立一份
+                                  key = <mode>__<scene_id>，例：endless__neon_night、story__campus_garden
       saves/save_data.json     —— 旧版单存档；首次运行且无槽时自动导入为 slot_1
 
     路由约定：
-      get/set("settings" | "display")  -> config（跨槽共享）
+      get/set("settings" | "display" | "controls")  -> config（跨槽共享）
       其余 key                          -> 当前激活槽的 self.data
     """
 
@@ -53,10 +55,12 @@ class SaveManager:
         "active_slot": None,
         "settings": {"bgm_volume": 0.7, "sfx_volume": 0.8},
         "display": {},
+        "controls": {},
     }
 
     # 这些 key 存在机器级 config，不随存档槽切换
-    CONFIG_KEYS = ("settings", "display")
+    # controls=按键绑定（技能/闪避热键），也做成跨槽共享的机器级偏好
+    CONFIG_KEYS = ("settings", "display", "controls")
 
     def __init__(self):
         os.makedirs(SAVES_DIR, exist_ok=True)
@@ -64,9 +68,15 @@ class SaveManager:
         os.makedirs(self.slots_dir, exist_ok=True)
         self.config_path = os.path.join(SAVES_DIR, "config.json")
         self.legacy_path = os.path.join(SAVES_DIR, "save_data.json")
+        # 挂起进度改为「按 (模式,场景) 各存一份」，放在 saves/suspend/ 目录下。
+        self.suspend_dir = os.path.join(SAVES_DIR, "suspend")
+        os.makedirs(self.suspend_dir, exist_ok=True)
+        # 兼容旧版：全局单份 saves/suspend.json 迁移进新目录后删除。
+        self._legacy_suspend_path = os.path.join(SAVES_DIR, "suspend.json")
 
         self.config = self._load_config()
         self._migrate_legacy()
+        self._migrate_legacy_suspend()
 
         # 选定激活槽：config 记录的 -> 已存在的第一个 -> 新建一个
         self.active_slot = self.config.get("active_slot")
@@ -191,6 +201,99 @@ class SaveManager:
             with open(self.save_path, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=2)
         except IOError:
+            pass
+
+    # ======================== 战斗挂起（返回主菜单保存进度）========================
+    # 不同模式 + 不同场景各自独立一份：无尽退到无尽、剧情退到剧情，
+    # 同一模式下樱庭/霓虹等场景也分开存。key = <mode>__<scene_id>。
+    @staticmethod
+    def _suspend_key(mode, scene_id):
+        """(mode, scene_id) -> 安全文件名词干。只保留字母数字下划线连字符。"""
+        raw = f"{mode or 'endless'}__{scene_id or 'unknown'}"
+        return "".join(c if (c.isalnum() or c in "_-") else "_" for c in raw)
+
+    def _suspend_path(self, mode, scene_id):
+        return os.path.join(self.suspend_dir, self._suspend_key(mode, scene_id) + ".json")
+
+    def save_suspend(self, data):
+        """写入战斗挂起快照（按 data 里的 mode/scene_id 定位到对应文件）。返回是否成功。"""
+        if not isinstance(data, dict):
+            return False
+        mode = data.get("mode", "endless")
+        scene_id = data.get("scene_id", "unknown")
+        try:
+            with open(self._suspend_path(mode, scene_id), "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            return True
+        except IOError:
+            return False
+
+    def load_suspend(self, mode, scene_id):
+        """读指定 (模式,场景) 的挂起快照；不存在/损坏返回 None。"""
+        path = self._suspend_path(mode, scene_id)
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            return d if isinstance(d, dict) else None
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def has_suspend(self, mode, scene_id):
+        return os.path.exists(self._suspend_path(mode, scene_id))
+
+    def clear_suspend(self, mode, scene_id):
+        """丢弃指定 (模式,场景) 的挂起进度（继续开局/阵亡/通关后调用）。"""
+        try:
+            path = self._suspend_path(mode, scene_id)
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+
+    def list_suspends(self):
+        """返回所有挂起快照摘要 [{mode, scene_id, char_id, elapsed, level, score}, ...]。"""
+        out = []
+        try:
+            files = os.listdir(self.suspend_dir)
+        except OSError:
+            files = []
+        for fn in files:
+            if not fn.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(self.suspend_dir, fn), "r", encoding="utf-8") as f:
+                    d = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                continue
+            if not isinstance(d, dict):
+                continue
+            snake = d.get("snake", {}) or {}
+            out.append({
+                "mode": d.get("mode", "endless"),
+                "scene_id": d.get("scene_id", "unknown"),
+                "char_id": d.get("char_id", "sakura"),
+                "elapsed": int(d.get("elapsed", 0)),
+                "level": int(snake.get("level", 1)),
+                "score": int(d.get("score", 0)),
+            })
+        return out
+
+    def _migrate_legacy_suspend(self):
+        """把旧版全局单份 saves/suspend.json 搬进新的 saves/suspend/<key>.json，然后删除旧文件。"""
+        if not os.path.exists(self._legacy_suspend_path):
+            return
+        try:
+            with open(self._legacy_suspend_path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            d = None
+        if isinstance(d, dict):
+            self.save_suspend(d)
+        try:
+            os.remove(self._legacy_suspend_path)
+        except OSError:
             pass
 
     # ======================== 旧单存档迁移 ========================
@@ -459,6 +562,68 @@ class SaveManager:
             return cur, True
         entry["enhance"] = cur + 1
         return cur + 1, False
+
+    # ======================== 出战编队 / 形态偏好接口 ========================
+    def get_deploy_party(self):
+        """读出战编队（owned 过滤 + 去重 + 截 PARTY_MAX）。
+
+        老存档没有 deploy_party 键时，回退 legacy 的 selected_character 单人编队。
+        """
+        owned = self.data.get("owned_characters", []) or []
+        party = []
+        raw = self.data.get("deploy_party")
+        if isinstance(raw, list):
+            for cid in raw:
+                if isinstance(cid, str) and cid in owned and cid not in party:
+                    party.append(cid)
+        if not party:
+            sel = self.data.get("selected_character", "sakura")
+            if sel in owned:
+                party.append(sel)
+        return party[:PARTY_MAX]
+
+    def set_deploy_slot(self, slot, char_id):
+        """把角色设入 1/2 号出战槽（同一角色只会留在一个槽里）。
+
+        返回写入后的编队列表；角色未拥有时拒绝写入。
+        """
+        owned = self.data.get("owned_characters", []) or []
+        if char_id not in owned:
+            return self.get_deploy_party()
+        party = [c for c in (self.data.get("deploy_party") or [])
+                 if isinstance(c, str) and c in owned and c != char_id]
+        if int(slot) == 1:
+            party = [char_id] + party[:PARTY_MAX - 1]
+        else:
+            party = ([party[0]] if party else []) + [char_id]
+        party = party[:PARTY_MAX]
+        self.set("deploy_party", party)
+        if party:
+            # 兼容 legacy 单角色键：1 号位即默认出战角色
+            self.set("selected_character", party[0])
+        return party
+
+    def human_form_unlocked(self, char_id):
+        """人形态彩蛋是否已解锁（强化层数达标）"""
+        return self.get_enhance(char_id) >= HUMAN_FORM_ENHANCE_REQ
+
+    def get_form_pref(self, char_id):
+        """读出战形态偏好：human 仅在解锁后生效，其余情况一律回退 lamia。"""
+        prefs = self.data.get("form_prefs")
+        pref = prefs.get(char_id, "lamia") if isinstance(prefs, dict) else "lamia"
+        if pref == "human" and self.human_form_unlocked(char_id):
+            return "human"
+        return "lamia"
+
+    def set_form_pref(self, char_id, form):
+        """写形态偏好；未解锁时写 human 无效。返回写入后的生效值。"""
+        form = form if form in ("lamia", "human") else "lamia"
+        if form == "human" and not self.human_form_unlocked(char_id):
+            return self.get_form_pref(char_id)
+        prefs = dict(self.data.get("form_prefs") or {})
+        prefs[char_id] = form
+        self.set("form_prefs", prefs)
+        return self.get_form_pref(char_id)
 
     def reset(self):
         self.data = json.loads(json.dumps(self.DEFAULT_SAVE))

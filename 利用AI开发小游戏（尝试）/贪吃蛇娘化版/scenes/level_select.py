@@ -16,6 +16,7 @@ import pygame
 
 from core.scene import Scene
 from ui.button import Button
+from ui.suspend_prompt import SuspendPrompt
 from settings import (
     DATA_DIR, ASSETS_DIR,
     COLOR_BG, COLOR_ACCENT, COLOR_TEXT, COLOR_TEXT_DIM, COLOR_GOLD,
@@ -57,6 +58,8 @@ class LevelSelectScene(Scene):
             on_click=self._on_back)
         self.hover_index = None
         self.time = 0.0
+        # 「检测到未完成对局」弹窗（按 剧情+场景 各自独立检测）
+        self.suspend_ui = SuspendPrompt(self)
 
     def exit(self):
         pass
@@ -134,6 +137,11 @@ class LevelSelectScene(Scene):
 
     # ---------------------------------------------------------------- 输入
     def handle_events(self, events):
+        # 挂起弹窗为模态：开着时把全部事件交给它，屏蔽卡片/按钮
+        if self.suspend_ui.active:
+            for event in events:
+                self.suspend_ui.handle_event(event)
+            return
         cards = self._cards()
         for event in events:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -161,6 +169,14 @@ class LevelSelectScene(Scene):
             self.game.audio.play("gacha_error", throttle=0.1)
             return
         idx = int(lv.get("index", 1))
+        scene_id = lv.get("scene", "campus_garden")
+        # 该「剧情+场景」若有保存的挂起进度，先问玩家继续还是重开
+        if self.suspend_ui.open_if_exists(
+                "story", scene_id, on_new=lambda i=idx: self._start_story(i)):
+            return
+        self._start_story(idx)
+
+    def _start_story(self, idx):
         self.game.pending_run = {"mode": "story", "level": idx}
         self.game.change_scene("battle")
 
@@ -192,6 +208,7 @@ class LevelSelectScene(Scene):
 
         self.endless_btn.draw(screen)
         self.back_btn.draw(screen)
+        self.suspend_ui.draw(screen)
 
     def _draw_card(self, screen, index, rect, lv):
         status = self._status(lv)
@@ -205,9 +222,13 @@ class LevelSelectScene(Scene):
         bg_path = sc.get("bg", "")
         if self._asset_exists(bg_path):
             img = self.assets.get_scaled(bg_path, width=preview.w)
-            if img.get_height() >= preview.h:
-                top = (img.get_height() - preview.h) // 2
-                img = img.subsurface(pygame.Rect(0, top, preview.w, preview.h)).copy()
+            # 居中裁剪到预览框；宽高都钳到实际表面内，避免 get_scaled 取整差 1
+            # 像素导致 subsurface 越界（ValueError: ... outside surface area）。
+            iw, ih = img.get_size()
+            cw, ch = min(preview.w, iw), min(preview.h, ih)
+            if cw < iw or ch < ih:
+                img = img.subsurface(pygame.Rect((iw - cw) // 2, (ih - ch) // 2,
+                                                 cw, ch)).copy()
             screen.blit(img, preview.topleft)
         else:
             accent = sc.get("accent", [120, 110, 150])

@@ -14,6 +14,7 @@ import pygame
 
 from core.scene import Scene
 from ui.button import Button
+from ui.suspend_prompt import SuspendPrompt
 from settings import (
     DATA_DIR,
     COLOR_BG, COLOR_ACCENT, COLOR_TEXT, COLOR_TEXT_DIM, COLOR_GOLD,
@@ -62,6 +63,8 @@ class SceneSelectScene(Scene):
         self.selected_scene = self.game.save_manager.get("selected_scene", "campus_garden")
         self.hover_id = None
         self.time = 0.0
+        # 「检测到未完成对局」弹窗（按 无尽+场景 各自独立检测）
+        self.suspend_ui = SuspendPrompt(self)
 
     def exit(self):
         pass
@@ -80,6 +83,11 @@ class SceneSelectScene(Scene):
 
     # ---------------------------------------------------------------- 输入
     def handle_events(self, events):
+        # 挂起弹窗为模态：开着时把全部事件交给它，屏蔽卡片/按钮
+        if self.suspend_ui.active:
+            for event in events:
+                self.suspend_ui.handle_event(event)
+            return
         for event in events:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 self._on_back()
@@ -92,13 +100,23 @@ class SceneSelectScene(Scene):
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 for _, rect, sc in self._cards():
                     if rect.collidepoint(event.pos):
-                        self.selected_scene = sc["id"]
-                        self.game.save_manager.set("selected_scene", sc["id"])
-                        # 选图后以「无尽模式」开战（无 Boss、纯生存刷分）
-                        self.game.pending_run = {"mode": "endless", "scene": sc["id"]}
-                        self.game.change_scene("battle")
+                        self._on_scene_click(sc["id"])
                         return
             self.back_btn.handle_event(event)
+
+    def _on_scene_click(self, scene_id):
+        self.selected_scene = scene_id
+        self.game.save_manager.set("selected_scene", scene_id)
+        # 该「无尽+场景」若有保存的挂起进度，先问玩家继续还是重开
+        if self.suspend_ui.open_if_exists(
+                "endless", scene_id, on_new=lambda sid=scene_id: self._start_endless(sid)):
+            return
+        self._start_endless(scene_id)
+
+    def _start_endless(self, scene_id):
+        # 选图后以「无尽模式」开战（无 Boss、纯生存刷分）
+        self.game.pending_run = {"mode": "endless", "scene": scene_id}
+        self.game.change_scene("battle")
 
     def update(self, dt):
         self.time += dt
@@ -146,6 +164,7 @@ class SceneSelectScene(Scene):
             self._draw_card(screen, rect, sc)
 
         self.back_btn.draw(screen)
+        self.suspend_ui.draw(screen)
 
     def _draw_card(self, screen, rect, sc):
         selected = sc["id"] == self.selected_scene
@@ -159,9 +178,13 @@ class SceneSelectScene(Scene):
         bg_path = sc.get("bg", "")
         if bg_path and self._asset_exists(bg_path):
             img = self.assets.get_scaled(bg_path, width=preview.w)
-            if img.get_height() >= preview.h:
-                top = (img.get_height() - preview.h) // 2
-                img = img.subsurface(pygame.Rect(0, top, preview.w, preview.h)).copy()
+            # 居中裁剪到预览框；宽高都钳到实际表面内，避免 get_scaled 取整差 1
+            # 像素导致 subsurface 越界（ValueError: ... outside surface area）。
+            iw, ih = img.get_size()
+            cw, ch = min(preview.w, iw), min(preview.h, ih)
+            if cw < iw or ch < ih:
+                img = img.subsurface(pygame.Rect((iw - cw) // 2, (ih - ch) // 2,
+                                                 cw, ch)).copy()
             screen.blit(img, preview.topleft)
         else:
             accent = sc.get("accent", [120, 110, 150])

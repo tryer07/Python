@@ -103,6 +103,11 @@ class Boss:
         self.slam = None                 # {"phase","timer","pos"}
         self.telegraphs = []             # 供 battle 绘制的预警（每帧重建）
 
+        # 标记（花印）易伤：让连招对 Boss 也有存在感
+        self.mark_t = 0.0
+        self.mark_amp = 0.0
+        self.mark_stacks = 0
+
     # ------------------------------------------------------------ 几何
     @property
     def cell_px(self):
@@ -151,6 +156,9 @@ class Boss:
         """掉血。返回是否被这一击打死。"""
         if not self.alive:
             return True
+        # 被标记（花印）时受到的伤害放大，连招核心
+        if self.mark_t > 0:
+            amount = amount * (1.0 + self.mark_amp)
         self.hp -= amount
         self.hit_flash = 0.16
         if self.hp <= 0:
@@ -158,6 +166,19 @@ class Boss:
             self.alive = False
             return True
         return False
+
+    def apply_mark(self, amp, time, max_stacks=1):
+        """被标记：叠加层数（每层提升易伤 amp），刷新持续时间。"""
+        max_stacks = max(1, int(max_stacks))
+        self.mark_stacks = min(max_stacks, self.mark_stacks + 1)
+        self.mark_amp = amp * self.mark_stacks
+        self.mark_t = max(self.mark_t, time)
+
+    def clear_mark(self):
+        """引爆后清空标记状态。"""
+        self.mark_t = 0.0
+        self.mark_amp = 0.0
+        self.mark_stacks = 0
 
     # ------------------------------------------------------------ 每帧
     def update(self, dt, snake_cell, ctx):
@@ -174,6 +195,12 @@ class Boss:
         self.t += dt * 2.0
         if self.hit_flash > 0:
             self.hit_flash -= dt
+        # 标记（易伤）状态到期自动清除
+        if self.mark_t > 0:
+            self.mark_t = max(0.0, self.mark_t - dt)
+            if self.mark_t <= 0:
+                self.mark_amp = 0.0
+                self.mark_stacks = 0
 
         if self.intro > 0:
             self.intro -= dt

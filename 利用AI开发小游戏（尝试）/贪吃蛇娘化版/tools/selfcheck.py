@@ -56,11 +56,29 @@ def collect_settings_names():
     src = open(path, encoding="utf-8").read()
     tree = ast.parse(src)
     names = set()
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name):
-                    names.add(t.id)
+
+    # settings.py 会用 `if getattr(sys, "frozen", False):` 之类的分支定义
+    # RES_DIR / BASE_DIR，这些赋值嵌在复合语句里。只扫 tree.body 的直接子节点
+    # 会漏掉它们，导致把合法的 `from settings import BASE_DIR` 误报成“无此配置”。
+    # 因此递归进模块级的 if/try/with/for/while 子句收集（但不进函数/类体）。
+    def harvest(nodes):
+        for node in nodes:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        names.add(t.id)
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+            for field in ("body", "orelse", "finalbody"):
+                sub = getattr(node, field, None)
+                if isinstance(sub, list):
+                    harvest(sub)
+            for handler in getattr(node, "handlers", None) or []:
+                harvest(handler.body)
+
+    harvest(tree.body)
     return names
 
 

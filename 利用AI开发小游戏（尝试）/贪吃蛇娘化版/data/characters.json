@@ -6,6 +6,7 @@
     "title": "樱花神域的守护者",
     "element": "樱",
     "growth": "均衡",
+    "role": "assassin",
     "desc": "来自樱花神域的蛇娘，性格温柔。等级越高，斩击越锋利。",
     "story": "樱落诞生于樱花神域最深处的古树之下，是神域选中的守护者。每逢花期，她会沿着落樱铺成的小径巡视结界，尾尖扫过的地方，枯萎的枝条会重新抽芽。她待人温柔，却从不在守护之事上退让半步——神域的安宁，是她用一季又一季的花开花落守出来的。",
     "egg_lines": {
@@ -15,23 +16,28 @@
     },
     "kit": {
       "active": {
-        "id": "petal_slash",
+        "id": "sakura_dash2",
         "name": "落樱·绯斩",
-        "desc": "向前突进斩击，路径敌人受伤，并获得短暂护盾。",
+        "desc": "向前斩冲一段并获短护盾；再按在落点绽放花瓣范围伤害。",
         "color": [255, 150, 190],
         "vfx": "slash",
         "key": 1
       },
-      "passive": {
-        "id": "p_bloom_guard",
-        "name": "花守",
-        "desc": "击杀敌人有概率回复 1 点生命。",
-        "color": [255, 190, 210],
-        "vfx": "heal"
-      }
+      "actives": [
+        {"id": "sakura_dash2", "type": "dash2", "name": "落樱·绯斩", "key": 1, "color": [255, 150, 190], "vfx": "slash", "desc": "向前斩冲一段并获短护盾；再按在落点绽放花瓣范围伤害。"},
+        {"id": "sakura_detonate", "type": "detonate", "name": "绽印", "key": 2, "color": [255, 180, 210], "vfx": "flame", "desc": "引爆范围内敌人的标记，按层数追加花瓣范围伤害；无标记者叠上一层印记。"},
+        {"id": "sakura_gather", "type": "gather", "name": "落樱引", "key": 3, "color": [255, 160, 200], "vfx": "wave", "desc": "把周围敌人拉向自己并减速，同时叠上一层印记。"},
+        {"id": "sakura_blade", "type": "blade", "name": "花瓣刃", "key": 4, "color": [255, 170, 200], "vfx": "star", "desc": "甩出多枚旋转花瓣刃，命中叠印记并造成伤害。"},
+        {"id": "sakura_channel", "type": "channel", "name": "樱舞鼓舞", "key": 5, "color": [255, 200, 220], "vfx": "speed", "desc": "吟唱片刻（可移动）后提升攻击与攻速。"}
+      ],
+      "passives": [
+        {"id": "p_bloom_guard", "name": "花守", "desc": "击杀敌人有概率回复 1 点生命。", "color": [255, 190, 210], "vfx": "heal"},
+        {"id": "p_sakura_mark", "name": "樱之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即绽放自爆伤害周围敌人。", "color": [255, 190, 215], "vfx": "markstack"}
+      ]
     },
     "head": "characters/sakura/head.png",
     "full": "characters/sakura/full.png",
+    "full_human": "characters/sakura/full_human.png",
     "body_seg": "characters/sakura/body_seg.png",
     "tail_tip": "characters/sakura/tail_tip.png",
     "level": 1,
@@ -45,7 +51,8 @@
     "title": "庭院里的新风",
     "element": "风",
     "growth": "速度",
-    "desc": "动作轻快的蛇娘，像一阵穿堂风，所过之处草叶轻摇。",
+    "role": "assassin",
+    "desc": "动作轻快的蛇娘，像一阵穿堂风，所过之处草叶轻摇。普攻为贴身爪风三连，收尾一段伤害更高并击退敌人。",
     "story": "薄荷是庭院里最坐不住的那阵风。她讨厌一成不变，总爱在午后的回廊里追着落叶跑，把晒着的床单吹得鼓鼓的。别看她笑得天真，一旦认真起来，她的速度快到连影子都追不上——庭院里每个人都记得被一阵清风'偷'走点心的日子。",
     "egg_lines": {
       "head": ["嘿嘿，抓到我了？我可是风哦。", "头发被风吹乱啦，帮我理理嘛。"],
@@ -54,27 +61,32 @@
     },
     "kit": {
       "active": {
-        "id": "gale_dash",
-        "name": "疾风连闪",
-        "desc": "连续三段突进碾过敌人，并在短时间内提升移速。",
+        "id": "mint_dash2",
+        "name": "疾风·掠",
+        "desc": "薄荷的招牌位移技。朝面向刮出一团有实体的旋风（自身原地不前冲），旋风沿直线飞行并沿途刮伤敌人；存续期内再按一次，薄荷瞬移到旋风所在位置引爆，造成范围伤害并击退；若不再按，旋风飞到尽头自行四散伤害附近敌人。所有命中都会叠一层风之标记。",
         "color": [150, 240, 190],
         "vfx": "wind",
         "key": 1
       },
-      "passive": {
-        "id": "p_gale",
-        "name": "御风",
-        "desc": "常驻移速提升，闪避冷却缩短。",
-        "color": [180, 240, 200],
-        "vfx": "speed"
-      }
+      "actives": [
+        {"id": "mint_dash2", "type": "dash2", "name": "疾风·掠", "key": 1, "color": [150, 240, 190], "vfx": "wind", "desc": "薄荷的招牌位移技。朝面向刮出一团有实体的旋风（自身原地不前冲），旋风沿直线飞行并沿途刮伤敌人；存续期内再按一次，薄荷瞬移到旋风所在位置引爆，造成范围伤害并击退；若不再按，旋风飞到尽头自行四散伤害附近敌人。所有命中都会叠一层风之标记。"},
+        {"id": "mint_detonate", "type": "detonate", "name": "风印", "key": 2, "color": [170, 245, 200], "vfx": "flame", "desc": "在自身周围掀起旋风，引爆范围内所有敌人身上的风之标记，按标记层数追加伤害并击退；没有标记的敌人则被叠上一层印记。连招的收尾技：先叠标记再引爆收益最高。"},
+        {"id": "mint_gather", "type": "gather", "name": "旋风引", "key": 3, "color": [140, 235, 180], "vfx": "wave", "desc": "刮出一阵向前推进的旋风，把路径上的敌人聚拢到旋风消失处并减速，同时为每个被卷中的敌人叠上一层风之标记。适合把散怪集中后接引爆或飞刃。"},
+        {"id": "mint_blade", "type": "blade", "name": "风刃", "key": 4, "color": [120, 240, 170], "vfx": "star", "desc": "随机朝周围甩出数道旋转风刃，风刃飞行一段距离后消失；每道命中的敌人都受到伤害并叠一层风之标记，附带轻微击退。清杂兵与叠标记的主力。"},
+        {"id": "mint_channel", "type": "channel", "name": "疾风鼓舞", "key": 5, "color": [190, 250, 215], "vfx": "speed", "desc": "原地吟唱片刻（吟唱期间仍可移动），读条结束后进入疾风状态：一段时间内提升攻击速度与移动速度。风元素的鼓舞额外强化移速，适合拉开身位或追击。"}
+      ],
+      "passives": [
+        {"id": "p_gale", "name": "御风", "desc": "常驻被动：薄荷驾驭气流，移动速度永久提升，让她在战场上来去如风。", "color": [180, 240, 200], "vfx": "speed"},
+        {"id": "p_mint_mark", "name": "风之标记", "desc": "常驻被动：薄荷的所有技能命中都会为敌人叠一层风之标记（最多3层）。叠满后标记爆裂，对周围敌人造成范围伤害，是薄荷连招的核心。", "color": [180, 245, 205], "vfx": "markstack"}
+      ]
     },
     "head": "characters/lamia_mint/head.png",
     "full": "characters/lamia_mint/full.png",
+    "full_human": "characters/lamia_mint/full_human.png",
     "body_seg": "characters/lamia_mint/body_seg.png",
     "tail_tip": "characters/lamia_mint/tail_tip.png",
     "level": 1,
-    "skill": "疾风连闪",
+    "skill": "疾风·掠",
     "tint": [180, 240, 200]
   },
   {
@@ -84,6 +96,7 @@
     "title": "深海的低语者",
     "element": "水",
     "growth": "控制",
+    "role": "tank",
     "desc": "擅长用水流牵制敌人的深海蛇娘，鳞光如浪。",
     "story": "潮汐来自阳光照不到的深海遗迹，是那里最后的低语者。她能听懂海流的言语，也能让狂暴的浪涛温顺地伏在脚边。有人说她温柔得像退潮后的浅滩，也有人说她翻脸时如海啸过境——但只有真正被她护在身后的人知道，她的水流永远先一步挡下危险。",
     "egg_lines": {
@@ -93,27 +106,32 @@
     },
     "kit": {
       "active": {
-        "id": "tide_surge",
-        "name": "沧澜涌潮",
-        "desc": "掀起环形水浪，击退并减速周围敌人，造成伤害。",
+        "id": "tide_dash2",
+        "name": "涌潮·踏",
+        "desc": "踏浪前冲并留下减速水痕；再按引爆水痕冻结周围敌人。",
         "color": [120, 200, 255],
         "vfx": "wave",
         "key": 1
       },
-      "passive": {
-        "id": "p_cold",
-        "name": "寒流",
-        "desc": "普攻命中附带减速效果。",
-        "color": [150, 200, 255],
-        "vfx": "slow"
-      }
+      "actives": [
+        {"id": "tide_dash2", "type": "dash2", "name": "涌潮·踏", "key": 1, "color": [120, 200, 255], "vfx": "wave", "desc": "踏浪前冲并留下减速水痕；再按引爆水痕冻结周围敌人。"},
+        {"id": "tide_detonate", "type": "detonate", "name": "潮印", "key": 2, "color": [150, 215, 255], "vfx": "flame", "desc": "引爆范围内敌人的标记造成冻结爆发；无标记者叠上一层印记。"},
+        {"id": "tide_gather", "type": "gather", "name": "涡流引", "key": 3, "color": [110, 190, 250], "vfx": "wave", "desc": "掀起涡流把周围敌人拉向自己并减速冻结，叠上一层印记。"},
+        {"id": "tide_blade", "type": "blade", "name": "浪矢", "key": 4, "color": [130, 205, 255], "vfx": "star", "desc": "射出多道穿透水箭，叠印记并减速敌人。"},
+        {"id": "tide_channel", "type": "channel", "name": "海护", "key": 5, "color": [180, 225, 255], "vfx": "guard", "desc": "吟唱片刻（可移动）后获得护盾与伤害减免（坦克）。"}
+      ],
+      "passives": [
+        {"id": "p_cold", "name": "寒流", "desc": "普攻命中附带减速效果。", "color": [150, 200, 255], "vfx": "slow"},
+        {"id": "p_tide_mark", "name": "潮之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即潮爆伤害周围敌人。", "color": [160, 215, 255], "vfx": "markstack"}
+      ]
     },
     "head": "characters/lamia_tide/head.png",
     "full": "characters/lamia_tide/full.png",
+    "full_human": "characters/lamia_tide/full_human.png",
     "body_seg": "characters/lamia_tide/body_seg.png",
     "tail_tip": "characters/lamia_tide/tail_tip.png",
     "level": 1,
-    "skill": "沧澜涌潮",
+    "skill": "涌潮·踏",
     "tint": [150, 200, 255]
   },
   {
@@ -123,6 +141,7 @@
     "title": "霓虹夜市的火种",
     "element": "火",
     "growth": "爆发",
+    "role": "mage",
     "desc": "性子烈的蛇娘，尾尖扫过便留下一线余烬。",
     "story": "绯焰是霓虹夜市里最不好惹的那团火。她在灯牌与人流之间长大，性子烈、嗓门大，看谁不顺眼就尾尖一扫留一线余烬当警告。可夜市的人都护着她——因为每逢寒夜，总是她燃起最旺的火，把整条街照得暖烘烘的。她的烈，从来只对外人。",
     "egg_lines": {
@@ -132,27 +151,32 @@
     },
     "kit": {
       "active": {
-        "id": "ember_lash",
-        "name": "燎原火鞭",
-        "desc": "向前方扇形挥出火焰鞭，灼烧范围内敌人。",
+        "id": "flare_dash2",
+        "name": "焰步·燎",
+        "desc": "火步前冲并留下燃烧火痕；再按引爆火痕灼烧周围敌人。",
         "color": [255, 140, 80],
         "vfx": "flame",
         "key": 1
       },
-      "passive": {
-        "id": "p_ember",
-        "name": "余烬",
-        "desc": "普攻命中附带灼烧持续伤害。",
-        "color": [255, 160, 100],
-        "vfx": "burn"
-      }
+      "actives": [
+        {"id": "flare_dash2", "type": "dash2", "name": "焰步·燎", "key": 1, "color": [255, 140, 80], "vfx": "flame", "desc": "火步前冲并留下燃烧火痕；再按引爆火痕灼烧周围敌人。"},
+        {"id": "flare_detonate", "type": "detonate", "name": "焰印", "key": 2, "color": [255, 170, 100], "vfx": "flame", "desc": "引爆范围内敌人的标记造成燃烧爆发；无标记者叠上一层印记。"},
+        {"id": "flare_gather", "type": "gather", "name": "炎涡引", "key": 3, "color": [255, 150, 70], "vfx": "wave", "desc": "掀起炎涡把周围敌人拉向自己并灼烧，叠上一层印记。"},
+        {"id": "flare_blade", "type": "blade", "name": "余烬弹", "key": 4, "color": [255, 160, 90], "vfx": "star", "desc": "发射多枚爆燃火弹，叠印记并灼烧敌人。"},
+        {"id": "flare_channel", "type": "channel", "name": "烈焰鼓舞", "key": 5, "color": [255, 200, 140], "vfx": "speed", "desc": "吟唱片刻（可移动）后大幅提升技能与攻击伤害（法师）。"}
+      ],
+      "passives": [
+        {"id": "p_ember", "name": "余烬", "desc": "普攻命中附带灼烧持续伤害。", "color": [255, 160, 100], "vfx": "burn"},
+        {"id": "p_flare_mark", "name": "焰之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即爆燃伤害周围敌人。", "color": [255, 175, 110], "vfx": "markstack"}
+      ]
     },
     "head": "characters/lamia_flare/head.png",
     "full": "characters/lamia_flare/full.png",
+    "full_human": "characters/lamia_flare/full_human.png",
     "body_seg": "characters/lamia_flare/body_seg.png",
     "tail_tip": "characters/lamia_flare/tail_tip.png",
     "level": 1,
-    "skill": "燎原火鞭",
+    "skill": "焰步·燎",
     "tint": [255, 140, 90]
   },
   {
@@ -162,6 +186,7 @@
     "title": "缀满星辉的占星者",
     "element": "星",
     "growth": "法术",
+    "role": "mage",
     "desc": "仰观星象的蛇娘，发间与尾尖都拖着一道星轨。",
     "story": "星璃是一位占星者，终年仰观星象，发间与尾尖都拖着一道星轨。她相信每个人的命运都写在天上，却从不说破——因为她见过太多人得知命运后反而迷失。她只默默记下星象的偏移，在灾厄将至时悄悄拨动轨迹。她的神秘，是一种温柔的沉默。",
     "egg_lines": {
@@ -171,27 +196,32 @@
     },
     "kit": {
       "active": {
-        "id": "star_chain",
-        "name": "星陨链",
-        "desc": "射出多枚追踪星弹，自动锁定并贯穿敌人。",
+        "id": "stella_dash2",
+        "name": "星闪·跃",
+        "desc": "向朝向闪现一段并留下星痕；再按在星痕处落星伤害周围敌人。",
         "color": [190, 150, 255],
         "vfx": "star",
         "key": 1
       },
-      "passive": {
-        "id": "p_starlight",
-        "name": "星辉",
-        "desc": "击杀敌人缩短专属主动的冷却。",
-        "color": [200, 170, 255],
-        "vfx": "cdr"
-      }
+      "actives": [
+        {"id": "stella_dash2", "type": "dash2", "name": "星闪·跃", "key": 1, "color": [190, 150, 255], "vfx": "star", "desc": "向朝向闪现一段并留下星痕；再按在星痕处落星伤害周围敌人。"},
+        {"id": "stella_detonate", "type": "detonate", "name": "星印", "key": 2, "color": [205, 175, 255], "vfx": "flame", "desc": "引爆范围内敌人的标记引动星陨；无标记者叠上一层印记。"},
+        {"id": "stella_gather", "type": "gather", "name": "星引", "key": 3, "color": [180, 140, 250], "vfx": "wave", "desc": "展开引力井把周围敌人拉向自己并短暂眩晕，叠上一层印记。"},
+        {"id": "stella_blade", "type": "blade", "name": "流星", "key": 4, "color": [200, 165, 255], "vfx": "star", "desc": "射出多枚追踪流星弹，叠印记并造成伤害。"},
+        {"id": "stella_channel", "type": "channel", "name": "星辉鼓舞", "key": 5, "color": [220, 200, 255], "vfx": "speed", "desc": "吟唱片刻（可移动）后提升技能伤害并缩短技能冷却（法师）。"}
+      ],
+      "passives": [
+        {"id": "p_starlight", "name": "星辉", "desc": "击杀敌人缩短专属主动的冷却。", "color": [200, 170, 255], "vfx": "cdr"},
+        {"id": "p_stella_mark", "name": "星之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即星爆伤害周围敌人。", "color": [210, 180, 255], "vfx": "markstack"}
+      ]
     },
     "head": "characters/lamia_stella/head.png",
     "full": "characters/lamia_stella/full.png",
+    "full_human": "characters/lamia_stella/full_human.png",
     "body_seg": "characters/lamia_stella/body_seg.png",
     "tail_tip": "characters/lamia_stella/tail_tip.png",
     "level": 1,
-    "skill": "星陨链",
+    "skill": "星闪·跃",
     "tint": [190, 150, 255]
   },
   {
@@ -201,6 +231,7 @@
     "title": "月下静立的守望者",
     "element": "月",
     "growth": "守护",
+    "role": "tank",
     "desc": "沉静如月的蛇娘，鳞光似月色在夜里流淌。",
     "story": "月见习惯在夜里静立，像一尊被月光镀过的雕像。她是守望者，守着一条无人知晓的界线，也守着一个不愿提起的约定。她话很少，冷得让人不敢靠近，可若你在深夜迷路，总会发现不远处有一点月色般的鳞光，不即不离地替你照着前路——那是她，从不承认的温柔。",
     "egg_lines": {
@@ -210,27 +241,32 @@
     },
     "kit": {
       "active": {
-        "id": "moon_ward",
-        "name": "月华结界",
-        "desc": "沿朝向释放穿透月光束，并获得一段护盾。",
+        "id": "luna_dash2",
+        "name": "月影·渡",
+        "desc": "相位前冲并获得短暂无敌；再按在落点加一层护盾。",
         "color": [200, 210, 255],
         "vfx": "moon",
         "key": 1
       },
-      "passive": {
-        "id": "p_night",
-        "name": "静夜",
-        "desc": "常驻受到伤害降低。",
-        "color": [210, 215, 255],
-        "vfx": "guard"
-      }
+      "actives": [
+        {"id": "luna_dash2", "type": "dash2", "name": "月影·渡", "key": 1, "color": [200, 210, 255], "vfx": "moon", "desc": "相位前冲并获得短暂无敌；再按在落点加一层护盾。"},
+        {"id": "luna_detonate", "type": "detonate", "name": "月印", "key": 2, "color": [215, 222, 255], "vfx": "flame", "desc": "引爆范围内敌人的标记并削弱周围敌人，同时为自身加盾。"},
+        {"id": "luna_gather", "type": "gather", "name": "月华引", "key": 3, "color": [190, 205, 250], "vfx": "wave", "desc": "垂落月光把周围敌人拉向自己并削弱，叠印记并为自身加盾。"},
+        {"id": "luna_blade", "type": "blade", "name": "新月刃", "key": 4, "color": [205, 214, 255], "vfx": "star", "desc": "甩出多道弯月刃，叠印记并削弱敌人。"},
+        {"id": "luna_channel", "type": "channel", "name": "月佑", "key": 5, "color": [225, 230, 255], "vfx": "guard", "desc": "吟唱片刻（可移动）后持续回复生命并降低受到的伤害（坦克）。"}
+      ],
+      "passives": [
+        {"id": "p_night", "name": "静夜", "desc": "常驻受到伤害降低。", "color": [210, 215, 255], "vfx": "guard"},
+        {"id": "p_luna_mark", "name": "月之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即月爆伤害周围敌人。", "color": [215, 220, 255], "vfx": "markstack"}
+      ]
     },
     "head": "characters/lamia_luna/head.png",
     "full": "characters/lamia_luna/full.png",
+    "full_human": "characters/lamia_luna/full_human.png",
     "body_seg": "characters/lamia_luna/body_seg.png",
     "tail_tip": "characters/lamia_luna/tail_tip.png",
     "level": 1,
-    "skill": "月华结界",
+    "skill": "月影·渡",
     "tint": [200, 210, 255]
   }
 ]

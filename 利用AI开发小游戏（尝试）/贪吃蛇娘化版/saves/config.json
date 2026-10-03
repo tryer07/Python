@@ -1,14 +1,15 @@
 {
-  "active_slot": "slot_1",
+  "active_slot": "slot_2",
   "settings": {
     "bgm_volume": 0.6,
     "sfx_volume": 0.4
   },
   "display": {
-    "mode": "fullscreen",
+    "mode": "windowed",
     "resolution": [
-      3840,
-      2160
+      2560,
+      1440
     ]
-  }
+  },
+  "controls": {}
 }

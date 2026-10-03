@@ -95,8 +95,10 @@ class AssetManager:
             ratio = width / w
         else:
             ratio = 1.0
+        # 用 round 而非 int：int(w*(width/w)) 会因浮点误差比 width 小 1，
+        # 下游若按 width 去 subsurface 就会越界报 ValueError。
         surf = pygame.transform.smoothscale(
-            base, (max(1, int(w * ratio)), max(1, int(h * ratio)))
+            base, (max(1, round(w * ratio)), max(1, round(h * ratio)))
         )
         self._scaled_cache[key] = surf
         return surf

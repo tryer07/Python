@@ -17,7 +17,7 @@ import pygame
 from core.scene import Scene
 from ui.button import Button
 from settings import (
-    DATA_DIR,
+    DATA_DIR, ROLE_NAMES,
     COLOR_BG, COLOR_ACCENT, COLOR_TEXT, COLOR_TEXT_DIM,
     COLOR_BG_LIGHT, COLOR_GOLD,
     FONT_SIZE_TITLE, FONT_SIZE_SUBTITLE, FONT_SIZE_BODY, FONT_SIZE_SMALL
@@ -51,6 +51,8 @@ class CharacterSelectScene(Scene):
         save = self.game.save_manager.data
         self.owned = save.get("owned_characters", [])
         self.selected = save.get("selected_character", self.characters[0]["id"])
+        # 双人出战编队（≤2）；卡面徽标按槽位显示
+        self.party = self.game.save_manager.get_deploy_party()
         self.hover_index = -1
         self.time = 0.0
 
@@ -133,16 +135,23 @@ class CharacterSelectScene(Scene):
         title = self.font_title.render("选择你的蛇娘", True, COLOR_ACCENT)
         screen.blit(title, title.get_rect(center=(self.W // 2, self.s(90))))
 
-        t = self.font_small.render("全 SSR · 无氪金 · 重复抽卡叠强化层 · 点击已拥有角色查看详情", True, COLOR_TEXT_DIM)
+        t = self.font_small.render("全 SSR · 无氪金 · 重复抽卡叠强化层 · 可设两名出战 · 点击已拥有角色详情/设出战", True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(self.W // 2, self.s(148))))
 
         for i, rect, ch in self._cards():
             self._draw_card(screen, rect, ch,
                             i == self.hover_index,
-                            ch["id"] == self.selected,
+                            ch["id"] in self.party,
                             ch["id"] in self.owned)
 
         self.back_btn.draw(screen)
+
+    def _form_art(self, ch):
+        """卡面立绘：跟随形态偏好（人形态已解锁且偏好人形态时用全身人形立绘）"""
+        cid = ch.get("id", "sakura")
+        if self.game.save_manager.get_form_pref(cid) == "human" and ch.get("full_human"):
+            return ch["full_human"]
+        return ch.get("full") or ch.get("head", "characters/sakura/head.png")
 
     def _draw_card(self, screen, rect, ch, hovered, selected, owned):
         panel = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
@@ -177,8 +186,7 @@ class CharacterSelectScene(Scene):
             screen.blit(te, te.get_rect(center=eb.center))
 
         if owned:
-            img = self.assets.get_scaled(ch.get("full") or ch.get("head", "characters/sakura/head.png"),
-                                         height=self.s(200))
+            img = self.assets.get_scaled(self._form_art(ch), height=self.s(200))
             if selected:
                 import math
                 k = 1.0 + math.sin(self.time * 2.4) * 0.02
@@ -200,16 +208,19 @@ class CharacterSelectScene(Scene):
         t = self.font_small.render(ch.get("title", ""), True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(326))))
 
-        t = self.font_small.render(f"属性 · {ch.get('element', '无')}", True, COLOR_ACCENT)
+        role = ROLE_NAMES.get(ch.get("role", "hybrid"), "全能")
+        t = self.font_small.render(
+            f"属性 · {ch.get('element', '无')}  ·  {role}", True, COLOR_ACCENT)
         screen.blit(t, t.get_rect(center=(rect.centerx, rect.y + self.s(356))))
 
         # 底部独立状态条：不再压住上面的角色信息
         if not owned:
             t = self.font_small.render("未解锁 · 前往抽卡", True, (230, 110, 120))
-        elif selected:
-            t = self.font_body.render("● 出战中", True, COLOR_GOLD)
+        elif ch["id"] in self.party:
+            slot = "①" if self.party.index(ch["id"]) == 0 else "②"
+            t = self.font_body.render(f"● {slot} 出战", True, COLOR_GOLD)
         else:
-            t = self.font_small.render("点击查看详情 / 出战", True, COLOR_TEXT_DIM)
+            t = self.font_small.render("点击查看详情 / 设出战", True, COLOR_TEXT_DIM)
         screen.blit(t, t.get_rect(center=(rect.centerx, rect.bottom - self.s(20))))
 
     def _on_back(self):

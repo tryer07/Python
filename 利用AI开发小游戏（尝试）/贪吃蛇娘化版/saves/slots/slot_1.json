@@ -2,7 +2,7 @@
   "slot_name": "测试存档",
   "created_at": 0,
   "player_name": "玩家",
-  "currency": 1170,
+  "currency": 90,
   "gacha_tickets": 5,
   "owned_characters": [
     "sakura",
@@ -24,37 +24,37 @@
       "level": 1,
       "exp": 0,
       "skill_points": 0,
-      "enhance": 0
+      "enhance": 3
     },
     "lamia_tide": {
       "level": 1,
       "exp": 0,
       "skill_points": 0,
-      "enhance": 0
+      "enhance": 3
     },
     "sakura": {
       "level": 1,
       "exp": 0,
       "skill_points": 0,
-      "enhance": 0
+      "enhance": 5
     },
     "lamia_flare": {
       "level": 1,
       "exp": 0,
       "skill_points": 0,
-      "enhance": 0
+      "enhance": 1
     },
     "lamia_luna": {
       "level": 1,
       "exp": 0,
       "skill_points": 0,
-      "enhance": 0
+      "enhance": 2
     },
     "lamia_stella": {
       "level": 1,
       "exp": 0,
       "skill_points": 0,
-      "enhance": 0
+      "enhance": 6
     }
   },
   "story_unlocked": 1,
@@ -75,5 +75,9 @@
     "count": 40,
     "since_sr": 0,
     "since_ssr": 40
+  },
+  "form_prefs": {
+    "sakura": "human",
+    "lamia_stella": "human"
   }
 }

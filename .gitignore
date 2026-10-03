@@ -1,0 +1,27 @@
+# ===== Python 缓存 =====
+__pycache__/
+*.py[cod]
+*$py.class
+localpycs/
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+
+# ===== PyInstaller 打包产物 =====
+build/
+dist/
+*.pkg
+*.manifest
+
+# 打包生成的可执行文件
+*.exe
+*.dll
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db

@@ -2,11 +2,11 @@
 """
 tools/playsim.py —— 自动试玩，用来验证平衡（自由移动版）
 
-模拟一个「会走位会闪避」的玩家：
+模拟一个「会走位会开盾」的玩家：
   · 朝最近的道具移动去吃经验
-  · 附近的怪做斥力避让，太贴脸就左键闪避拉开
-  · 技能一好就放（1-6）
-  · 升级弹出的三选一自动挑（优先补满 6 个技能，再叠被动）
+  · 附近的怪做斥力避让，太贴脸就左键开护盾承伤
+  · 技能一好就放（1-5）
+  · 升级弹出的三选一自动挑（直接选第一张通用属性卡）
 
 跑完输出多局统计，用来判断难度曲线是否合理，而不是靠手动试玩拍脑袋。
 存档写入被重定向到临时目录，绝不污染 saves/save_data.json。
@@ -117,20 +117,22 @@ def auto_pick_card(scene):
 
 
 def cast_ready_skills(scene):
-    """专属主动只有一个（绑 1 键），冷却好了就放。"""
+    """多主动：遍历 1-5 键的全部主动，冷却好了就放（模拟连招）。"""
     cdr = scene.stats["cdr"]
-    sid = scene.skills.active_sid
-    if sid and scene.skills.ready(sid, cdr):
-        scene.cast_skill(1)
+    for a in scene.skills.actives:
+        sid = a.get("id")
+        key = a.get("key", 1)
+        if sid and scene.skills.ready(sid, cdr):
+            scene.cast_skill(key)
 
 
-def run_once(mode="endless", level=1, max_seconds=300):
+def run_once(mode="endless", level=1, max_seconds=300, char_id="sakura"):
     # 存档隔离：把 SAVES_DIR 指向临时目录，绝不污染真实 saves/
     tmp = tempfile.mkdtemp(prefix="sg_playsim_")
     _sm.SAVES_DIR = tmp
     game = Game()
     game.register_scene("battle", BattleScene)
-    game.save_manager.data["selected_character"] = "sakura"
+    game.save_manager.data["selected_character"] = char_id
     game.save_manager.data["selected_scene"] = "campus_garden"
     game.save_manager.data["tutorial_done"] = True   # 试玩不弹新手指引
     if mode == "story":
@@ -146,7 +148,7 @@ def run_once(mode="endless", level=1, max_seconds=300):
 
     dt = 1 / 60
     steps = int(max_seconds / dt)
-    dodge_cd = 0.0
+    shield_cd = 0.0
     hurt_from = 0
     try:
         for i in range(steps):
@@ -158,12 +160,12 @@ def run_once(mode="endless", level=1, max_seconds=300):
 
             fake.pressed = decide_movement(scene)
 
-            # 太贴脸且有闪避就拉开
-            dodge_cd -= dt
-            if nearest_mob_dist(scene) < 70 * scene.S and scene.snake.dodge_cd <= 0 \
-                    and dodge_cd <= 0:
-                scene.try_dodge((scene.W // 2, scene.H // 2))
-                dodge_cd = 0.4
+            # 太贴脸且护盾就绪就开盾承伤
+            shield_cd -= dt
+            if nearest_mob_dist(scene) < 70 * scene.S and scene.snake.shield_cd <= 0 \
+                    and shield_cd <= 0:
+                scene.try_shield((scene.W // 2, scene.H // 2))
+                shield_cd = 0.4
 
             cast_ready_skills(scene)
 
@@ -202,17 +204,21 @@ def main():
     print(" 自动试玩 · 平衡性检查（专属技能包 + 剧情/无尽）")
     print("=" * 64)
     rows = []
+    chars = ["sakura", "lamia_mint", "lamia_tide", "lamia_flare",
+             "lamia_stella", "lamia_luna"]
     for i in range(runs):
         if mode == "mixed":
             m = "story" if i == 0 else "endless"
         else:
             m = mode
+        cid = chars[i % len(chars)]
         cap = 960 if m == "story" else 300
-        r = run_once(mode=m, level=1, max_seconds=cap)
+        r = run_once(mode=m, level=1, max_seconds=cap, char_id=cid)
+        r["char"] = cid
         rows.append(r)
         end = "通关" if r["victory"] else ("存活" if r["alive"] else "阵亡")
         tag = "剧情" if r["mode"] == "story" else "无尽"
-        print(f"第{i + 1}局[{tag}]  存活 {r['time']:5.1f}s  等级 {r['level']:2d}  "
+        print(f"第{i + 1}局[{tag}·{cid}]  存活 {r['time']:5.1f}s  等级 {r['level']:2d}  "
               f"击杀 {r['kills']:3d}  得分 {r['score']:6d}  "
               f"受伤 {r['hurt']:2d}  结局 {end}")
 

@@ -46,17 +46,15 @@ class SnakeGirl:
         # ---- 成长属性 ----
         self.level = 1
         self.exp = 0
-        self.hp = S.HP_MAX
+        self.hp = float(S.HP_MAX)
         self.hp_max = S.HP_MAX
-        self.invincible = 0.0
+        self.invincible = 0.0             # 受击无敌帧（渲染时闪烁）
+        self.shield_t = 0.0               # 护盾剩余时限（>0 时优先用吸收池承伤）
+        self.shield_pool = 0.0            # 护盾剩余可吸收伤害量
+        self.shield_cd = 0.0              # 左键护盾冷却
+        self.hurt_t = 0.0                 # 受击动画计时（>0 时立绘红 tint + 后座）
         self.alive = True
         self.on_level_up_cb = None          # 由战斗场景挂上去
-
-        # ---- 闪避状态机 ----
-        self.dodge_cd = 0.0                 # 剩余冷却
-        self.dodge_t = 0.0                  # 剩余位移时间（>0 表示正在闪避）
-        self.dodge_dir = [0.0, 0.0]         # 闪避方向
-        self.dodge_from = [0.0, 0.0]        # 闪避起点（做拖影）
 
         # ---- 攻击节奏 ----
         self.atk_timer = 0.0
@@ -82,22 +80,12 @@ class SnakeGirl:
             self.path.append((hx - self.aim_dir[0] * i, hy - self.aim_dir[1] * i))
 
     # ---------------------------------------------------------------- 移动
-    def start_dodge(self, direction):
-        """开始闪避：direction 为归一化方向。返回是否成功触发。"""
-        if self.dodge_cd > 0 or self.dodge_t > 0:
-            return False
-        dx, dy = direction
-        if abs(dx) < 1e-6 and abs(dy) < 1e-6:
-            dx, dy = self.aim_dir
-        d = math.hypot(dx, dy) or 1.0
-        self.dodge_dir = [dx / d, dy / d]
-        self.dodge_t = S.DODGE_TIME
-        self.dodge_cd = S.DODGE_CD
-        self.dodge_from = list(self.pos)
-        self.invincible = max(self.invincible, S.DODGE_IFRAME)
-        return True
+    def grant_shield(self, seconds, pool):
+        """施加护盾：时限 + 吸收池，取更强者叠加。"""
+        self.shield_t = max(self.shield_t, float(seconds))
+        self.shield_pool = max(self.shield_pool, float(pool))
 
-    def update(self, dt, world_w, world_h, move_dir, speed, dodge_dist=None):
+    def update(self, dt, world_w, world_h, move_dir, speed):
         """
         每帧更新：闪避位移优先，否则按 move_dir 自由移动，最后钳制在世界内。
         move_dir 应为归一化向量；speed 为世界像素/秒。
@@ -106,29 +94,24 @@ class SnakeGirl:
             return
         if self.invincible > 0:
             self.invincible -= dt
-        if self.dodge_cd > 0:
-            self.dodge_cd = max(0.0, self.dodge_cd - dt)
+        if self.shield_t > 0:
+            self.shield_t = max(0.0, self.shield_t - dt)
+            if self.shield_t <= 0:
+                self.shield_pool = 0.0
+        if self.shield_cd > 0:
+            self.shield_cd = max(0.0, self.shield_cd - dt)
+        if self.hurt_t > 0:
+            self.hurt_t = max(0.0, self.hurt_t - dt)
 
         self.move_dir = list(move_dir)
-
-        if self.dodge_t > 0:
-            # 闪避：在 DODGE_TIME 内匀速冲过 dodge_dist
-            dist = dodge_dist if dodge_dist is not None else S.DODGE_DIST
-            step = dist / max(1e-6, S.DODGE_TIME) * dt
-            self.pos[0] += self.dodge_dir[0] * step
-            self.pos[1] += self.dodge_dir[1] * step
-            self.dodge_t = max(0.0, self.dodge_t - dt)
-            self.vel = [self.dodge_dir[0] * dist / S.DODGE_TIME,
-                        self.dodge_dir[1] * dist / S.DODGE_TIME]
-        else:
-            mx, my = self.move_dir
-            if abs(mx) > 1e-6 or abs(my) > 1e-6:
-                d = math.hypot(mx, my) or 1.0
-                mx, my = mx / d, my / d
-                self.aim_dir = [mx, my]
-            self.pos[0] += mx * speed * dt
-            self.pos[1] += my * speed * dt
-            self.vel = [mx * speed, my * speed]
+        mx, my = self.move_dir
+        if abs(mx) > 1e-6 or abs(my) > 1e-6:
+            d = math.hypot(mx, my) or 1.0
+            mx, my = mx / d, my / d
+            self.aim_dir = [mx, my]
+        self.pos[0] += mx * speed * dt
+        self.pos[1] += my * speed * dt
+        self.vel = [mx * speed, my * speed]
 
         # 钳制在世界内（留一点边距，别让立绘卡出界）
         m = self.radius
@@ -193,12 +176,22 @@ class SnakeGirl:
 
     # ---------------------------------------------------------------- 承伤
     def take_damage(self, amount):
+        """承伤：护盾时限内优先扣吸收池，池空/到期才扣血。返回是否真的扣了血。"""
         if self.invincible > 0 or not self.alive:
             return False
+        amount = float(amount)
+        if self.shield_t > 0 and self.shield_pool > 0:
+            absorb = min(amount, self.shield_pool)
+            self.shield_pool -= absorb
+            amount -= absorb
+            if self.shield_pool <= 0:
+                self.shield_t = 0.0
+            if amount <= 0:
+                return False          # 被护盾完全吸收
         self.hp -= amount
         self.invincible = S.IFRAME_TIME
         if self.hp <= 0:
-            self.hp = 0
+            self.hp = 0.0
             self.alive = False
         return True
 
@@ -218,7 +211,7 @@ class SnakeGirl:
         return gained
 
     def exp_needed(self):
-        return S.EXP_PER_LEVEL + (self.level - 1) * 12
+        return S.EXP_PER_LEVEL + (self.level - 1) * S.EXP_GROWTH_PER_LEVEL
 
     def on_level_up(self, gained):
         if self.on_level_up_cb:
@@ -236,7 +229,7 @@ class PlayerBullet:
     """自动普攻发射的弹丸。命中最近的怪即消失。pos/vel 世界像素。"""
 
     def __init__(self, pos, vel, dmg, radius, life=None, color=(255, 210, 230),
-                 pierce=0):
+                 pierce=0, element="", from_skill=False, onhit=None, fx=None):
         self.pos = [float(pos[0]), float(pos[1])]
         self.vel = [float(vel[0]), float(vel[1])]
         self.dmg = dmg
@@ -244,6 +237,10 @@ class PlayerBullet:
         self.life = S.ATK_BULLET_LIFE if life is None else float(life)
         self.color = color
         self.pierce = pierce          # 还能穿透几只怪（大招用）
+        self.element = element        # 元素（普攻/风刃贴图与命中叠标记用）
+        self.from_skill = from_skill  # 是否为技能飞行物（命中叠标记被动）
+        self.onhit = onhit or None    # 命中时施加的元素副效果字段（供 _apply_combo_secondary）
+        self.fx = fx or None          # 技能贴图 id（如 mint_blade）：绘制时优先用专属贴图
         self.alive = True
         self.hit_ids = set()
 
@@ -329,7 +326,8 @@ class Mob:
     碰到玩家扣血，被弹丸/技能命中掉血。
     """
 
-    def __init__(self, pos, hp_mult=1.0, speed=100.0, atk=1, radius=None):
+    def __init__(self, pos, hp_mult=1.0, speed=100.0, atk=1, radius=None,
+                 sprite=""):
         self.uid = next(_UID_GEN)
         self.pos = [float(pos[0]), float(pos[1])]
         self.vel = [0.0, 0.0]
@@ -339,17 +337,26 @@ class Mob:
         self.speed = float(speed)               # 世界像素/秒（battle 按时间注入）
         self.atk = int(atk)                     # 碰触伤害
         self.radius = float(radius if radius is not None else S.MOB_RADIUS)
+        self.sprite = sprite or ""              # 场景主题贴图（空则回退通用影子图）
         self.hit_flash = 0.0
         self.knock = [0.0, 0.0]
         self.t = random.random() * 6.28
         self.jitter = random.uniform(0.85, 1.15)  # 个体速度差，避免整齐划一
 
-        # ---- 持续状态（减速 / 灼烧）：由 battle 施加，减速在 update 内自结算 ----
+        # ---- 持续状态（减速 / 灼烧 / 标记）：由 battle 施加，减速在 update 内自结算 ----
         self.slow_mult = 1.0
         self.slow_t = 0.0
         self.burn_dps = 0.0
         self.burn_t = 0.0
         self.burn_acc = 0.0
+        # 标记（花印）：被标记者受到的伤害放大 mark_amp，到期自动清除
+        self.mark_t = 0.0
+        self.mark_amp = 0.0
+        self.mark_stacks = 0            # 标记层数（重复标记叠加，越高越易伤）
+        self.mark_exploded = False      # 满层自爆是否已触发（防重复爆）
+        # 削弱（月属性 proc）：期间碰触伤害乘 weaken_mult
+        self.weaken_t = 0.0
+        self.weaken_mult = 1.0
         # ---- 精英标记（普通小怪为 False）----
         self.is_elite = False
         self.elite_name = ""
@@ -365,6 +372,20 @@ class Mob:
             self.slow_t = max(0.0, self.slow_t - dt)
             if self.slow_t <= 0:
                 self.slow_mult = 1.0
+
+        # 标记（易伤）状态到期自动清除
+        if self.mark_t > 0:
+            self.mark_t = max(0.0, self.mark_t - dt)
+            if self.mark_t <= 0:
+                self.mark_amp = 0.0
+                self.mark_stacks = 0
+                self.mark_exploded = False
+
+        # 削弱状态到期自动恢复
+        if self.weaken_t > 0:
+            self.weaken_t = max(0.0, self.weaken_t - dt)
+            if self.weaken_t <= 0:
+                self.weaken_mult = 1.0
 
         # 击退衰减
         kx, ky = self.knock
@@ -408,6 +429,9 @@ class Mob:
         self.pos[1] = min(max(self.pos[1], -m), world_h + m)
 
     def take_damage(self, amount):
+        # 被标记（花印）时受到的伤害放大，连招核心
+        if self.mark_t > 0:
+            amount = amount * (1.0 + self.mark_amp)
         self.hp -= amount
         self.hit_flash = 0.18
         if self.hp <= 0:
@@ -432,6 +456,39 @@ class Mob:
         self.burn_dps = max(self.burn_dps, dps)
         self.burn_t = max(self.burn_t, time)
 
+    def apply_mark(self, amp, time, max_stacks=1):
+        """被标记：叠加层数（每层提升易伤 amp），刷新持续时间。
+        amp 为「每层」易伤加成，总易伤 = amp × 当前层数，最多 max_stacks 层。
+        返回 True 表示本次刚好叠满 max_stacks（触发满层自爆，仅一次）。"""
+        max_stacks = max(1, int(max_stacks))
+        self.mark_stacks = min(max_stacks, self.mark_stacks + 1)
+        self.mark_amp = amp * self.mark_stacks
+        self.mark_t = max(self.mark_t, time)
+        if self.mark_stacks >= max_stacks and not self.mark_exploded:
+            self.mark_exploded = True
+            return True
+        return False
+
+    def clear_mark(self):
+        """清空标记状态（引爆/自爆后调用）。"""
+        self.mark_t = 0.0
+        self.mark_amp = 0.0
+        self.mark_stacks = 0
+        self.mark_exploded = False
+
+    def apply_weaken(self, mult, time):
+        """被削弱（月属性）：期间碰触伤害乘 mult，保留更强倍率与更长剩余时间。"""
+        mult = max(0.1, min(1.0, mult))
+        if self.weaken_t <= 0 or mult < self.weaken_mult:
+            self.weaken_mult = mult
+        self.weaken_t = max(self.weaken_t, time)
+
+    def eff_atk(self):
+        """实际碰触伤害：被削弱时打折。"""
+        if self.weaken_t > 0:
+            return max(1, int(round(self.atk * self.weaken_mult)))
+        return self.atk
+
     @property
     def draw_pos(self):
         return (self.pos[0], self.pos[1])
@@ -444,7 +501,7 @@ class EliteMob(Mob):
     """精英怪：体型更大、血量更厚、碰触更痛，死亡多掉落，头顶常驻名字与血条。"""
 
     def __init__(self, pos, hp_mult=1.0, speed=100.0, atk=None, radius=None,
-                 name="精英"):
+                 name="精英", sprite=""):
         base_radius = radius if radius is not None else S.MOB_RADIUS
         super().__init__(
             pos,
@@ -452,6 +509,7 @@ class EliteMob(Mob):
             speed=speed * S.ELITE_SPEED_MULT,
             atk=atk if atk is not None else S.ELITE_ATK,
             radius=base_radius * S.ELITE_SIZE_MULT,
+            sprite=sprite,
         )
         self.is_elite = True
         self.elite_name = name

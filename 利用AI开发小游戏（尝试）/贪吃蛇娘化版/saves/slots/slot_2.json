@@ -1,0 +1,89 @@
+{
+  "slot_name": "测试存档（全解锁）",
+  "created_at": 1791015528.0852625,
+  "player_name": "玩家",
+  "currency": 999999,
+  "gacha_tickets": 999,
+  "owned_characters": [
+    "sakura",
+    "lamia_mint",
+    "lamia_tide",
+    "lamia_flare",
+    "lamia_stella",
+    "lamia_luna"
+  ],
+  "selected_character": "lamia_mint",
+  "selected_scene": "campus_garden",
+  "character_data": {
+    "sakura": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_mint": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_tide": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_flare": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_stella": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    },
+    "lamia_luna": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 15
+    }
+  },
+  "deploy_party": [
+    "lamia_mint",
+    "sakura"
+  ],
+  "form_prefs": {
+    "sakura": "human",
+    "lamia_mint": "human",
+    "lamia_tide": "human",
+    "lamia_flare": "human",
+    "lamia_stella": "human",
+    "lamia_luna": "human"
+  },
+  "story_unlocked": 5,
+  "story_cleared": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "tutorial_done": true,
+  "progress": {
+    "best_score": 0,
+    "best_level": 0,
+    "total_kills": 0,
+    "total_runs": 0,
+    "total_stardust": 0,
+    "total_wins": 4,
+    "bosses_defeated": {
+      "campus_garden": 1,
+      "neon_night": 1,
+      "deep_sea": 1,
+      "sakura_realm": 1
+    }
+  }
+}

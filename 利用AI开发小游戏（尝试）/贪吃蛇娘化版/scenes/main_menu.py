@@ -26,20 +26,20 @@ class MainMenuScene(Scene):
 
         cx = self.W // 2
         btn_w, btn_h = self.s(320), self.s(64)
-        start_y = self.s(400)
-        gap = self.s(82)
+        start_y = self.s(408)
+        gap = self.s(76)
 
         self.buttons = [
             Button("开始游戏", cx - btn_w // 2, start_y,
                    btn_w, btn_h, on_click=lambda: self._go("level_select")),
             Button("角色选择", cx - btn_w // 2, start_y + gap,
                    btn_w, btn_h, on_click=lambda: self._go("character_select")),
-            Button("场景选择", cx - btn_w // 2, start_y + gap * 2,
-                   btn_w, btn_h, on_click=lambda: self._go("scene_select")),
-            Button("蛇娘召集", cx - btn_w // 2, start_y + gap * 3,
+            Button("蛇娘召集", cx - btn_w // 2, start_y + gap * 2,
                    btn_w, btn_h, on_click=lambda: self._go("gacha")),
-            Button("显示设置", cx - btn_w // 2, start_y + gap * 4,
+            Button("显示设置", cx - btn_w // 2, start_y + gap * 3,
                    btn_w, btn_h, on_click=lambda: self._go("display_settings")),
+            Button("操作设置", cx - btn_w // 2, start_y + gap * 4,
+                   btn_w, btn_h, on_click=lambda: self._go("control_settings")),
             Button("存档管理", cx - btn_w // 2, start_y + gap * 5,
                    btn_w, btn_h, on_click=lambda: self._go("save_manager")),
             Button("退出游戏", cx - btn_w // 2, start_y + gap * 6,

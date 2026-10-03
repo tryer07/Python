@@ -11,12 +11,14 @@ core/game.py —— 游戏主类
 
 import ctypes
 import sys
+import threading
 
 import pygame
 
 import settings
 from core.asset_manager import AssetManager
 from core.audio_manager import AudioManager
+from core.controls import Controls
 from core.save_manager import SaveManager
 from settings import (
     CELL_SIZE_BASE, DESIGN_HEIGHT, DESIGN_WIDTH,
@@ -30,17 +32,29 @@ class Game:
     """游戏主类：管理窗口、主循环、场景切换"""
 
     def __init__(self):
-        # 必须在 pygame.init() / set_mode() 之前声明 DPI 感知，
+        # 必须在创建显示 / set_mode() 之前声明 DPI 感知，
         # 否则在开启了 Windows 显示缩放（125%/150%/200%）的机器上，
         # 全屏会拿到"虚拟分辨率"，被 GPU letterbox 成居中小窗 + 四周黑边。
         self._set_dpi_aware()
-        # mixer 必须在 pygame.init() 之前预初始化，锁定采样格式，
+        # mixer 必须在 mixer.init() 之前预初始化，锁定采样格式，
         # 后面合成占位音的 Sound(buffer=...) 才能按这个格式对齐（否则声音发尖/报错）。
         try:
             pygame.mixer.pre_init(44100, -16, 2, 512)
         except Exception:
             pass
-        pygame.init()
+        # 只初始化真正用到的子系统，不走 pygame.init()。
+        # pygame.init() 会顺手初始化 joystick，而 Windows 枚举手柄设备在本机
+        # 实测要卡 10 秒（启动慢的真凶，exe 与源码运行同病）。本作纯键鼠操作，
+        # 跳过 joystick 后启动从 ~10s 降到 ~0.3s。
+        pygame.display.init()
+        pygame.font.init()
+        # 音频设备后台线程打开：SDL 开设备偶发慢（设备被占 / 上一个进程
+        # 强杀未释放时实测卡 ~10s），同步调会拖住出窗口或首帧。后台开 +
+        # AudioManager 懒判定（_refresh_ok）：就绪自动接上，未就绪/无声卡
+        # 降级静音，启动观感与音频互不拖累。
+        self._mixer_thread = threading.Thread(
+            target=self._bg_mixer_init, daemon=True)
+        self._mixer_thread.start()
 
         # 显示设置：优先读存档
         self.save_manager = SaveManager()
@@ -55,7 +69,8 @@ class Game:
 
         self.clock = pygame.time.Clock()
         self.assets = AssetManager()
-        # 音频管理器：mixer 不可用时内部自动降级为 no-op，不影响启动。
+        # 音频管理器：mixer 尚未就绪/不可用时内部自动降级为 no-op，
+        # 后台线程 init 完成后由 _refresh_ok 懒接上，不影响启动。
         # 构造时会把自己注册为模块级单例，供 ui/button.py 等无 game 引用处取用。
         try:
             self.audio = AudioManager(self.save_manager)
@@ -64,6 +79,11 @@ class Game:
         self.running = True
         self.current_scene = None
         self._scenes = {}
+        # 按键绑定（技能/闪避热键）：机器级配置，玩家可在游戏内改键。
+        self.controls = Controls(self.save_manager)
+        # 输入捕获标志：改键面板等待新按键时置 True，
+        # 此时全局音量热键（方向键）主动让路，避免改键时误调音量。
+        self.input_capture = False
         # 音量热键改的是内存值（persist=False），用这个脏标记延迟落盘：
         # 切场景 / 退出 / 取消暂停时一次性写回，避免长按方向键时高频写盘。
         self._audio_dirty = False
@@ -72,6 +92,14 @@ class Game:
         self._vol_hold = {}
 
     # ==================== 窗口 / 显示设置 ====================
+    @staticmethod
+    def _bg_mixer_init():
+        """后台线程体：开音频设备，失败静默（AudioManager 自动 no-op）。"""
+        try:
+            pygame.mixer.init()
+        except Exception:
+            pass
+
     @property
     def scale(self):
         """缩放因子：窗口宽度 / 设计基准宽度"""
@@ -277,6 +305,8 @@ class Game:
             print(f"[警告] 场景 '{name}' 未注册！")
             return
 
+        # 离开旧场景：清掉可能残留的输入捕获状态（改键浮层开着时切场景）
+        self.input_capture = False
         self.current_scene = scene_class(self)
         self.current_scene.enter()
 
@@ -309,11 +339,21 @@ class Game:
             # 长按方向键时持续连调音量（仅在场景不占用方向键时生效）
             self._update_volume_repeat()
 
+            # 驱动后台 BGM：预载好的曲子一旦就绪就无缝淡入开播（交叉淡入淡出）
+            self.audio.update(dt)
+
             if self.current_scene:
                 # 渲染表面 = 窗口大小，鼠标坐标无需转换
-                self.current_scene.handle_events(events)
-                self.current_scene.update(dt)
-                self.current_scene.draw()
+                try:
+                    self.current_scene.handle_events(events)
+                    self.current_scene.update(dt)
+                    self.current_scene.draw()
+                except Exception as e:  # 兜底：绝不让 windowed exe 静默闪退
+                    from core.crash import report_crash
+                    name = type(self.current_scene).__name__ if self.current_scene else "?"
+                    report_crash(e, context=f"scene={name}")
+                    self.running = False
+                    break
 
             # 直接 1:1 blit，无任何缩放 → 零模糊
             self.display.blit(self.render_surface, (0, 0))
@@ -334,6 +374,8 @@ class Game:
         仅在「当前场景不占用方向键」时生效（战斗进行中会让路，暂停/菜单才接管）。
         按一下走一格；按住超过 VOLUME_REPEAT_DELAY_MS 后由 _update_volume_repeat 连发。
         命中时返回 True（事件已消费），否则 False。"""
+        if getattr(self, "input_capture", False):
+            return False        # 改键面板正在捕获按键，方向键让给它
         if self.current_scene is not None and self.current_scene.wants_movement_keys():
             return False
         direction = self._VOL_KEY_DIR.get(event.key)
