@@ -43,12 +43,12 @@ pyz = PYZ(a.pure)
 
 # onedir 打包：onefile 每次启动要把 140+MB 资源解压到临时目录、退出再删除，
 # 打开/关闭都慢（实测启动 5~7s 大半耗在解包）；onedir 直接读目录，
-# 启动 1~2s、关闭即时。产物为 dist\贪吃蛇娘化版\ 文件夹，分发整夹压缩即可。
+# 启动 1~2s、关闭即时。产物为 dist\鳞光纪\ 文件夹，分发整夹压缩即可。
 exe = EXE(
     pyz,
     a.scripts,
     exclude_binaries=True,
-    name='贪吃蛇娘化版',
+    name='鳞光纪',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -69,5 +69,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='贪吃蛇娘化版',
+    name='鳞光纪',
 )

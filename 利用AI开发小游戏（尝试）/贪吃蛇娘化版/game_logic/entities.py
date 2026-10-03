@@ -229,7 +229,8 @@ class PlayerBullet:
     """自动普攻发射的弹丸。命中最近的怪即消失。pos/vel 世界像素。"""
 
     def __init__(self, pos, vel, dmg, radius, life=None, color=(255, 210, 230),
-                 pierce=0, element="", from_skill=False, onhit=None, fx=None):
+                 pierce=0, element="", from_skill=False, onhit=None, fx=None,
+                 curve=0.0, spin=0.0):
         self.pos = [float(pos[0]), float(pos[1])]
         self.vel = [float(vel[0]), float(vel[1])]
         self.dmg = dmg
@@ -241,11 +242,30 @@ class PlayerBullet:
         self.from_skill = from_skill  # 是否为技能飞行物（命中叠标记被动）
         self.onhit = onhit or None    # 命中时施加的元素副效果字段（供 _apply_combo_secondary）
         self.fx = fx or None          # 技能贴图 id（如 mint_blade）：绘制时优先用专属贴图
+        # 樱落「飞樱散华」：curve=弹道角速度（rad/s，正负=弧旋方向），
+        # spin=贴图自旋（度/秒）；rot 为当前贴图角度（度），None=朝速度方向。
+        self.curve = float(curve)
+        self.spin = float(spin)
+        self.rot = None
+        self.trail = False            # 旋转拖尾：飞行中撒花瓣粒子（battle 端结算）
+        self.mark = False             # 命中必叠花瓣标记（段3 种花主手段）
+        self.tex_rel = None           # 普攻贴图相对路径（effects/melee/…，缩放变体）
+        self.trail_acc = 0.0
         self.alive = True
         self.hit_ids = set()
 
     def update(self, dt, world_w, world_h):
         self.life -= dt
+        if self.curve:
+            # 弧旋弹道：速度向量绕自身旋转，花瓣走弧线而非直线
+            ca = self.curve * dt
+            cv, sv = math.cos(ca), math.sin(ca)
+            vx, vy = self.vel
+            self.vel = [vx * cv - vy * sv, vx * sv + vy * cv]
+        if self.spin:
+            base = math.degrees(math.atan2(self.vel[1], self.vel[0])) \
+                if self.rot is None else self.rot
+            self.rot = base + self.spin * dt
         self.pos[0] += self.vel[0] * dt
         self.pos[1] += self.vel[1] * dt
         if self.life <= 0:
@@ -357,6 +377,9 @@ class Mob:
         # 削弱（月属性 proc）：期间碰触伤害乘 weaken_mult
         self.weaken_t = 0.0
         self.weaken_mult = 1.0
+        # 湿身（潮汐领域）：期间受到的伤害放大 wet_amp（水域体系视作水伤）
+        self.wet_t = 0.0
+        self.wet_amp = 0.0
         # ---- 精英标记（普通小怪为 False）----
         self.is_elite = False
         self.elite_name = ""
@@ -386,6 +409,12 @@ class Mob:
             self.weaken_t = max(0.0, self.weaken_t - dt)
             if self.weaken_t <= 0:
                 self.weaken_mult = 1.0
+
+        # 湿身（易伤）状态到期自动清除
+        if self.wet_t > 0:
+            self.wet_t = max(0.0, self.wet_t - dt)
+            if self.wet_t <= 0:
+                self.wet_amp = 0.0
 
         # 击退衰减
         kx, ky = self.knock
@@ -432,6 +461,9 @@ class Mob:
         # 被标记（花印）时受到的伤害放大，连招核心
         if self.mark_t > 0:
             amount = amount * (1.0 + self.mark_amp)
+        # 湿身（潮汐领域）时受到的伤害再放大
+        if self.wet_t > 0:
+            amount = amount * (1.0 + self.wet_amp)
         self.hp -= amount
         self.hit_flash = 0.18
         if self.hp <= 0:
@@ -482,6 +514,12 @@ class Mob:
         if self.weaken_t <= 0 or mult < self.weaken_mult:
             self.weaken_mult = mult
         self.weaken_t = max(self.weaken_t, time)
+
+    def apply_wet(self, amp, time):
+        """被湿身（潮汐领域）：期间受到的伤害放大 amp，保留更强倍率与更长剩余时间。"""
+        if self.wet_t <= 0 or amp > self.wet_amp:
+            self.wet_amp = amp
+        self.wet_t = max(self.wet_t, time)
 
     def eff_atk(self):
         """实际碰触伤害：被削弱时打折。"""

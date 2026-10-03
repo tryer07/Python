@@ -96,7 +96,7 @@ RESOLUTION_OPTIONS = [
 
 # ==================== 游戏配置 ====================
 FPS = 60
-GAME_TITLE = "贪吃蛇娘化版"
+GAME_TITLE = "鳞光纪"
 
 # ==================== 颜色定义 ====================
 COLOR_BG = (20, 20, 35)
@@ -250,16 +250,16 @@ CARD_ARMOR_STEP = 0.08          # 伤害减免 +8%（受伤更少）
 CARD_REGEN_STEP = 1.4           # 生命再生：每秒回复 1.4 HP（血条制下才有意义）
 CARD_SKILLDMG_STEP = 0.15       # 技能伤害 +15%（专属大招与连招组件）
 CARD_RANGE_STEP = 0.15          # 普攻索敌范围 +15%
-CARD_LIFESTEAL_STEP = 0.06      # 吸血：触发时把伤害的 6% 转化为生命（概率触发，见下）
+CARD_LIFESTEAL_STEP = 0.04      # 吸血：触发时把伤害的 4% 转化为生命（概率触发，见下；再削弱）
 CARD_SHIELD_STEP = 0.15         # 左键护盾：吸收量与持续时间 +15%（取代旧闪避冷却卡）
 # 递减型属性的上限，避免无限叠加导致无敌/零冷却
 ARMOR_CAP = 0.60                # 伤害减免最多 60%
-LIFESTEAL_CAP = 0.35            # 吸血转化率最多 35%
+LIFESTEAL_CAP = 0.24            # 吸血转化率最多 24%（再削弱，防站撸回满）
 SHIELD_STAT_CAP = 1.0           # 护盾加成最多 +100%（吸收量/时限翻倍）
 # 吸血改为「概率触发」：每次造成伤害只有一定概率吸血，避免配合受击保护
 # 无脑站撸回满。触发时吸血量放大 PROC_BONUS 倍作为补偿，总体续航大幅下调。
 LIFESTEAL_PROC_CHANCE = 0.25    # 每次造成伤害触发吸血的概率
-LIFESTEAL_PROC_BONUS = 1.8      # 触发时的吸血量倍率（补偿概率，净续航约为原来的 45%）
+LIFESTEAL_PROC_BONUS = 1.5      # 触发时的吸血量倍率（补偿概率；再削弱后净续航约为满配的 9%）
 # 回血数值（血条制）：爱心掉落 / 花守被动每次触发
 HEART_HEAL = 15                 # 吃爱心回复的生命
 PASSIVE_BLOOM_HEAL = 5          # 花守被动触发时回复的生命
@@ -456,6 +456,47 @@ CHANNEL_BUFF_TIME = 6.0         # 增益持续秒
 CHANNEL_ATK = 1.30
 CHANNEL_ATKSPD = 1.25
 CHANNEL_SPEED = 1.15
+
+# ==================== 潮汐 · 切人五技能（水属性坦克，全部围绕「切人」设计） ====================
+# 双人编队但场上同时只有一名角色；潮汐靠切人联动打循环。数值集中在此，改数字即可调平衡。
+# 「米」按设计像素映射（水域半径 8m≈340 设计像素，与聚怪/引爆半径同量级）。
+# --- ① 潮汐交接：护盾，吸收量=潮汐最大生命 12%，持续 10s；切走时剩余盾量 60% 转移给登场角色 ---
+TIDE_HANDOFF_CD = 14.0
+TIDE_HANDOFF_SHIELD_PCT = 0.12   # 吸收量 = 施放者（潮汐）最大生命 ×12%
+TIDE_HANDOFF_TIME = 10.0         # 护盾持续秒
+TIDE_HANDOFF_TRANSFER = 0.60     # 切走时转移给登场角色的剩余盾量比例
+# --- ② 涌潮：半径 8m 水域 8s，敌减速 30%，己方减伤 15%+移速 20%；不随切人消失（全链地基）---
+TIDE_ZONE_CD = 12.0
+TIDE_ZONE_RADIUS = 340           # 水域半径（设计像素，≈8m）
+TIDE_ZONE_TIME = 8.0             # 水域持续秒
+TIDE_ZONE_ENEMY_SLOW = 0.70      # 水域内敌人减速后速度倍率（-30%）
+TIDE_ZONE_ALLY_REDUCE = 0.15     # 水域内己方受伤减免
+TIDE_ZONE_ALLY_SPEED = 0.20      # 水域内己方移速加成
+# --- ③ 漩涡：引导 2.5s 聚怪；结束时身处水域上则引爆整片水域（主要输出）；引导中切走即中断 ---
+TIDE_VORTEX_CD = 16.0
+TIDE_VORTEX_TIME = 2.5           # 引导读条秒
+TIDE_VORTEX_RADIUS = 360         # 聚怪作用半径（设计像素）
+TIDE_VORTEX_STRENGTH = 460       # 聚怪拉拽强度
+TIDE_VORTEX_TICK_DMG = 12        # 引导期间每次聚怪 tick 的小额伤害
+TIDE_VORTEX_DETONATE_DMG = 200   # 引爆单片水域的伤害（主要输出）
+# --- ④ 潮汐契约：8s 内出战角色普攻命中触发水柱追击（潮汐攻击力 40%，内置 CD 0.5s）；切后台也持续 ---
+TIDE_CONTRACT_CD = 18.0
+TIDE_CONTRACT_TIME = 8.0         # 契约持续秒
+TIDE_CONTRACT_ATK_RATIO = 0.40   # 水柱伤害 = 潮汐攻击力 ×40%
+TIDE_CONTRACT_INNER_CD = 0.5     # 水柱内置冷却秒
+# --- ⑤ 潮汐领域（大招）：全场湿身（受水伤+20%）减速 40% 持续 10s，刷新所有水域，契约剩余时长转全队护盾 ---
+TIDE_DOMAIN_CD = 40.0
+TIDE_DOMAIN_TIME = 10.0          # 领域持续秒
+TIDE_DOMAIN_WET_AMP = 0.20       # 湿身：受到的伤害 +20%（水域体系视作水伤放大）
+TIDE_DOMAIN_SLOW = 0.60          # 全场敌人减速后速度倍率（-40%）
+TIDE_DOMAIN_SHIELD_PER_SEC = 9.0 # 契约每剩余 1s 转成的护盾吸收量（全队每人）
+# --- 被动：后浪（潮汐在后台时出战角色免伤）/ 踏浪登场（在水域上切人，登场角色增益）---
+PASSIVE_BACKWAVE_REDUCE = 0.15       # 后浪：出战角色免伤 15%
+PASSIVE_BACKWAVE_REDUCE_UP = 0.20    # 后浪（强化达标）：免伤 20%
+PASSIVE_BACKWAVE_UP_LAYER = 8        # 潮汐强化层数达到此值，后浪升到 20%
+PASSIVE_WAVE_LANDING_TIME = 2.0      # 踏浪登场：增益持续秒
+PASSIVE_WAVE_LANDING_SPEED = 0.20    # 踏浪登场：移速 +20%
+PASSIVE_WAVE_LANDING_REDUCE = 0.10   # 踏浪登场：减伤 10%
 
 # ==================== 标记被动（全员：技能叠标记，满 3 层自爆） ====================
 MARKPASSIVE_STACKS = 3          # 标记最多叠几层

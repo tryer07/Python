@@ -122,6 +122,12 @@ _BASE_CD = {
     "gather": lambda: S.GATHER_CD,
     "blade": lambda: S.BLADE_CD,
     "channel": lambda: S.CHANNEL_CD,
+    # 潮汐切人五技能（水属性坦克，围绕切人联动，各自独立冷却）
+    "tide_handoff": lambda: S.TIDE_HANDOFF_CD,
+    "tide_zone": lambda: S.TIDE_ZONE_CD,
+    "tide_vortex": lambda: S.TIDE_VORTEX_CD,
+    "tide_contract": lambda: S.TIDE_CONTRACT_CD,
+    "tide_domain": lambda: S.TIDE_DOMAIN_CD,
 }
 
 
@@ -157,6 +163,19 @@ _STAT_FIELDS = {
     "channel": [("time", "读条", _f_sec), ("buff_time", "增益", _f_sec),
                 ("atk", "攻击", _f_mult), ("atkspd", "攻速", _f_mult),
                 ("speed", "移速", _f_mult)],
+    # --- 潮汐切人五技能：介绍面板数值与实战同源（走 _raw_event→_scale_event）---
+    "tide_handoff": [("shield_pct", "吸收(最大生命)", _f_pct),
+                     ("time", "护盾", _f_sec), ("transfer", "切走转移", _f_pct)],
+    "tide_zone": [("radius", "水域半径", _f_int), ("time", "持续", _f_sec),
+                  ("enemy_slow", "敌减速后", _f_mult),
+                  ("ally_reduce", "己方减伤", _f_pct),
+                  ("ally_speed", "己方移速", _f_pct)],
+    "tide_vortex": [("time", "引导", _f_sec), ("radius", "聚怪范围", _f_int),
+                    ("dmg", "引爆伤害", _f_int)],
+    "tide_contract": [("time", "契约", _f_sec), ("atk_ratio", "水柱(攻击)", _f_pct),
+                      ("inner_cd", "内置CD", _f_sec)],
+    "tide_domain": [("time", "领域", _f_sec), ("wet_amp", "湿身易伤", _f_pct),
+                    ("slow_mult", "减速后", _f_mult)],
 }
 
 
@@ -398,6 +417,10 @@ class SkillEngine:
         role = self.role or "hybrid"
         if role not in ("tank", "mage", "assassin"):
             return ev
+        # 潮汐切人五技能：数值按规格固定，不吃职业范围/射程/读条系数
+        # （局内强化仍由 _scale_event 统一放大，保证介绍与实战同源）。
+        if stype.startswith("tide_"):
+            return ev
         area = S.ROLE_AREA_MULT.get(role, 1.0)
         for k in ("radius", "range", "length", "width"):
             if k in ev:
@@ -611,6 +634,16 @@ class SkillEngine:
             ev["count"] = ev.get("count", 4) + 2               # 多两道飞行物
         elif stype == "channel":
             ev["armor_bonus"] = 0.20                           # 增益期内额外减伤
+        elif stype == "tide_handoff":
+            ev["transfer"] = min(0.90, ev.get("transfer", 0.60) + 0.15)  # 切走转移 75%
+        elif stype == "tide_zone":
+            ev["time"] = ev.get("time", 8.0) + 3.0             # 水域更久
+        elif stype == "tide_vortex":
+            ev["dmg"] = int(round(ev.get("dmg", 200) * 1.3))    # 引爆更痛
+        elif stype == "tide_contract":
+            ev["time"] = ev.get("time", 8.0) + 3.0             # 契约更久
+        elif stype == "tide_domain":
+            ev["wet_amp"] = ev.get("wet_amp", 0.20) + 0.10      # 湿身易伤更高
         # 元素副效果满级质变：把该元素的招牌副效果再放大一档
         el = self.element
         if el == "水" and "freeze_time" in ev:
@@ -702,4 +735,32 @@ class SkillEngine:
                     "time": S.CHANNEL_TIME, "buff_time": S.CHANNEL_BUFF_TIME,
                     "atk": S.CHANNEL_ATK, "atkspd": S.CHANNEL_ATKSPD,
                     "speed": S.CHANNEL_SPEED}
+        # ---- 潮汐切人五技能（数值全部取自 settings，未强化）----
+        if stype == "tide_handoff":
+            return {"type": "tide_handoff",
+                    "shield_pct": S.TIDE_HANDOFF_SHIELD_PCT,
+                    "time": S.TIDE_HANDOFF_TIME,
+                    "transfer": S.TIDE_HANDOFF_TRANSFER}
+        if stype == "tide_zone":
+            return {"type": "tide_zone",
+                    "radius": S.TIDE_ZONE_RADIUS, "time": S.TIDE_ZONE_TIME,
+                    "enemy_slow": S.TIDE_ZONE_ENEMY_SLOW,
+                    "ally_reduce": S.TIDE_ZONE_ALLY_REDUCE,
+                    "ally_speed": S.TIDE_ZONE_ALLY_SPEED}
+        if stype == "tide_vortex":
+            return {"type": "tide_vortex",
+                    "time": S.TIDE_VORTEX_TIME, "radius": S.TIDE_VORTEX_RADIUS,
+                    "strength": S.TIDE_VORTEX_STRENGTH,
+                    "tick_dmg": S.TIDE_VORTEX_TICK_DMG,
+                    "dmg": S.TIDE_VORTEX_DETONATE_DMG}
+        if stype == "tide_contract":
+            return {"type": "tide_contract",
+                    "time": S.TIDE_CONTRACT_TIME,
+                    "atk_ratio": S.TIDE_CONTRACT_ATK_RATIO,
+                    "inner_cd": S.TIDE_CONTRACT_INNER_CD}
+        if stype == "tide_domain":
+            return {"type": "tide_domain",
+                    "time": S.TIDE_DOMAIN_TIME, "wet_amp": S.TIDE_DOMAIN_WET_AMP,
+                    "slow_mult": S.TIDE_DOMAIN_SLOW,
+                    "shield_per_sec": S.TIDE_DOMAIN_SHIELD_PER_SEC}
         return None

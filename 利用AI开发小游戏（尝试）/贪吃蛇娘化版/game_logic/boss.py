@@ -107,6 +107,9 @@ class Boss:
         self.mark_t = 0.0
         self.mark_amp = 0.0
         self.mark_stacks = 0
+        # 湿身（潮汐领域）易伤：期间受到的伤害放大 wet_amp
+        self.wet_t = 0.0
+        self.wet_amp = 0.0
 
     # ------------------------------------------------------------ 几何
     @property
@@ -159,6 +162,9 @@ class Boss:
         # 被标记（花印）时受到的伤害放大，连招核心
         if self.mark_t > 0:
             amount = amount * (1.0 + self.mark_amp)
+        # 湿身（潮汐领域）时受到的伤害再放大
+        if self.wet_t > 0:
+            amount = amount * (1.0 + self.wet_amp)
         self.hp -= amount
         self.hit_flash = 0.16
         if self.hp <= 0:
@@ -179,6 +185,12 @@ class Boss:
         self.mark_t = 0.0
         self.mark_amp = 0.0
         self.mark_stacks = 0
+
+    def apply_wet(self, amp, time):
+        """被湿身（潮汐领域）：期间受到的伤害放大 amp，刷新持续时间。"""
+        if self.wet_t <= 0 or amp > self.wet_amp:
+            self.wet_amp = amp
+        self.wet_t = max(self.wet_t, time)
 
     # ------------------------------------------------------------ 每帧
     def update(self, dt, snake_cell, ctx):
@@ -201,6 +213,11 @@ class Boss:
             if self.mark_t <= 0:
                 self.mark_amp = 0.0
                 self.mark_stacks = 0
+        # 湿身（易伤）状态到期自动清除
+        if self.wet_t > 0:
+            self.wet_t = max(0.0, self.wet_t - dt)
+            if self.wet_t <= 0:
+                self.wet_amp = 0.0
 
         if self.intro > 0:
             self.intro -= dt

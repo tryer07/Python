@@ -7,7 +7,7 @@
     "element": "樱",
     "growth": "均衡",
     "role": "assassin",
-    "desc": "来自樱花神域的蛇娘，性格温柔。等级越高，斩击越锋利。",
+    "desc": "来自樱花神域的蛇娘，性格温柔。普攻为三段「飞樱散华」：段3 散华命中必叠花瓣标记，叠满绽放；等级越高，斩击越锋利。",
     "story": "樱落诞生于樱花神域最深处的古树之下，是神域选中的守护者。每逢花期，她会沿着落樱铺成的小径巡视结界，尾尖扫过的地方，枯萎的枝条会重新抽芽。她待人温柔，却从不在守护之事上退让半步——神域的安宁，是她用一季又一季的花开花落守出来的。",
     "egg_lines": {
       "head": ["哎呀…被你摸到头了呢，花瓣都乱了。", "头…只许你一个人碰哦。"],
@@ -34,6 +34,20 @@
         {"id": "p_bloom_guard", "name": "花守", "desc": "击杀敌人有概率回复 1 点生命。", "color": [255, 190, 210], "vfx": "heal"},
         {"id": "p_sakura_mark", "name": "樱之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即绽放自爆伤害周围敌人。", "color": [255, 190, 215], "vfx": "markstack"}
       ]
+    },
+    "ranged": {
+      "name": "飞樱散华",
+      "range": 460,
+      "exit_range": 520,
+      "bullet_radius": 8,
+      "stages": [
+        {"count": 1, "spread_deg": 0, "speed": 820, "mult": 1.00, "life": 1.1, "curve": 0.0, "spin": 0.0, "trail": 0, "mark": 0},
+        {"count": 2, "spread_deg": 40, "speed": 700, "mult": 0.62, "life": 1.1, "curve": 1.5, "spin": 240.0, "trail": 0, "mark": 0},
+        {"count": 4, "spread_deg": 90, "speed": 560, "mult": 0.45, "life": 1.4, "curve": 0.0, "spin": 540.0, "trail": 1, "mark": 1}
+      ],
+      "hitstop": 0.08,
+      "shake_px": 2.0,
+      "shake_px_finisher": 3.0
     },
     "head": "characters/sakura/head.png",
     "full": "characters/sakura/full.png",
@@ -106,24 +120,45 @@
     },
     "kit": {
       "active": {
-        "id": "tide_dash2",
-        "name": "涌潮·踏",
-        "desc": "踏浪前冲并留下减速水痕；再按引爆水痕冻结周围敌人。",
-        "color": [120, 200, 255],
-        "vfx": "wave",
-        "key": 1
+        "id": "tide_domain",
+        "name": "潮汐领域",
+        "desc": "大招：展开 10s 领域，全场敌人湿身（受伤+20%）并减速 40%，刷新所有水域；契约剩余时长转化为全队护盾。",
+        "color": [180, 225, 255],
+        "vfx": "guard",
+        "key": 5
       },
       "actives": [
-        {"id": "tide_dash2", "type": "dash2", "name": "涌潮·踏", "key": 1, "color": [120, 200, 255], "vfx": "wave", "desc": "踏浪前冲并留下减速水痕；再按引爆水痕冻结周围敌人。"},
-        {"id": "tide_detonate", "type": "detonate", "name": "潮印", "key": 2, "color": [150, 215, 255], "vfx": "flame", "desc": "引爆范围内敌人的标记造成冻结爆发；无标记者叠上一层印记。"},
-        {"id": "tide_gather", "type": "gather", "name": "涡流引", "key": 3, "color": [110, 190, 250], "vfx": "wave", "desc": "掀起涡流把周围敌人拉向自己并减速冻结，叠上一层印记。"},
-        {"id": "tide_blade", "type": "blade", "name": "浪矢", "key": 4, "color": [130, 205, 255], "vfx": "star", "desc": "射出多道穿透水箭，叠印记并减速敌人。"},
-        {"id": "tide_channel", "type": "channel", "name": "海护", "key": 5, "color": [180, 225, 255], "vfx": "guard", "desc": "吟唱片刻（可移动）后获得护盾与伤害减免（坦克）。"}
+        {"id": "tide_handoff", "type": "tide_handoff", "name": "潮汐交接", "key": 1, "color": [150, 215, 255], "vfx": "guard", "desc": "凝出吸收量为自身最大生命 12% 的水幕护盾，持续 10s；切走时把剩余盾量的 60% 转移给登场队友。"},
+        {"id": "tide_zone", "type": "tide_zone", "name": "涌潮", "key": 2, "color": [120, 200, 255], "vfx": "wave", "desc": "在脚下铺开半径 8m 的水域，持续 8s：域内敌人减速 30%，己方减伤 15%、移速 20%。水域不随切人消失。"},
+        {"id": "tide_vortex", "type": "tide_vortex", "name": "漩涡", "key": 3, "color": [110, 190, 250], "vfx": "wave", "desc": "引导 2.5s 把周围敌人卷向自身；若引导结束时身处水域之上，引爆全场水域造成巨额伤害。引导中切人即中断，引爆须亲自回场。"},
+        {"id": "tide_contract", "type": "tide_contract", "name": "潮汐契约", "key": 4, "color": [130, 205, 255], "vfx": "star", "desc": "立下 8s 水之契约：期间出战角色普攻命中会召来水柱追击（潮汐攻击力 40%，内置 0.5s 冷却）。切到后台也持续生效。"},
+        {"id": "tide_domain", "type": "tide_domain", "name": "潮汐领域", "key": 5, "color": [180, 225, 255], "vfx": "guard", "desc": "大招：展开 10s 领域，全场敌人湿身（受伤+20%）并减速 40%，刷新所有水域；契约剩余时长转化为全队护盾。释放时须在场。"}
       ],
       "passives": [
-        {"id": "p_cold", "name": "寒流", "desc": "普攻命中附带减速效果。", "color": [150, 200, 255], "vfx": "slow"},
-        {"id": "p_tide_mark", "name": "潮之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即潮爆伤害周围敌人。", "color": [160, 215, 255], "vfx": "markstack"}
+        {"id": "p_backwave", "name": "后浪", "desc": "潮汐在后台时，出战角色受到的伤害降低 15%（强化达标后 20%）。", "color": [150, 200, 255], "vfx": "backwave"},
+        {"id": "p_wave_landing", "name": "踏浪登场", "desc": "在水域上切人时，登场角色获得 2s 移速 +20%、减伤 10%。", "color": [160, 215, 255], "vfx": "wavelanding"}
       ]
+    },
+    "melee": {
+      "name": "凝水潮鞭",
+      "range": 160,
+      "arc_deg": 120,
+      "finisher_radius": 100,
+      "exit_range": 200,
+      "windup": 0.16,
+      "hit_window": 0.14,
+      "recover": 0.30,
+      "recover_min": 0.15,
+      "idle_return": 0.15,
+      "hit_mult": 0.75,
+      "finisher_mult": 1.6,
+      "finisher_knock": 320,
+      "hitstop": 0.12,
+      "shake_px": 2.0,
+      "shake_px_finisher": 4.5,
+      "shield_pct": 0.01,
+      "shield_cap": 0.10,
+      "shield_time": 4.0
     },
     "head": "characters/lamia_tide/head.png",
     "full": "characters/lamia_tide/full.png",
@@ -131,7 +166,7 @@
     "body_seg": "characters/lamia_tide/body_seg.png",
     "tail_tip": "characters/lamia_tide/tail_tip.png",
     "level": 1,
-    "skill": "涌潮·踏",
+    "skill": "潮汐领域",
     "tint": [150, 200, 255]
   },
   {

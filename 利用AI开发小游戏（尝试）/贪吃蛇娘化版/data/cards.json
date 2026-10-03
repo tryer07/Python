@@ -13,6 +13,6 @@
     { "id": "p_regen",    "type": "passive", "stat": "regen",    "name": "生命涌流", "icon": "heal",   "color": [126, 206, 130], "desc": "持续再生：每秒回复少量生命" },
     { "id": "p_skilldmg", "type": "passive", "stat": "skilldmg", "name": "秘法共鸣", "icon": "flame",  "color": [255, 160, 120], "desc": "技能伤害 +15%（大招与连招）" },
     { "id": "p_range",    "type": "passive", "stat": "range",    "name": "鹰眼",     "icon": "wave",   "color": [200, 220, 140], "desc": "普攻索敌范围 +15%" },
-    { "id": "p_lifesteal","type": "passive", "stat": "lifesteal","name": "嗜血之牙", "icon": "heal",   "color": [255, 90, 120],  "desc": "造成伤害时有 25% 概率吸血，触发时转化 6%（可叠加）" }
+    { "id": "p_lifesteal","type": "passive", "stat": "lifesteal","name": "嗜血之牙", "icon": "heal",   "color": [255, 90, 120],  "desc": "造成伤害时有 25% 概率吸血，触发时转化 4%（可叠加）" }
   ]
 }

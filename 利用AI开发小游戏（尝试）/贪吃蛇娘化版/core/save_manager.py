@@ -3,6 +3,10 @@ import json
 import time
 from settings import SAVES_DIR, ENHANCE_MAX_LAYER, PARTY_MAX, HUMAN_FORM_ENHANCE_REQ
 
+# 详情页场景偏好里「专属场景」的哨兵键：专属场景不进 scenes.json，
+# 无法用场景 id 表示，单独给一个不会与真实 id 撞名的键。
+DETAIL_SCENE_EXCLUSIVE = "__exclusive__"
+
 
 class SaveManager:
     """管理游戏存档的读写（多存档槽）。
@@ -624,6 +628,25 @@ class SaveManager:
         prefs[char_id] = form
         self.set("form_prefs", prefs)
         return self.get_form_pref(char_id)
+
+    # ======================== 详情页场景偏好接口 ========================
+    def get_detail_scene(self, char_id):
+        """读某角色详情页上次主动选中的场景标识（scenes.json 的 id 或专属键）。
+
+        没选过 / 存档无此字段返回 None，由调用方回退默认。
+        """
+        prefs = self.data.get("detail_scenes")
+        if not isinstance(prefs, dict):
+            return None
+        v = prefs.get(char_id)
+        return v if isinstance(v, str) else None
+
+    def set_detail_scene(self, char_id, scene_key):
+        """记住某角色详情页选中的场景（玩家主动点 tab 时才调用）。"""
+        prefs = dict(self.data.get("detail_scenes") or {})
+        prefs[char_id] = scene_key
+        self.set("detail_scenes", prefs)
+        return scene_key
 
     def reset(self):
         self.data = json.loads(json.dumps(self.DEFAULT_SAVE))

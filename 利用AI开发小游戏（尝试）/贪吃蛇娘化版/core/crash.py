@@ -79,7 +79,7 @@ def report_crash(exc=None, context=""):
     tb = _tb_text(exc)
     _write_log(_header(context) + tb + "\n")
     _msgbox(
-        "贪吃蛇娘化版 · 出错了",
+        "鳞光纪 · 出错了",
         "游戏遇到未处理的异常。\n\n"
         f"错误摘要：{_summary(tb)}\n\n"
         f"完整日志已写到：\n{log_path()}\n\n"
@@ -93,7 +93,7 @@ def install_excepthook():
         text = "".join(traceback.format_exception(etype, value, tb))
         _write_log(_header("sys.excepthook") + text + "\n")
         _msgbox(
-            "贪吃蛇娘化版 · 出错了",
+            "鳞光纪 · 出错了",
             "游戏崩溃了。\n\n"
             f"错误摘要：{_summary(text)}\n\n"
             f"完整日志已写到：\n{log_path()}",

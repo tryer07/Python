@@ -18,6 +18,7 @@ import random
 import pygame
 
 from core.scene import Scene
+from core.save_manager import DETAIL_SCENE_EXCLUSIVE
 from ui.button import Button
 from game_logic.skills import SkillEngine
 from settings import (
@@ -60,11 +61,6 @@ class CharacterDetailScene(Scene):
         self.form_pref = save.get_form_pref(self.char_id)
 
         self.scenes = self._load_scenes()
-        cur_scene = save.get("selected_scene", "campus_garden")
-        self.scene_idx = 0
-        for i, sc in enumerate(self.scenes):
-            if sc.get("id") == cur_scene:
-                self.scene_idx = i
         # 专属场景（人形态带背景原图）：约定路径 characters/<id>/human_scene.png。
         # 不进 scenes.json（那是全局战斗地图表）、也不进 characters.json
         #（技能动作设计期正被并行编辑），缺文件自动隐藏该 tab。
@@ -72,9 +68,16 @@ class CharacterDetailScene(Scene):
         if not os.path.exists(os.path.join(
                 ASSETS_DIR, self.exclusive_rel.replace("/", os.sep))):
             self.exclusive_rel = None
-        self._excl_bg = None          # 专属场景模糊垫底（比屏幕大 12%，供慢漂移）
+        # 场景 tab 初值：该角色主动选过就记住并用它（含专属），否则跟随全局已选战斗场景
+        self.scene_idx = self._resolve_scene_idx(save)
+        self._excl_cache_key = None   # 专属场景背景层缓存键（屏幕尺寸）
+        self._excl_under = None       # 垫底层：cover + 强模糊，只露在完整图两侧黑边区
+        self._excl_sharp = None       # 主层：human_scene 原图 contain 完整显示
+        self._excl_sharp_rect = None  # 主落矩形（彩蛋热区按它三等分）
         self._excl_fx = []            # 专属场景动效粒子（前景花瓣 + 背景光斑）
         self._excl_sprites = {}       # 动效贴图缓存（含旋转步/透明度档）
+        self._excl_strips = None      # 窄留边补边：主层边缘拉伸条 [(surf, rect)]
+        self._gen_bg_cache = {}       # 通用场景 背景+压暗纱 合成缓存（按屏幕/场景）
         self._lock_hint = 0.0         # 未解锁提示倒计时
 
         self.time = 0.0
@@ -100,6 +103,10 @@ class CharacterDetailScene(Scene):
         # 整页预渲染放在进场景时就做完（与背景/立绘的首次加载归到同一笔），
         # 这样点「技能介绍」tab 是瞬时的，不会在页内切换时顿一下。
         self._build_skill_canvas()
+        # 专属场景背景层（解码 + contain + 补边）也放在进场景时做完，与技能
+        # 整页预渲染归同一笔加载开销：点「专属场景」tab 是瞬时的，不会顿一下。
+        if self.exclusive_rel:
+            self._exclusive_layers()
 
         self._build_buttons()
 
@@ -192,6 +199,24 @@ class CharacterDetailScene(Scene):
         return pygame.Rect(self.W - pw - self.s(40), self.s(120),
                            pw, self.H - self.s(240))
 
+    def _resolve_scene_idx(self, save):
+        """详情页场景 tab 初值：玩家在该角色页主动选过场景就记住并复用它
+        （含专属场景），没选过 / 记忆失效才回退全局已选战斗场景。"""
+        pref = save.get_detail_scene(self.char_id)
+        if pref == DETAIL_SCENE_EXCLUSIVE:
+            return len(self.scenes) if (self.exclusive_rel
+                                        and self.human_unlocked) else 0
+        if isinstance(pref, str):
+            for i, sc in enumerate(self.scenes):
+                if sc.get("id") == pref:
+                    return i
+            return 0
+        cur = save.get("selected_scene", "campus_garden")
+        for i, sc in enumerate(self.scenes):
+            if sc.get("id") == cur:
+                return i
+        return 0
+
     def _pick_scene(self, idx):
         if idx >= len(self.scenes) and not self.human_unlocked:
             # 专属场景 = 人形态内容，与人形态同属强化彩蛋，达标才开放
@@ -199,6 +224,10 @@ class CharacterDetailScene(Scene):
             self.game.audio.play("ui_click")
             return
         self.scene_idx = idx
+        # 记住本次主动选择：下次进该角色详情页直接停在这个 tab
+        key = (DETAIL_SCENE_EXCLUSIVE if idx >= len(self.scenes)
+               else self.scenes[idx].get("id"))
+        self.game.save_manager.set_detail_scene(self.char_id, key)
         self.game.audio.play("ui_click")
 
     def _on_deploy(self, slot):
@@ -304,9 +333,10 @@ class CharacterDetailScene(Scene):
         exclusive = self.exclusive_rel is not None \
             and self.scene_idx >= len(self.scenes)
         if exclusive:
-            # 专属场景：human_scene.png 带背景原图清晰铺满全屏当专属背景，
-            # 人物已含在背景插画里，故不再叠独立立绘（避免双人）；
-            # 动效 = 背景光斑（back）+ 前景花瓣（front）撒在背景图上。
+            # 专属场景：human_scene.png 带背景原图 contain 等比完整显示（不裁切，
+            # 场景与人物全部内容放出来），两侧留边用同图强模糊垫底衔接；
+            # 人物由背景插画自带，不再叠独立立绘（避免双人）；
+            # 动效 = 背景光斑（back）+ 前景花瓣（front）撒在画面上。
             self._draw_exclusive_bg(screen)
             self._draw_exclusive_fx(screen, back=True)
             self._set_exclusive_regions()
@@ -315,11 +345,7 @@ class CharacterDetailScene(Scene):
         else:
             sc = self.scenes[self.scene_idx]
             bg_path = sc.get("bg") or "backgrounds/campus_garden.png"
-            bg = self.assets.get_scaled(bg_path, width=self.W)
-            screen.blit(bg, (0, self.s(-40)))
-            veil = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
-            veil.fill((14, 12, 22, 178))
-            screen.blit(veil, (0, 0))
+            screen.blit(self._generic_bg(bg_path), (0, 0))
             # 通用场景：背景 + 压暗纱之后画全身立绘（专属分支里是 force_human）
             self._draw_pose(screen)
             sc_name = sc.get("name", "")
@@ -374,52 +400,141 @@ class CharacterDetailScene(Scene):
                                 rect.w, rect.height - third * 2),
         }
 
-    # ---- 专属场景：带背景原图清晰铺满 + 动效粒子 ----
-    def _exclusive_bg_surf(self):
-        """专属场景背景（构建一次缓存）：human_scene.png 带背景原图 cover 裁切
-        铺满全屏，比屏幕大 12% 供慢漂移。
-
-        旧版把方图强模糊成色块当垫底、再叠独立立绘，背景细节全丢、
-        观感只剩粒子。现按用户要求改为直接清晰展示专属背景插画，
-        人物由背景插画自带，粒子撒在其上。
+    # ---- 专属场景：原图完整显示（contain）+ 模糊垫边 + 动效粒子 ----
+    def _exclusive_layers(self):
+        """专属场景背景层（按屏幕尺寸缓存）：
+        sharp = human_scene.png 原图 contain 等比缩放居中，任何窗口分辨率 /
+        全屏下场景与人物都完整可见（旧版 cover 裁切会切掉头尾）；
+        under = 同图 cover 放大 + 强模糊 + 比屏幕大 12%，铺在黑边区做衔接垫底，
+        超宽 / 超窄窗口下屏幕不会被死黑块割裂。
         """
-        if self._excl_bg is not None:
-            return self._excl_bg
+        key = (self.W, self.H)
+        if self._excl_cache_key == key and self._excl_sharp is not None:
+            return self._excl_under, self._excl_sharp, self._excl_sharp_rect
         base = self.assets.get_image(self.exclusive_rel)
         w, h = base.get_size()
-        tw, th = int(self.W * 1.12), int(self.H * 1.12)
-        k = max(tw / w, th / h)
-        cover = pygame.transform.smoothscale(
-            base, (max(1, round(w * k)), max(1, round(h * k))))
-        cw, ch = cover.get_size()
-        cover = cover.subsurface(
-            pygame.Rect((cw - tw) // 2, (ch - th) // 2, tw, th)).copy()
-        self._excl_bg = cover
-        return cover
+        # 主层：contain 等比，完整放进来居中
+        k = min(self.W / w, self.H / h)
+        sw, sh = max(1, round(w * k)), max(1, round(h * k))
+        sharp = pygame.transform.smoothscale(base, (sw, sh))
+        rect = sharp.get_rect(center=(self.W // 2, self.H // 2))
+        # 留边衔接分两档：窄边（<=6%，16:9 宽图在 16:9 屏的常态）用主层边缘
+        # 像素拉伸补边，每帧省一次全屏垫底 blit 和几十 MB 缓存；宽边（超宽 /
+        # 超窄窗口）回退同图 cover + 强模糊垫底，内容永不裁切。
+        strips = self._edge_strips(sharp, rect)
+        under = None
+        if strips is None:
+            tw, th = int(self.W * 1.12), int(self.H * 1.12)
+            ku = max(tw / w, th / h)
+            under = pygame.transform.smoothscale(
+                base, (max(1, round(w * ku)), max(1, round(h * ku))))
+            under = under.subsurface(pygame.Rect(
+                (under.get_width() - tw) // 2, (under.get_height() - th) // 2,
+                tw, th)).copy()
+            under = pygame.transform.smoothscale(under, (tw // 8, th // 8))
+            under = pygame.transform.smoothscale(under, (tw, th))
+        # 压暗纱在缓存构建时烘进各层（旧写法每帧建全屏半透明画布再 blit，
+        # 是已知的隐蔽掉帧源）。
+        self._bake_veil(sharp, 56)
+        if under is not None:
+            self._bake_veil(under, 56)
+        else:
+            for surf, _r in strips:
+                self._bake_veil(surf, 56)
+        self._excl_cache_key = key
+        self._excl_under = under
+        self._excl_strips = strips
+        self._excl_sharp = sharp
+        self._excl_sharp_rect = rect
+        return under, sharp, rect
+
+    def _edge_strips(self, sharp, rect):
+        """窄留边补边：主层上下（或左右）边缘像素条拉伸铺满留边区（补边不碰
+        画面内容）。留边超过 6% 时拉伸观感差，返回 None 由调用方回退模糊垫底。"""
+        sw, sh = sharp.get_size()
+        strips = []
+        if rect.height < self.H:
+            top, bot = rect.y, self.H - rect.bottom
+            if max(top, bot) > self.H * 0.06:
+                return None
+            src_h = max(2, sh // 64)
+            if top > 0:
+                strips.append((self._soft_strip(pygame.transform.smoothscale(
+                    sharp.subsurface(pygame.Rect(0, 0, sw, src_h)), (sw, top))),
+                    pygame.Rect(rect.x, 0, sw, top)))
+            if bot > 0:
+                strips.append((self._soft_strip(pygame.transform.smoothscale(
+                    sharp.subsurface(pygame.Rect(0, sh - src_h, sw, src_h)), (sw, bot))),
+                    pygame.Rect(rect.x, rect.bottom, sw, bot)))
+        elif rect.width < self.W:
+            left, right = rect.x, self.W - rect.right
+            if max(left, right) > self.W * 0.06:
+                return None
+            src_w = max(2, sw // 64)
+            if left > 0:
+                strips.append((self._soft_strip(pygame.transform.smoothscale(
+                    sharp.subsurface(pygame.Rect(0, 0, src_w, sh)), (left, sh))),
+                    pygame.Rect(0, rect.y, left, sh)))
+            if right > 0:
+                strips.append((self._soft_strip(pygame.transform.smoothscale(
+                    sharp.subsurface(pygame.Rect(sw - src_w, 0, src_w, sh)), (right, sh))),
+                    pygame.Rect(rect.right, rect.y, right, sh)))
+        return strips
+
+    @staticmethod
+    def _soft_strip(surf):
+        """补边条两级缩放柔化（免单向拉伸出现条纹感），缓存时一次性。"""
+        w, h = surf.get_size()
+        d = pygame.transform.smoothscale(surf, (max(1, w // 4), max(1, h // 4)))
+        return pygame.transform.smoothscale(d, (w, h))
+
+    @staticmethod
+    def _bake_veil(surf, alpha):
+        """压暗纱烘进图层（缓存构建时一次性），取代每帧全屏半透明 blit。"""
+        veil = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        veil.fill((14, 12, 22, alpha))
+        surf.blit(veil, (0, 0))
+
+    def _generic_bg(self, bg_path):
+        """通用场景 背景+压暗纱 合成层（按屏幕尺寸/场景缓存）：背景是静态的，
+        合成一次每帧只做一次不透明 blit。"""
+        key = (self.W, self.H, bg_path)
+        hit = self._gen_bg_cache.get(key)
+        if hit is not None:
+            return hit
+        bg = self.assets.get_scaled(bg_path, width=self.W)
+        comp = pygame.Surface((self.W, self.H))
+        comp.blit(bg, (0, self.s(-40)))
+        self._bake_veil(comp, 178)
+        if len(self._gen_bg_cache) > 8:
+            self._gen_bg_cache.clear()
+        self._gen_bg_cache[key] = comp
+        return comp
 
     def _draw_exclusive_bg(self, screen):
-        """背景慢漂移（呼吸感平移）+ 极轻压暗纱（保标题/面板可读，不糊背景）。"""
-        bg = self._exclusive_bg_surf()
-        mx = (bg.get_width() - self.W) // 2
-        my = (bg.get_height() - self.H) // 2
-        ox = int(math.sin(self.time * 0.10) * mx * 0.8)
-        oy = int(math.cos(self.time * 0.07) * my * 0.8)
-        screen.blit(bg, (-mx + ox, -my + oy))
-        veil = pygame.Surface((self.W, self.H), pygame.SRCALPHA)
-        veil.fill((14, 12, 22, 56))
-        screen.blit(veil, (0, 0))
+        """宽留边垫底慢漂移（呼吸感）/ 窄留边补边 -> 完整图居中。
+        压暗纱已在缓存时烘进各层，每帧不再全屏半透明 blit。"""
+        under, sharp, rect = self._exclusive_layers()
+        if under is not None:
+            mx = (under.get_width() - self.W) // 2
+            my = (under.get_height() - self.H) // 2
+            ox = int(math.sin(self.time * 0.10) * mx * 0.8)
+            oy = int(math.cos(self.time * 0.07) * my * 0.8)
+            screen.blit(under, (-mx + ox, -my + oy))
+        else:
+            for surf, r in self._excl_strips:
+                screen.blit(surf, r)
+        screen.blit(sharp, rect)
 
     def _set_exclusive_regions(self):
-        """专属场景彩蛋热区：人物在背景插画里居中，取居中竖带三等分=头/身/尾。"""
-        x0, x1 = int(self.W * 0.28), int(self.W * 0.72)
-        y0, y1 = int(self.H * 0.08), int(self.H * 0.96)
-        w = x1 - x0
-        h = y1 - y0
-        third = h // 3
+        """专属场景彩蛋热区：人物在背景插画里居中，按完整显示矩形竖直三等分
+        = 头 / 身 / 尾；热区跟随 contain 矩形，任何分辨率下都点得准。"""
+        r = self._excl_sharp_rect or pygame.Rect(0, 0, self.W, self.H)
+        third = r.height // 3
         self._regions = {
-            "head": pygame.Rect(x0, y0, w, third),
-            "body": pygame.Rect(x0, y0 + third, w, third),
-            "tail": pygame.Rect(x0, y0 + third * 2, w, h - third * 2),
+            "head": pygame.Rect(r.x, r.y, r.w, third),
+            "body": pygame.Rect(r.x, r.y + third, r.w, third),
+            "tail": pygame.Rect(r.x, r.y + third * 2, r.w, r.height - third * 2),
         }
 
     def _seed_excl_fx(self):

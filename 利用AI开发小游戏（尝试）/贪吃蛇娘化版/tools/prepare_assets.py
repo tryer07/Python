@@ -108,20 +108,36 @@ SKILL_FX = [
 # battle 按「技能键 + 当前形态」查表做交叉淡入淡出；没图的角色完全不受影响。
 CAST_POSES = [
     ("mint", "lamia_mint", 5),
+    # 潮汐「切人五技能」双形态姿势：源图同为浅灰净底（亮度实测 178~234），
+    # 与潮汐普攻同画像，用 TIDE_INK（ink_lum=174）避免整片底被当线稿屏障。
+    ("tide", "lamia_tide", 5, "TIDE_CAST_INK"),
 ]
 # 姿势图抠图参数：风环白芯与净底几乎同色，颜色泛洪必败，走线稿屏障；
 # 风环/刃扇与本体可能不连通，收尾用 keep_big 保块（只清碎斑不删特效）。
 CAST_INK = dict(ink_lum=215, ink_sat=26, seal=2,
                 rim_passes=2, rim_lum=228, rim_sat=18, keep_frac=0.002)
 
-# 普攻连击姿势立绘表：(源图短键, 角色 id, 段号元组)。
+# 普攻连击姿势立绘表：(源图短键, 角色 id, 段号元组[, 抠图 ink 覆写])。
 # 源图约定 assets/characters/{短键}_src_{atk|hatk}{段}.png，产物输出到
 # assets/characters/{角色 id}/atk_{段}.png（蛇形态）/ atk_human_{段}.png（人形态）。
 # 只配首尾两段（1 挥爪 / 3 收尾）：第 2 段由 battle 镜像第 1 段得到。
 # 没图的角色返回空表，普攻仍走弹丸，零影响。
 ATK_POSES = [
     ("mint", "lamia_mint", (1, 3)),
+    # 潮汐「凝水潮鞭」：1 挥鞭横扫 / 3 重水砸地（第 2 段由 battle 镜像第 1 段）；
+    # 源图为浅灰净底 + 大圈水花特效，与薄荷同画像（线稿屏障 + keep_big 保块）。
+    ("tide", "lamia_tide", (1, 3), "TIDE_INK"),
+    # 樱落「飞樱散华」：1 指尖送单瓣 / 3 袖出花瓣雨（第 2 段由 battle 镜像第 1 段）；
+    # 源图同为浅灰白净底（#B8BCC0，亮度约 188），用 TIDE_INK 避免整片底被当屏障。
+    ("sakura", "sakura", (1, 3), "TIDE_INK"),
 ]
+# 潮汐源图净底是偏暗的浅灰（边框亮度实测 178~234，CAST_INK 的 ink_lum=215
+# 会把整片底误判成线稿屏障导致泛洪进不去）：ink_lum 压到边框最低亮度以下，
+# 底色全部可泛洪；深色描边（lum<174）与彩色主体（sat>26）仍是屏障。
+TIDE_INK = dict(CAST_INK, ink_lum=174)
+# 潮汐 cast_3 源图是纵向渐变灰底，漩涡围出的整片底用单一 bgm 判不掉，
+# 开 grad_hole 走逐行边框均值的渐变孔清理（仅释放姿势，普攻姿势不动）。
+TIDE_CAST_INK = dict(TIDE_INK, grad_hole=True)
 
 
 def strip_checker_bg(im, tol=26, min_frac=0.0005, grow=2, bg_color=None, bg_tol=24,
@@ -633,7 +649,8 @@ def strip_glow_halo(im, smooth_step=10, min_lum=170, max_depth=0, seed_sat=40,
 
 def strip_by_outline(im, ink_lum=215, ink_sat=26, seal=2, rim_passes=2,
                      rim_lum=228, rim_sat=18, hole_tol=4, hole_std=2.0,
-                     min_hole_frac=0.0011, min_frac=0.02, keep_frac=0.0):
+                     min_hole_frac=0.0011, min_frac=0.02, keep_frac=0.0,
+                     grad_hole=False):
     """
     「线稿屏障」抠图：适合浅色主体 + 浅色净底 + 外圈柔光晕（月见）。
 
@@ -796,6 +813,78 @@ def strip_by_outline(im, ink_lum=215, ink_sat=26, seal=2, rim_passes=2,
             holes += len(blobset)
     if holes:
         print(f"   [透空孔] 清掉封闭底色块 {holes} px")
+    # 渐变底封闭大孔：单一 bgm 盖不住纵向渐变（潮汐 cast_3 漩涡围出的整片
+    # 灰底），改用「blob 覆盖行的边框均值」逐行估计背景。面积/平坦/行匹配
+    # 三重守卫：只吃 4%~30% 的中性灰平坦大块，主体彩发/白沫/鳞尾不达标幸免。
+    if grad_hole:
+        row_bg = []
+        for y in range(h):
+            lc, rc = px[0, y][:3], px[w - 1, y][:3]
+            row_bg.append(((lc[0] + rc[0]) / 2.0, (lc[1] + rc[1]) / 2.0,
+                           (lc[2] + rc[2]) / 2.0))
+
+        def grayish(x, y):
+            if px[x, y][3] <= 8:
+                return False
+            c = px[x, y][:3]
+            if max(c) - min(c) > 16:
+                return False
+            return 130 <= (c[0] + c[1] + c[2]) / 3.0 <= 215
+
+        seen2 = [[False] * h for _ in range(w)]
+        cleared = 0
+        for sy in range(h):
+            for sx in range(w):
+                if seen2[sx][sy] or not grayish(sx, sy):
+                    continue
+                blob = [(sx, sy)]
+                seen2[sx][sy] = True
+                sr = sg = sb = 0.0
+                slum = []
+                dq = deque([(sx, sy)])
+                while dq:
+                    x, y = dq.popleft()
+                    c = px[x, y][:3]
+                    sr += c[0]
+                    sg += c[1]
+                    sb += c[2]
+                    slum.append((c[0] + c[1] + c[2]) / 3.0)
+                    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < w and 0 <= ny < h and not seen2[nx][ny] \
+                                and grayish(nx, ny):
+                            seen2[nx][ny] = True
+                            blob.append((nx, ny))
+                            dq.append((nx, ny))
+                n = len(blob)
+                # 大块=漩涡围出的整片底；小块=发丝/水臂夹出的底口袋。
+                # 小块用更紧的行匹配容差，防误吃主体上的中性阴影像素。
+                if not (w * h * 0.001 <= n <= w * h * 0.30):
+                    continue
+                m = sum(slum) / n
+                std = (sum((v - m) ** 2 for v in slum) / n) ** 0.5
+                # 渐变底本身带纵向亮度坡度，平坦度只作宽松上限（挡纹理主体），
+                # 真正区分灰底/主体靠下面的「行背景均值匹配」。
+                if std > 40:
+                    continue
+                ys = [yy for _xx, yy in blob]
+                y0, y1 = min(ys), max(ys)
+                er = eg = eb = 0.0
+                for y in range(y0, y1 + 1):
+                    er += row_bg[y][0]
+                    eg += row_bg[y][1]
+                    eb += row_bg[y][2]
+                cnt = y1 - y0 + 1
+                est = (er / cnt, eg / cnt, eb / cnt)
+                tol = 18 if n >= w * h * 0.04 else 10
+                if max(abs(sr / n - est[0]), abs(sg / n - est[1]),
+                       abs(sb / n - est[2])) <= tol:
+                    for x, y in blob:
+                        r, g, b, _ = px[x, y]
+                        px[x, y] = (r, g, b, 0)
+                    cleared += n
+        if cleared:
+            print(f"   [渐变孔] 清掉封闭灰底 {cleared} px")
     # 削掉贴屏障残留的亮低饱和光晕 rim（仅与透明区相邻的边缘像素）
     for _ in range(rim_passes):
         rim = []
@@ -1664,27 +1753,31 @@ def main():
             fail += 1
 
     # 技能释放姿势立绘：线稿屏障抠图 + 保块 + 填针孔 + 裁边 + 缩放
-    for key, cid, n in (CAST_POSES if want("poses") else []):
+    for entry in (CAST_POSES if want("poses") else []):
+        key, cid, n = entry[0], entry[1], entry[2]
+        ink = globals().get(entry[3], CAST_INK) if len(entry) > 3 else CAST_INK
         cdir = os.path.join(AST, "characters", cid)
         for k in range(1, n + 1):
             for tag, name in (("cast", f"cast_{k}.png"),
                               ("hcast", f"cast_human_{k}.png")):
                 src = os.path.join(AST, f"characters/{key}_src_{tag}{k}.png")
                 if _process(src, os.path.join(cdir, name), (768, 960),
-                            False, True, "none", ink=CAST_INK):
+                            False, True, "none", ink=ink):
                     ok += 1
                 else:
                     fail += 1
 
     # 普攻连击姿势立绘：与释放姿势同画像（浅色主体+掌风/风环特效），复用同一套参数
-    for key, cid, stages in (ATK_POSES if want("poses") else []):
+    for entry in (ATK_POSES if want("poses") else []):
+        key, cid, stages = entry[0], entry[1], entry[2]
+        ink = globals().get(entry[3], CAST_INK) if len(entry) > 3 else CAST_INK
         cdir = os.path.join(AST, "characters", cid)
         for k in stages:
             for tag, name in (("atk", f"atk_{k}.png"),
                               ("hatk", f"atk_human_{k}.png")):
                 src = os.path.join(AST, f"characters/{key}_src_{tag}{k}.png")
                 if _process(src, os.path.join(cdir, name), (768, 960),
-                            False, True, "none", ink=CAST_INK):
+                            False, True, "none", ink=ink):
                     ok += 1
                 else:
                     fail += 1

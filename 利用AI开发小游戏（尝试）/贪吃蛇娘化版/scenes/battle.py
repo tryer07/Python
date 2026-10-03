@@ -67,6 +67,7 @@ CAST_POSE_H_MULT = 1.15   # 姿势立绘高 / idle 立绘高
 ATK_POSE_IN = 0.06        # 普攻姿势淡入段（秒）：跟爪风节拍的快淡入
 ATK_POSE_OUT = 0.12       # 普攻姿势淡出段（秒）：收尾后摇内收完（姿势含风环等特效，
                           # 放大一点人物本体才与 idle 同尺度，衔接不跳变）
+_SHAKE_PX_DIV = 14.0      # 规格书「震屏像素」→ shake 值换算：draw 端位移 = shake × s(14)
 
 
 def _seg_dist(px, py, x1, y1, x2, y2):
@@ -223,6 +224,12 @@ class BattleScene(Scene):
         # 开局一次性提示：双人局教「切人」，人形态已解锁的再教「V 切形态」
         self.switch_hint_t = 6.0 if (len(self.party) > 1 or any(
             self._form_available(m) for m in self.party)) else 0.0
+        # 近战数据驱动规格 / 顿帧计时：必须在 _activate 之前初始化——
+        # _activate 会按活跃成员把 melee_cfg 指向其规格块，之后不能再被覆盖。
+        self.melee_cfg = None
+        self.ranged_cfg = None
+        self.ranged_engaged = False
+        self.hitstop_t = 0.0
         self._activate(0, teleport=False)
 
         self.skill_toast = []
@@ -246,6 +253,13 @@ class BattleScene(Scene):
         self.rally_color = (255, 200, 220)   # 鼓舞增益期间脚下光环的配色
         self.regen_acc = 0.0             # 生命再生卡的小数累加
         self._ls_acc = 0.0               # 吸血回血的飘字节流累加
+        # ---- 潮汐·切人联动场景级持久态（_activate 切人不清，随各自计时自然到期）----
+        self.zones = []                  # 涌潮水域：[{"x","y","r","t","max_t","enemy_slow"}]
+        self.contract = None             # 潮汐契约：{"t","dmg","cd","inner_cd"}
+        self.domain = None               # 潮汐领域：{"t","wet","slow"}
+        self.handoff_holder = None       # 潮汐交接盾的持有成员（切走时转移给登场者）
+        self.handoff_transfer = S.TIDE_HANDOFF_TRANSFER  # 交接盾转移比例（满级 0.75）
+        self.landing_t = 0.0             # 踏浪登场增益剩余秒（移速+减伤）
 
         # ---- 实体容器 ----
         self.drops = []
@@ -498,6 +512,8 @@ class BattleScene(Scene):
             "full": char.get("full") or "",
             "cast": self._cast_pose_paths(char),
             "atk": self._atk_pose_paths(char),
+            "melee": char.get("melee") or None,
+            "ranged": char.get("ranged") or None,
         }
 
     # ================================================================ 出战编队
@@ -636,9 +652,15 @@ class BattleScene(Scene):
         self.cast_pose = None          # 切人即断掉上一位的释放动作
         self._prewarm_cast_poses()
         self.char_atk_poses = skin["atk"]
-        # 配了普攻姿势立绘 = 近战爪风连击普攻；没配的角色走弹丸普攻
-        self.melee_atk = bool(self.char_atk_poses["lamia"]
-                              or self.char_atk_poses["human"])
+        # 数据驱动远程三段（樱落「飞樱散华」）：配了 ranged 块走远程连段路径
+        self.ranged_cfg = self._norm_ranged_cfg(skin.get("ranged"))
+        self.ranged_engaged = False    # 远程追击迟滞：进 range 开火后才咬住目标
+        # 配了普攻姿势立绘且无远程规格 = 近战爪风连击；都没配的角色走弹丸普攻
+        self.melee_atk = (self.ranged_cfg is None) and bool(
+            self.char_atk_poses["lamia"] or self.char_atk_poses["human"])
+        # 数据驱动近战规格（潮汐「凝水潮鞭」）：没配 melee 块的角色走薄荷 legacy 常量
+        self.melee_cfg = self._norm_melee_cfg(skin.get("melee"))
+        self.hitstop_t = 0.0
         self.atk_combo = None          # 切人即断掉上一位的连击
         self._prewarm_atk_poses()
         # 近战斩击贴图（可选）：effects/melee/<prefix>_atk_{human,lamia}.png，
@@ -666,9 +688,20 @@ class BattleScene(Scene):
 
     def _switch_to(self, idx, cd=0.0, iframe=0.0, text=""):
         """实际切人：重指向视图 + 切换 CD + 新活跃者无敌帧 + 飘字反馈。"""
+        prev = self.party[self.active_idx] if self.party else None
         self._activate(idx)
         self.switch_cd = max(0.0, cd)
         sn = self.snake
+        # 潮汐·潮汐交接：切走者若持交接盾，把剩余盾量按 transfer 比例转移给登场者
+        if prev is not None and prev is self.handoff_holder:
+            self._transfer_handoff_shield(prev, self.party[self.active_idx])
+        # 潮汐·踏浪登场：登场者落在水域上（且编队带该被动）则给短时移速+减伤
+        self.landing_t = 0.0
+        if (self.zones and self._pos_in_zone(sn.pos[0], sn.pos[1])
+                and self._party_has_passive("p_wave_landing")):
+            self.landing_t = S.PASSIVE_WAVE_LANDING_TIME
+            self._float("踏浪登场!", sn.pos[0], sn.pos[1] - self.s(92),
+                        (160, 215, 255), 26)
         if iframe > 0:
             sn.invincible = max(sn.invincible, iframe)
         sn.hurt_t = 0.0
@@ -750,7 +783,14 @@ class BattleScene(Scene):
     def player_speed(self):
         # 薄荷「疾风连闪」主动释放后的短时移速爆发
         burst = S.GALE_SPEED_MULT if self.skills.gale_active else 1.0
-        return S.PLAYER_SPEED * self.S * self.stats["speed"] * burst
+        mult = burst
+        # 潮汐·涌潮水域：己方站在其中移速 +20%
+        if self._active_in_zone():
+            mult *= (1.0 + S.TIDE_ZONE_ALLY_SPEED)
+        # 潮汐·踏浪登场：在水域上切人后短时移速 +20%
+        if getattr(self, "landing_t", 0.0) > 0:
+            mult *= (1.0 + S.PASSIVE_WAVE_LANDING_SPEED)
+        return S.PLAYER_SPEED * self.S * self.stats["speed"] * mult
 
     @property
     def player_damage(self):
@@ -902,6 +942,10 @@ class BattleScene(Scene):
             return
         # 卡顿尖峰钳制 dt：避免一帧跨度过大导致穿模/数值爆炸，手感更稳
         dt = min(dt, S.DT_MAX)
+        # 顿帧（hitstop）：重击命中瞬间冻结全世界逻辑，渲染照常 → 打击感
+        if self.hitstop_t > 0:
+            self.hitstop_t = max(0.0, self.hitstop_t - dt)
+            dt = 0.0
 
         self.elapsed += dt
         self._update_bgm(dt)
@@ -932,6 +976,7 @@ class BattleScene(Scene):
         self._update_channel(dt)
         self._update_gusts(dt)
         self._update_fx_sprites(dt)
+        self._update_tide_fields(dt)
         # 生命再生：血条制下直接把 regen*dt 累加进 hp（浮点），整数变化时飘字
         regen = self.stats.get("regen", 0.0)
         if regen > 0 and self.snake.alive and self.snake.hp < self.snake.hp_max:
@@ -1052,6 +1097,9 @@ class BattleScene(Scene):
         if self.melee_atk:
             self._auto_attack_melee(dt)
             return
+        if self.ranged_cfg is not None:
+            self._auto_attack_ranged(dt)
+            return
         self.snake.atk_timer -= dt
         if self.snake.atk_timer > 0:
             return
@@ -1079,6 +1127,9 @@ class BattleScene(Scene):
         循环结束进后摇段（复用 atk_interval，等级成长与攻速卡都压缩它）；
         任意技能可强取消后摇（见 _cancel_atk_recover）。
         """
+        if self.melee_cfg is not None:
+            self._auto_attack_melee_cfg(dt)
+            return
         cb = self.atk_combo
         if cb is not None and cb["recover"] > 0:
             cb["recover"] -= dt
@@ -1138,10 +1189,380 @@ class BattleScene(Scene):
         else:
             self._damage_boss(dmg, color=(150, 240, 190))
 
+    # ------------------------------------------------------------ 数据驱动近战（潮汐）
+    @staticmethod
+    def _norm_melee_cfg(raw):
+        """规整 characters.json 的 melee 规格块：缺项补默认，非法返回 None。
+
+        没配 melee 块的角色（如薄荷）返回 None → 走上面的 legacy 常量路径，零影响。
+        """
+        if not isinstance(raw, dict):
+            return None
+        cfg = dict(raw)
+        defaults = {
+            "range": 160.0, "arc_deg": 120.0, "finisher_radius": 100.0,
+            "exit_range": 200.0,
+            "windup": 0.16, "hit_window": 0.14, "recover": 0.30,
+            "recover_min": 0.15, "idle_return": 0.15,
+            "hit_mult": 0.75, "finisher_mult": 1.6, "finisher_knock": 320.0,
+            "hitstop": 0.12, "shake_px": 2.0, "shake_px_finisher": 4.5,
+            "shield_pct": 0.01, "shield_cap": 0.10, "shield_time": 4.0,
+        }
+        for k, v in defaults.items():
+            try:
+                cfg[k] = float(cfg.get(k, v))
+            except (TypeError, ValueError):
+                cfg[k] = v
+        return cfg
+
+    def _melee_recover_secs(self, cfg):
+        """收势段实际时长：攻速加成只压收势（recover），最低压到 recover_min。"""
+        ratio = min(1.0, self.atk_interval / S.ATK_INTERVAL_BASE)
+        return max(cfg["recover_min"], cfg["recover"] * ratio)
+
+    def _auto_attack_melee_cfg(self, dt):
+        """数据驱动三段连击（潮汐「凝水潮鞭」）：起手→命中→收势→回 idle。
+
+        · 命中帧在起手结束后准时结算（扇形/环形见 _melee_swing_cfg）；
+        · 攻速只压收势段；第 3 段附加顿帧 + 强震屏；
+        · 追击迟滞：进 range 开打、退 exit_range 才脱战，防边界抖动；
+        · 任意技能可强取消收势（见 _cancel_atk_recover）。
+        """
+        cfg = self.melee_cfg
+        rmult = self.stats.get("range", 1.0)
+        cb = self.atk_combo
+        if cb is not None:
+            # 迟滞退出：连击中目标全部退出 exit_range 才收招，避免边界反复起收
+            if self._nearest_target(max_range=cfg["exit_range"] * self.S * rmult) is None:
+                self.atk_combo = None
+                self.snake.atk_timer = 0.05
+                return
+            cb["t"] += dt
+            hit_at = cfg["windup"]
+            if not cb["hit_done"] and cb["t"] >= hit_at:
+                cb["hit_done"] = True
+                self._melee_swing_cfg(cb["stage"])
+            total = (cfg["windup"] + cfg["hit_window"]
+                     + cb["recover_max"] + cfg["idle_return"])
+            if cb["t"] >= total:
+                cb["stage"] = cb["stage"] % 3 + 1
+                cb["t"] = 0.0
+                cb["hit_done"] = False
+                cb["recover_max"] = self._melee_recover_secs(cfg)
+            return
+        self.snake.atk_timer -= dt
+        if self.snake.atk_timer > 0:
+            return
+        rng = cfg["range"] * self.S * rmult
+        if self._nearest_target(max_range=rng) is None:
+            self.snake.atk_timer = 0.06
+            return
+        self.atk_combo = {"t": 0.0, "stage": 1, "hit_done": False,
+                         "recover": 0.0,
+                         "recover_max": self._melee_recover_secs(cfg)}
+
+    def _melee_swing_cfg(self, stage):
+        """单段结算：1/2 段扇形横扫（120°/4 身位），3 段 360° 环形砸地带击退。
+
+        命中为自身叠 1% 最大生命护盾（上限 10%）；3 段附加顿帧 + 强震屏。
+        """
+        cfg = self.melee_cfg
+        sn = self.snake
+        px, py = sn.pos
+        rmult = self.stats.get("range", 1.0)
+        # 挥向：锁最近目标，没有就朝当前面向（空挥也出特效，节拍不断）
+        tgt = self._nearest_target(max_range=cfg["exit_range"] * self.S * rmult)
+        if tgt is not None:
+            _kind, obj = tgt
+            ang = math.atan2(obj.pos[1] - py, obj.pos[0] - px)
+        else:
+            ang = math.atan2(sn.aim_dir[1], sn.aim_dir[0])
+        if stage == 3:
+            radius = cfg["finisher_radius"] * self.S * rmult
+            half = None                       # 360° 环形
+        else:
+            radius = cfg["range"] * self.S * rmult
+            half = math.radians(cfg["arc_deg"]) / 2.0
+        hits = []
+        for m in self.mobs:
+            if not m.alive:
+                continue
+            dx, dy = m.pos[0] - px, m.pos[1] - py
+            d = math.hypot(dx, dy)
+            if d > radius + m.radius:
+                continue
+            # 贴身的目标不看角度（都糊在脸上了还挑扇形方位太苛刻）
+            if half is not None and d > m.radius + self.s(12):
+                da = abs((math.atan2(dy, dx) - ang + math.pi) % math.tau - math.pi)
+                if da > half:
+                    continue
+            hits.append(("mob", m))
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - px, by - py) <= radius + self.boss.radius_px:
+                hits.append(("boss", self.boss))
+        self._fx_melee_swing(px, py, ang, stage)
+        self.game.audio.play("swipe", throttle=0.04)
+        shake_px = cfg["shake_px_finisher"] if stage == 3 else cfg["shake_px"]
+        self.shake = max(self.shake, shake_px / _SHAKE_PX_DIV)
+        if stage == 3 and cfg["hitstop"] > 0:
+            self.hitstop_t = max(self.hitstop_t, cfg["hitstop"])
+        if not hits:
+            return
+        dmg = self.player_damage * cfg["hit_mult"]
+        if stage == 3:
+            dmg *= cfg["finisher_mult"]
+        dmg = max(1, int(round(dmg)))
+        for kind, obj in hits:
+            if kind == "mob":
+                m = obj
+                self._hurt_mob(m, dmg, m.pos[0], m.pos[1],
+                               color=(120, 200, 255), spark=6)
+                self._apply_onhit_passive(m)
+                if stage == 3 and m.alive:
+                    m.knockback(sn.pos, cfg["finisher_knock"])
+            else:
+                self._damage_boss(dmg, color=(120, 200, 255))
+        # 潮汐契约：普攻命中触发水柱追击（内置 CD 限流，见 _try_contract_proc）
+        if self.contract is not None:
+            _k, _o = hits[0]
+            self._try_contract_proc(_o.pos[0], _o.pos[1])
+        # 命中叠盾：每次命中 +1% 最大生命吸收池，封顶 10%（时限滚动刷新）
+        if cfg["shield_pct"] > 0 and sn.alive:
+            cap = sn.hp_max * cfg["shield_cap"]
+            sn.shield_pool = min(cap, sn.shield_pool + sn.hp_max * cfg["shield_pct"])
+            sn.shield_t = max(sn.shield_t, cfg["shield_time"])
+
+    def _fx_melee_swing(self, x, y, ang, stage):
+        """潮汐普攻特效：只用 tide_atk_{lamia,human} 两贴图及镜像/缩放变体。
+
+        1/2 段=弧痕扫掠（第 2 段水平镜像 → 反向回扫）；3 段=踏地涌浪环扩散；
+        双缺图回退矢量掌风（同薄荷），绝不拿技能级特效充数。
+        """
+        cfg = self.melee_cfg
+        am = self.party[self.active_idx]
+        form = "human" if (self.char_human and am["form"] == "human") else "lamia"
+        rels = getattr(self, "_melee_fx_rel", {})
+        if stage == 3:
+            rel = rels.get(form) or rels.get("lamia") or rels.get("human")
+            if rel is None:
+                r = self.s(cfg["finisher_radius"])
+                life = 0.30
+                self.effects.append({"type": "slash", "x": x, "y": y, "r": r,
+                                     "ang": ang, "half": math.pi,
+                                     "color": (120, 200, 255),
+                                     "life": life, "max_life": life})
+                return
+            size = self.s(cfg["finisher_radius"]) * 2.6
+            life = 0.42
+            self.effects.append({
+                "type": "melee_tex", "kind": "ring", "rel": rel, "form": form,
+                "ang": ang, "x": x, "y": y, "size": size,
+                "color": (120, 200, 255), "life": life, "max_life": life})
+            return
+        rel = rels.get("lamia") or rels.get("human")
+        if rel is None:
+            r = self.s(cfg["range"] * 0.62)
+            life = 0.20
+            self.effects.append({"type": "slash", "x": x, "y": y, "r": r,
+                                 "ang": ang, "half": math.radians(cfg["arc_deg"]) / 2,
+                                 "color": (120, 200, 255),
+                                 "life": life, "max_life": life})
+            return
+        dist = self.s(cfg["range"]) * 0.45
+        size = self.s(cfg["range"]) * 1.8
+        life = 0.34
+        self.effects.append({
+            "type": "melee_tex", "kind": "arc", "rel": rel, "form": form,
+            "flip": stage == 2, "ang": ang,
+            "x": x + math.cos(ang) * dist, "y": y + math.sin(ang) * dist,
+            "size": size, "color": (120, 200, 255),
+            "life": life, "max_life": life})
+
+    # ------------------------------------------------------------ 数据驱动远程（樱落）
+    @staticmethod
+    def _norm_ranged_cfg(raw):
+        """规整 characters.json 的 ranged 规格块：缺项补默认，非法返回 None。
+
+        stages 必须恰为三段（飞樱散华 1/2/3），任一段缺失即整体非法，
+        回退通用单弹丸普攻路径，零影响。
+        """
+        if not isinstance(raw, dict):
+            return None
+        cfg = dict(raw)
+        defaults = {
+            "range": 460.0, "exit_range": 520.0, "bullet_radius": 8.0,
+            "hitstop": 0.08, "shake_px": 2.0, "shake_px_finisher": 3.0,
+        }
+        for k, v in defaults.items():
+            try:
+                cfg[k] = float(cfg.get(k, v))
+            except (TypeError, ValueError):
+                cfg[k] = v
+        stages = []
+        for st in (raw.get("stages") or []):
+            if not isinstance(st, dict):
+                return None
+            d = {"count": 1.0, "spread_deg": 0.0, "speed": 820.0, "mult": 1.0,
+                 "life": 1.1, "curve": 0.0, "spin": 0.0, "trail": 0.0, "mark": 0.0}
+            for k in d:
+                try:
+                    d[k] = float(st.get(k, d[k]))
+                except (TypeError, ValueError):
+                    pass
+            stages.append(d)
+        if len(stages) != 3:
+            return None
+        cfg["stages"] = stages
+        return cfg
+
+    def _auto_attack_ranged(self, dt):
+        """樱落「飞樱散华」三段循环：每 atk_interval 发一段，1→2→3 循环。
+
+        · 追击迟滞：进 range 开火、退 exit_range 才脱战，防边界抖动；
+        · 攻速只压 atk_interval（段间隔），不减每段花瓣枚数；
+        · 段3 附加顿帧 + 强震屏（前两段只轻震屏）。
+        """
+        cfg = self.ranged_cfg
+        rmult = self.stats.get("range", 1.0)
+        cb = self.atk_combo
+        if cb is not None:
+            cb["t"] += dt
+            # 迟滞退出：目标全部退出 exit_range 才收花瓣，避免边界反复起收
+            if self._nearest_target(max_range=cfg["exit_range"] * self.S * rmult) is None:
+                self.atk_combo = None
+                self.ranged_engaged = False
+                self.snake.atk_timer = 0.05
+                return
+        self.snake.atk_timer -= dt
+        if self.snake.atk_timer > 0:
+            return
+        rng = (cfg["exit_range"] if self.ranged_engaged else cfg["range"]) \
+            * self.S * rmult
+        tgt = self._nearest_target(max_range=rng)
+        if tgt is None:
+            self.ranged_engaged = False
+            self.snake.atk_timer = 0.06
+            return
+        self.ranged_engaged = True
+        self.snake.atk_timer = self.atk_interval
+        stage = 1 if cb is None else cb["stage"] % 3 + 1
+        self.atk_combo = {"t": 0.0, "stage": stage,
+                          "recover": 0.0, "recover_max": 0.0}
+        self._ranged_volley(stage, tgt)
+
+    def _ranged_volley(self, stage, tgt):
+        """单段结算：按该段枚数/Spread 角/弹速/倍率撒花瓣，没锁到目标也空挥。
+
+        段2 两枚左右对称弧旋；段3 旋转拖尾 + 命中必叠花瓣标记；
+        震屏/顿帧在开火帧结算（与近战收尾段同一节拍点）。
+        """
+        cfg = self.ranged_cfg
+        st = cfg["stages"][stage - 1]
+        sn = self.snake
+        px, py = sn.pos
+        if tgt is not None:
+            _kind, obj = tgt
+            ang = math.atan2(obj.pos[1] - py, obj.pos[0] - px)
+        else:
+            ang = math.atan2(sn.aim_dir[1], sn.aim_dir[0])
+        rels = getattr(self, "_melee_fx_rel", {})
+        if stage == 3:
+            tex = rels.get("human") or rels.get("lamia")
+            tex_mult = 6.0
+        else:
+            tex = rels.get("lamia") or rels.get("human")
+            tex_mult = 4.0
+        n = max(1, int(st["count"]))
+        spread = math.radians(st["spread_deg"])
+        dmg = max(1, int(round(self.player_damage * st["mult"])))
+        spd = st["speed"] * self.S
+        radius = self.s(cfg["bullet_radius"])
+        for i in range(n):
+            off = 0.0 if n < 2 else -spread / 2.0 + spread * i / (n - 1)
+            a = ang + off
+            # 弧旋左右对称：偶数枚偏左、奇数枚偏右，段2 两瓣各画一道外弧
+            curve = st["curve"] * (-1.0 if i % 2 == 0 else 1.0) if st["curve"] else 0.0
+            b = PlayerBullet(
+                (px, py), (math.cos(a) * spd, math.sin(a) * spd), dmg, radius,
+                life=st["life"], color=(255, 190, 215),
+                element=self._active_element(), curve=curve, spin=st["spin"])
+            b.rot = math.degrees(a)
+            b.trail = st["trail"] > 0
+            b.mark = st["mark"] > 0
+            b.tex_rel = tex
+            b.tex_mult = tex_mult
+            self.bullets.append(b)
+        self._fx_ranged_muzzle(px, py, ang, stage)
+        self.game.audio.play("shoot", throttle=0.05)
+        shake_px = cfg["shake_px_finisher"] if stage == 3 else cfg["shake_px"]
+        self.shake = max(self.shake, shake_px / _SHAKE_PX_DIV)
+        if stage == 3 and cfg["hitstop"] > 0:
+            self.hitstop_t = max(self.hitstop_t, cfg["hitstop"])
+
+    def _fx_ranged_muzzle(self, x, y, ang, stage):
+        """樱落普攻枪口特效：只用 sakura_atk_{lamia,human} 两贴图及镜像/缩放变体。
+
+        1/2 段=扇形花瓣弧（第 2 段水平镜像反向回扫）；3 段=环形花瓣爆发扩散；
+        双缺图回退矢量花瓣风，绝不拿技能级特效充数。
+        """
+        color = (255, 190, 215)
+        rels = getattr(self, "_melee_fx_rel", {})
+        am = self.party[self.active_idx]
+        form = "human" if (self.char_human and am["form"] == "human") else "lamia"
+        if stage == 3:
+            rel = rels.get("human") or rels.get("lamia")
+            if rel is None:
+                self._fx_petals(x, y, self.s(120), color)
+                return
+            life = 0.42
+            self.effects.append({
+                "type": "melee_tex", "kind": "ring", "rel": rel, "form": form,
+                "ang": ang, "x": x, "y": y, "size": self.s(260),
+                "color": color, "life": life, "max_life": life})
+            return
+        rel = rels.get("lamia") or rels.get("human")
+        if rel is None:
+            life = 0.20
+            self.effects.append({"type": "slash", "x": x, "y": y,
+                                 "r": self.s(120), "ang": ang,
+                                 "half": math.radians(28),
+                                 "color": color, "life": life, "max_life": life})
+            return
+        dist = self.s(56)
+        life = 0.30
+        self.effects.append({
+            "type": "melee_tex", "kind": "arc", "rel": rel, "form": form,
+            "flip": stage == 2, "ang": ang,
+            "x": x + math.cos(ang) * dist, "y": y + math.sin(ang) * dist,
+            "size": self.s(200), "color": color, "life": life, "max_life": life})
+
+    def _melee_fx_surf_flip(self, rel, size):
+        """近战贴图的水平镜像缓存（第 2 段反向回扫用，翻一次常驻查表）。"""
+        base = self._melee_fx_surf(rel, size)
+        if base is None:
+            return None
+        size = max(16, int(size))
+        key = ("meleefxflip", rel, size)
+        if key in self._surf_cache:
+            return self._surf_cache[key]
+        img = pygame.transform.flip(base, True, False)
+        self._surf_cache[key] = img
+        return img
+
     def _cancel_atk_recover(self):
         """取消规则：任意技能可强取消近战连击的收尾后摇，取消后普攻立即续接。"""
         cb = self.atk_combo
-        if cb is not None and cb["recover"] > 0:
+        if cb is None:
+            return
+        if self.melee_cfg is not None:
+            # cfg 驱动：命中已结算后，技能把收势段直接清零（回 idle 段仍播完，
+            # 姿势无缝落回起始帧，不会闪跳）
+            cfg = self.melee_cfg
+            if cb.get("hit_done") or cb["t"] >= cfg["windup"] + cfg["hit_window"]:
+                cb["recover_max"] = 0.0
+            return
+        if cb["recover"] > 0:
             self.atk_combo = None
             self.snake.atk_timer = 0.0
 
@@ -1186,6 +1607,62 @@ class BattleScene(Scene):
     def _prewarm_melee_fx(self):
         """开局把斩击贴图两段尺寸 + 动画全程的旋转/缩放档位预烘焙，
         首段命中帧不产生读盘/smoothscale/rotate 重采样（同姿势预热策略）。"""
+        rcfg = getattr(self, "ranged_cfg", None)
+        if rcfg is not None:
+            # 樱落：枪口弧痕（16 旋转档，含段2 镜像底图）+ 环形爆发（缩放档）
+            # + 弹丸两尺寸档全角度旋转档（弧旋/自旋方向逐帧变）
+            arc_rel = (self._melee_fx_rel.get("lamia")
+                       or self._melee_fx_rel.get("human"))
+            if arc_rel:
+                mz = self.s(200)
+                for base in (self._melee_fx_surf(arc_rel, mz),
+                             self._melee_fx_surf_flip(arc_rel, mz)):
+                    if base is None:
+                        continue
+                    for step in range(16):
+                        self._rot_surf(base, step * 22.5)
+                bb = self._melee_fx_surf(arc_rel,
+                                         self.s(rcfg["bullet_radius"]) * 4)
+                if bb is not None:
+                    for step in range(_ROT_STEPS):
+                        self._rot_surf(bb, step * (360.0 / _ROT_STEPS))
+            ring_rel = (self._melee_fx_rel.get("human")
+                        or self._melee_fx_rel.get("lamia"))
+            if ring_rel:
+                base = self._melee_fx_surf(ring_rel, self.s(260))
+                if base is not None:
+                    for zs in range(8, 19):
+                        self._rotozoom_surf(base, 0.0, zs / float(_RZ_SCALE_STEPS))
+                bb = self._melee_fx_surf(ring_rel,
+                                         self.s(rcfg["bullet_radius"]) * 6)
+                if bb is not None:
+                    for step in range(_ROT_STEPS):
+                        self._rot_surf(bb, step * (360.0 / _ROT_STEPS))
+            return
+        cfg = getattr(self, "melee_cfg", None)
+        if cfg is not None:
+            # 潮汐：arc=横扫弧痕（旋转 16 档，含第 2 段镜像底图），ring=涌浪环（缩放档）
+            rmult = 1.0
+            arc_rel = (self._melee_fx_rel.get("lamia")
+                       or self._melee_fx_rel.get("human"))
+            if arc_rel:
+                base = self._melee_fx_surf(arc_rel, self.s(cfg["range"]) * 1.8 * rmult)
+                flip = self._melee_fx_surf_flip(arc_rel,
+                                                self.s(cfg["range"]) * 1.8 * rmult)
+                for b in (base, flip):
+                    if b is None:
+                        continue
+                    for step in range(16):
+                        self._rot_surf(b, step * 22.5)
+            ring_rel = (self._melee_fx_rel.get("human")
+                        or self._melee_fx_rel.get("lamia"))
+            if ring_rel:
+                base = self._melee_fx_surf(ring_rel,
+                                           self.s(cfg["finisher_radius"]) * 2.6)
+                if base is not None:
+                    for zs in range(8, 19):
+                        self._rotozoom_surf(base, 0.0, zs / float(_RZ_SCALE_STEPS))
+            return
         for fm, rel in getattr(self, "_melee_fx_rel", {}).items():
             for mult in (1.5, 1.9):
                 base = self._melee_fx_surf(rel, self.s(S.MELEE_COMBO_RANGE) * mult)
@@ -1222,6 +1699,19 @@ class BattleScene(Scene):
     def _update_bullets(self, dt):
         for b in self.bullets:
             b.update(dt, self.world_w, self.world_h)
+            if b.trail and b.alive:
+                # 段3 旋转拖尾：每 0.03s 撒一片花瓣粒子（粉色缓落）
+                b.trail_acc += dt
+                if b.trail_acc >= 0.03:
+                    b.trail_acc = 0.0
+                    self.particles.append({
+                        "x": b.pos[0], "y": b.pos[1],
+                        "vx": random.uniform(-30, 30) * self.S,
+                        "vy": random.uniform(-10, 50) * self.S,
+                        "life": random.uniform(0.25, 0.45), "max_life": 0.45,
+                        "color": (255, 190, 215),
+                        "r": random.randint(self.s(2), self.s(4)),
+                    })
         self._bullet_vs_mobs()
         self._bullet_vs_boss()
         self.bullets = [b for b in self.bullets if b.alive]
@@ -1237,6 +1727,11 @@ class BattleScene(Scene):
                     b.hit_ids.add(m.uid)
                     self._hurt_mob(m, b.dmg, m.pos[0], m.pos[1], color=b.color, spark=6)
                     self._apply_onhit_passive(m)
+                    if not b.from_skill:
+                        self._try_contract_proc(m.pos[0], m.pos[1])
+                        # 樱落段3 散华：命中必叠花瓣标记（种花主手段），叠满绽放
+                        if b.mark and m.alive:
+                            self._sakura_mark_stack(m)
                     if b.from_skill and m.alive:
                         # 技能飞行物（blade）：命中施加元素副效果 + 叠标记被动
                         if b.onhit:
@@ -1261,6 +1756,10 @@ class BattleScene(Scene):
             if math.hypot(b.pos[0] - bx, b.pos[1] - by) <= b.radius + r:
                 b.alive = False
                 self._damage_boss(b.dmg, color=b.color)
+                if not b.from_skill:
+                    self._try_contract_proc(bx, by)
+                    if b.mark and self.boss.alive:
+                        self._sakura_mark_stack(self.boss)
 
     # ------------------------------------------------------------ 小怪
     def _update_mobs(self, dt):
@@ -1387,8 +1886,8 @@ class BattleScene(Scene):
         if self.char_cast_poses.get(form, {}).get(int(key)):
             a = self.skills._active_by_key(int(key))
             self.cast_pose = {"key": int(key), "t": 0.0,
-                              # 吟唱技能：姿势保持到读条结束（见 update 里的 hold 分支）
-                              "hold": bool(a) and a.get("type") == "channel"}
+                              # 吟唱/漩涡引导：姿势保持到读条结束（见 update 里的 hold 分支）
+                              "hold": bool(a) and a.get("type") in ("channel", "tide_vortex")}
 
     def _cast_pose_alpha(self):
         """姿势透明度包络：快淡入 → 保持 → 淡出，smoothstep 让交叉更顺。"""
@@ -1423,7 +1922,27 @@ class BattleScene(Scene):
         cb = self.atk_combo
         if cb is None or self.cast_pose is not None:
             return 0.0
-        if cb["recover"] > 0:
+        if self.ranged_cfg is not None:
+            # 远程三段：段开火后快淡入，保持约 7 成段间隔，下一段前淡出
+            hold = max(0.12, self.atk_interval * 0.72)
+            t = cb["t"]
+            if t < hold:
+                k = min(1.0, t / ATK_POSE_IN)
+            else:
+                k = 1.0 - min(1.0, (t - hold) / ATK_POSE_OUT)
+            if k <= 0.0:
+                return 0.0
+            return k * k * (3.0 - 2.0 * k)
+        if self.melee_cfg is not None:
+            # cfg 驱动：起手快淡入，保持到收势结束，回 idle 段内淡出（无缝循环）
+            cfg = self.melee_cfg
+            hold_end = cfg["windup"] + cfg["hit_window"] + cb["recover_max"]
+            t = cb["t"]
+            if t < hold_end:
+                k = min(1.0, t / ATK_POSE_IN)
+            else:
+                k = 1.0 - min(1.0, (t - hold_end) / max(1e-4, cfg["idle_return"]))
+        elif cb["recover"] > 0:
             spent = cb["recover_max"] - cb["recover"]
             k = 1.0 - min(1.0, spent / ATK_POSE_OUT)
         else:
@@ -1777,6 +2296,16 @@ class BattleScene(Scene):
             self._skill_blade(ev, px, py, base_ang)
         elif t == "channel":
             self._skill_channel(ev, px, py)
+        elif t == "tide_handoff":
+            self._skill_handoff(ev, px, py)
+        elif t == "tide_zone":
+            self._skill_zone(ev, px, py)
+        elif t == "tide_vortex":
+            self._skill_vortex(ev, px, py)
+        elif t == "tide_contract":
+            self._skill_contract(ev, px, py)
+        elif t == "tide_domain":
+            self._skill_domain(ev, px, py)
 
     def _damage_segment(self, x1, y1, x2, y2, dmg, color, mark=False):
         reach = self.s(18)
@@ -2134,9 +2663,14 @@ class BattleScene(Scene):
         if ch is None:
             return
         ch["t"] += dt
+        if ch.get("vortex"):
+            self._vortex_tick(ch, dt)
         if ch["t"] >= ch["total"]:
             self.channel = None
-            self._finish_channel(ch["ev"], ch["color"])
+            if ch.get("vortex"):
+                self._finish_vortex(ch["ev"], ch["color"])
+            else:
+                self._finish_channel(ch["ev"], ch["color"])
 
     def _finish_channel(self, ev, color):
         """读条结束：施加增益（复用 rally_* 驱动攻击/攻速），并落元素副效果。"""
@@ -2174,6 +2708,273 @@ class BattleScene(Scene):
         self._burst(px, py, color, 20)
         self.game.audio.play("skill_shield")
         self._float(ev.get("name", "鼓舞") + " 增益!", px, py - self.s(58), color, 30)
+
+    # -------------------------------------------------- 潮汐·切人五技能
+    # 水属性坦克：场上同时只有一名角色，技能全部围绕「切人」联动。
+    # 循环：铺水域(②)→上盾(①)→切走(盾转移)→队友站水域输出+普攻触发契约(④)
+    #      →切回引爆水域(③)→大招刷新水域+湿身(⑤)→重开。
+    def _skill_handoff(self, ev, px, py):
+        """① 潮汐交接：给自己套水幕护盾（吸收量=潮汐最大生命×shield_pct），
+        记录盾源与转移比例；切走时由 _switch_to 把剩余盾量转移给登场者。"""
+        color = ev.get("color", (150, 215, 255))
+        mult = 1.0 + min(S.SHIELD_STAT_CAP, self.stats.get("shield", 0.0))
+        pool = self.snake.hp_max * ev["shield_pct"] * mult
+        self.snake.grant_shield(ev["time"] * mult, pool)
+        self.handoff_holder = self.party[self.active_idx]
+        self.handoff_transfer = ev.get("transfer", S.TIDE_HANDOFF_TRANSFER)
+        self.game.audio.play("skill_shield")
+        self._fx_ring(px, py, self.s(96), color, life=0.5)
+        self._burst(px, py, color, 18)
+        self._float(ev.get("name", "潮汐交接"), px, py - self.s(58), color, 30)
+
+    def _skill_zone(self, ev, px, py):
+        """② 涌潮：在脚下铺开一片水域（全链地基，不随切人消失）。
+        域内敌人持续减速，己方享移速/减伤（见 player_speed 与 _snake_hurt）。"""
+        r = ev["radius"] * self.S
+        self.zones.append({"x": px, "y": py, "r": r,
+                           "t": ev["time"], "max_t": ev["time"],
+                           "enemy_slow": ev["enemy_slow"]})
+        color = ev.get("color", (120, 200, 255))
+        self.game.audio.play("skill_storm")
+        self._fx_ring(px, py, r, color, life=0.6)
+        self._burst(px, py, color, 16)
+        self._float(ev.get("name", "涌潮"), px, py - self.s(58), color, 30)
+
+    def _skill_vortex(self, ev, px, py):
+        """③ 漩涡：引导 time 秒持续把周围敌人卷向自身（复用 channel 读条）；
+        引导中切走即中断（_activate 清 channel）；结束时若身处水域之上则引爆全场水域。"""
+        color = ev.get("color", (110, 190, 250))
+        self.game.audio.play("skill_storm")
+        self.channel = {"t": 0.0, "total": max(0.05, ev.get("time", S.TIDE_VORTEX_TIME)),
+                        "ev": ev, "color": color, "fx": ev.get("sid"),
+                        "vortex": True, "tick": 0.0}
+        self.atk_combo = None
+        self._fx_vortex(px, py, ev.get("radius", S.TIDE_VORTEX_RADIUS) * self.S,
+                        color, life=0.6)
+        self._float(ev.get("name", "漩涡") + " 引导中…", px, py - self.s(58), color, 26)
+
+    def _skill_contract(self, ev, px, py):
+        """④ 潮汐契约：立下 time 秒水之契约，期间出战角色普攻命中召来水柱追击
+        （伤害=施放时潮汐攻击力×atk_ratio 的快照）；切到后台也持续生效。"""
+        color = ev.get("color", (130, 205, 255))
+        dmg = max(1, int(round(self.player_damage * ev["atk_ratio"])))
+        self.contract = {"t": ev["time"], "dmg": dmg,
+                         "cd": 0.0, "inner_cd": ev["inner_cd"]}
+        self.game.audio.play("skill_shield")
+        self._fx_rune(px, py, self.s(130), color, life=0.6)
+        self._burst(px, py, color, 18)
+        self._float(ev.get("name", "潮汐契约"), px, py - self.s(58), color, 30)
+
+    def _skill_domain(self, ev, px, py):
+        """⑤ 潮汐领域（大招）：展开 time 秒领域，全场敌人湿身（受伤+）并减速，
+        刷新所有水域；契约剩余时长转化为全队护盾。释放须在场，之后可切走收割。"""
+        color = ev.get("color", (180, 225, 255))
+        dom_time = ev["time"]
+        self.domain = {"t": dom_time, "wet": ev["wet_amp"], "slow": ev["slow_mult"]}
+        # 刷新所有水域：把每片水域的剩余时间顶满（大招后水域链重新续上）
+        for z in self.zones:
+            z["t"] = max(z["t"], S.TIDE_ZONE_TIME)
+            z["max_t"] = S.TIDE_ZONE_TIME
+        # 契约剩余时长转全队护盾：每剩 1s 转 shield_per_sec 点吸收量
+        if self.contract and self.contract["t"] > 0:
+            shield = self.contract["t"] * ev.get("shield_per_sec",
+                                                 S.TIDE_DOMAIN_SHIELD_PER_SEC)
+            for mbr in self.party:
+                if mbr["snake"].alive:
+                    mbr["snake"].grant_shield(dom_time, shield)
+            self.contract = None
+            self._float("契约转化为护盾!", px, py - self.s(96), color, 26)
+        self.game.audio.play("skill_storm")
+        self._fx_ultimate(px, py, color)
+        self._fx_ring(px, py, self.s(440), color, life=0.85)
+        self._burst(px, py, color, 40)
+        self.shake = max(self.shake, 0.5)
+        self.flash = max(self.flash, 0.4)
+        self._float(ev.get("name", "潮汐领域"), px, py - self.s(58), color, 34)
+
+    def _vortex_tick(self, ch, dt):
+        """漩涡引导期：每帧把范围内敌人持续卷向自身，并按 0.25s 间隔结算小额伤害。"""
+        ev = ch["ev"]
+        px, py = self.snake.pos
+        r = ev.get("radius", S.TIDE_VORTEX_RADIUS) * self.S
+        strength = ev.get("strength", S.TIDE_VORTEX_STRENGTH) * self.S
+        for m in self.mobs:
+            if not m.alive:
+                continue
+            dx, dy = px - m.pos[0], py - m.pos[1]
+            d = math.hypot(dx, dy)
+            if d <= r + m.radius and d > 1.0:
+                m.pos[0] += dx / d * strength * dt
+                m.pos[1] += dy / d * strength * dt
+        ch["tick"] = ch.get("tick", 0.0) + dt
+        if ch["tick"] < 0.25:
+            return
+        ch["tick"] = 0.0
+        tick_dmg = max(1, int(ev.get("tick_dmg", S.TIDE_VORTEX_TICK_DMG)))
+        self._fx_vortex(px, py, r, ch["color"], life=0.26)
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if math.hypot(m.pos[0] - px, m.pos[1] - py) <= r + m.radius:
+                self._hurt_mob(m, tick_dmg, m.pos[0], m.pos[1],
+                               color=ch["color"], spark=3)
+        self.mobs = [m for m in self.mobs if m.alive]
+
+    def _finish_vortex(self, ev, color):
+        """漩涡引导结束：身处水域之上则引爆全场水域（主要输出），否则只是收势。"""
+        px, py = self.snake.pos
+        self._fx_vortex(px, py, ev.get("radius", S.TIDE_VORTEX_RADIUS) * self.S,
+                        color, life=0.5)
+        if self.zones and self._pos_in_zone(px, py):
+            self._detonate_zones(ev, color)
+            self._float(ev.get("name", "漩涡") + " 引爆水域!", px, py - self.s(58),
+                        color, 32)
+        else:
+            self._float(ev.get("name", "漩涡"), px, py - self.s(58), color, 28)
+
+    def _detonate_zones(self, ev, color):
+        """引爆全场所有水域：每片对域内敌人造成 detonate 伤害，随后清空水域。"""
+        dmg = max(1, int(ev.get("dmg", S.TIDE_VORTEX_DETONATE_DMG)))
+        self.game.audio.play("skill_storm")
+        for z in self.zones:
+            zx, zy, zr = z["x"], z["y"], z["r"]
+            self._fx_nova(zx, zy, zr, color, life=0.55)
+            self._burst(zx, zy, color, 22)
+            for m in list(self.mobs):
+                if not m.alive:
+                    continue
+                if math.hypot(m.pos[0] - zx, m.pos[1] - zy) <= zr + m.radius:
+                    self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=10)
+            if self.boss is not None and self.boss.alive:
+                bx, by = self.boss.pos
+                if math.hypot(bx - zx, by - zy) <= zr + self.boss.radius_px:
+                    self._damage_boss(dmg, color=color)
+        self.mobs = [m for m in self.mobs if m.alive]
+        self.zones = []
+        self.shake = max(self.shake, 0.45)
+
+    def _try_contract_proc(self, mx, my):
+        """潮汐契约：出战角色普攻命中时在命中点召来水柱追击（内置 CD 限流）。
+        伤害为施放契约时快照的潮汐攻击力×比例，切到后台也照常触发。"""
+        c = self.contract
+        if c is None or c["t"] <= 0 or c["cd"] > 0:
+            return
+        c["cd"] = c["inner_cd"]
+        dmg = c["dmg"]
+        color = (130, 205, 255)
+        self._fx_geyser(mx, my, color)
+        self.game.audio.play("skill_storm", throttle=0.08)
+        r = self.s(72)
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if math.hypot(m.pos[0] - mx, m.pos[1] - my) <= r + m.radius:
+                self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=6)
+        self.mobs = [m for m in self.mobs if m.alive]
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - mx, by - my) <= r + self.boss.radius_px:
+                self._damage_boss(dmg, color=color)
+
+    def _fx_geyser(self, x, y, color):
+        """水柱追击特效：地面水环 + 上冲粒子簇（复用既有 VFX，不新增绘制类型）。"""
+        self._fx_ring(x, y, self.s(58), color, life=0.32)
+        self._burst(x, y - self.s(24), color, 12)
+
+    def _update_tide_fields(self, dt):
+        """潮汐切人体系的场景级持续效果：水域计时+域内敌人减速、契约计时+内置CD、
+        领域计时+全场湿身/减速（覆盖期间新刷的怪）、踏浪登场增益计时。"""
+        if self.landing_t > 0:
+            self.landing_t = max(0.0, self.landing_t - dt)
+        # 涌潮水域：计时到期移除；域内敌人持续减速（短刷新，离开即恢复）
+        if self.zones:
+            for z in self.zones:
+                z["t"] -= dt
+            self.zones = [z for z in self.zones if z["t"] > 0]
+            for z in self.zones:
+                slow = z.get("enemy_slow", S.TIDE_ZONE_ENEMY_SLOW)
+                for m in self.mobs:
+                    if not m.alive:
+                        continue
+                    if (math.hypot(m.pos[0] - z["x"], m.pos[1] - z["y"])
+                            <= z["r"] + m.radius):
+                        m.apply_slow(slow, 0.25)
+        # 潮汐契约：计时 + 内置 CD
+        if self.contract is not None:
+            c = self.contract
+            c["t"] -= dt
+            if c["cd"] > 0:
+                c["cd"] = max(0.0, c["cd"] - dt)
+            if c["t"] <= 0:
+                self.contract = None
+        # 潮汐领域：全场湿身（受水伤+）+ 减速，覆盖期间新刷的怪
+        if self.domain is not None:
+            d = self.domain
+            d["t"] -= dt
+            if d["t"] <= 0:
+                self.domain = None
+            else:
+                for m in self.mobs:
+                    if m.alive:
+                        m.apply_wet(d["wet"], 0.3)
+                        m.apply_slow(d["slow"], 0.3)
+                if self.boss is not None and self.boss.alive:
+                    self.boss.apply_wet(d["wet"], 0.3)
+
+    # ---- 潮汐·切人联动辅助（被动判定 / 水域几何 / 盾转移）----
+    def _member_has_passive(self, m, pid):
+        """该成员技能包是否含指定 id 的被动。"""
+        try:
+            for p in m["skills"].passives:
+                if p.get("id") == pid:
+                    return True
+        except (AttributeError, TypeError, KeyError):
+            pass
+        return False
+
+    def _party_has_passive(self, pid):
+        """编队中是否有任意成员带指定被动。"""
+        return any(self._member_has_passive(m, pid) for m in self.party)
+
+    def _backwave_reduce(self):
+        """潮汐·后浪：潮汐在后台（非活跃）且存活时，出战角色的免伤比例。
+        潮汐强化层数达标升到 20%，否则 15%；潮汐不在后台/阵亡则 0。"""
+        for i, m in enumerate(self.party):
+            if i == self.active_idx:
+                continue
+            if m["snake"].alive and self._member_has_passive(m, "p_backwave"):
+                layer = self.game.save_manager.get_enhance(m["char_id"])
+                if layer >= S.PASSIVE_BACKWAVE_UP_LAYER:
+                    return S.PASSIVE_BACKWAVE_REDUCE_UP
+                return S.PASSIVE_BACKWAVE_REDUCE
+        return 0.0
+
+    def _pos_in_zone(self, x, y):
+        """世界坐标 (x,y) 是否落在任意存活水域内。"""
+        for z in getattr(self, "zones", []):
+            if math.hypot(x - z["x"], y - z["y"]) <= z["r"]:
+                return True
+        return False
+
+    def _active_in_zone(self):
+        """当前活跃角色是否站在水域上（供移速/减伤/漩涡引爆判定复用）。"""
+        px, py = self.snake.pos
+        return self._pos_in_zone(px, py)
+
+    def _transfer_handoff_shield(self, src, dst):
+        """潮汐交接：把切走者剩余护盾吸收量按 transfer 比例转移给登场者。"""
+        self.handoff_holder = None
+        src_sn, dst_sn = src["snake"], dst["snake"]
+        if src_sn is dst_sn or not dst_sn.alive:
+            return
+        if src_sn.shield_t > 0 and src_sn.shield_pool > 0:
+            transfer = src_sn.shield_pool * self.handoff_transfer
+            dst_sn.grant_shield(src_sn.shield_t, transfer)
+            src_sn.shield_pool = max(0.0, src_sn.shield_pool - transfer)
+            if src_sn.shield_pool <= 0:
+                src_sn.shield_t = 0.0
+            self._float(f"盾转移 {int(round(transfer))}", dst_sn.pos[0],
+                        dst_sn.pos[1] - self.s(72), (150, 215, 255), 24)
 
     # -------------------------------------------------- 标记被动（叠层自爆）
     def _apply_mark_stack(self, m, amp=None, time=None, max_stacks=None):
@@ -2291,6 +3092,24 @@ class BattleScene(Scene):
                 self._hurt_mob(o, S.ELEMENT_SAKURA_BLOOM, o.pos[0], o.pos[1],
                                color=(255, 150, 190), spark=8)
         self.mobs = [x for x in self.mobs if x.alive]
+        if self.boss is not None and m is self.boss:
+            # 以 Boss 为中心绽放：Boss 自身清标记并吃绽放伤害
+            self.boss.clear_mark()
+            self._damage_boss(S.ELEMENT_SAKURA_BLOOM, color=(255, 150, 190))
+
+    def _sakura_mark_stack(self, m):
+        """樱落普攻段3：确定性叠花瓣标记（种花主手段），叠满即绽放。
+
+        与元素 proc 的概率叠层不同，散华命中必叠一层；标记参数与技能
+        同源 ELEMENT_SAKURA_*，满层绽放复用 _sakura_bloom（小怪/Boss 通吃）。
+        """
+        if not getattr(m, "alive", False):
+            return
+        m.apply_mark(S.ELEMENT_SAKURA_AMP, S.ELEMENT_SAKURA_TIME,
+                     S.ELEMENT_SAKURA_STACKS)
+        self._fx_petals(m.pos[0], m.pos[1], self.s(48), (255, 170, 200))
+        if getattr(m, "mark_stacks", 0) >= S.ELEMENT_SAKURA_STACKS:
+            self._sakura_bloom(m)
 
     def _fire_blast(self, mx, my):
         """火元素爆燃：小范围灼烧 + 即时伤害。"""
@@ -2528,6 +3347,16 @@ class BattleScene(Scene):
         mult = 1.0
         if self.passive_kind == "guard":
             mult *= S.PASSIVE_NIGHT_REDUCE
+        # 潮汐·后浪：潮汐在后台且存活时，出战角色免伤（强化达标 20%，否则 15%）
+        bw = self._backwave_reduce()
+        if bw > 0:
+            mult *= (1.0 - bw)
+        # 潮汐·涌潮水域：己方站在其中减伤 15%
+        if self._active_in_zone():
+            mult *= (1.0 - S.TIDE_ZONE_ALLY_REDUCE)
+        # 潮汐·踏浪登场：在水域上切人后短时减伤 10%
+        if getattr(self, "landing_t", 0.0) > 0:
+            mult *= (1.0 - S.PASSIVE_WAVE_LANDING_REDUCE)
         armor = min(S.ARMOR_CAP, self.stats.get("armor", 0.0) + self.role_armor)
         if self.rally_t > 0 and self.rally_armor > 0:
             armor = min(S.ARMOR_CAP, armor + self.rally_armor)
@@ -3033,6 +3862,7 @@ class BattleScene(Scene):
 
         self._draw_background(screen, sx, sy)
         self._draw_world_border(screen, sx, sy)
+        self._draw_zones(screen, sx, sy)
         self._draw_effects(screen, sx, sy)
         self._draw_boss_telegraph(screen, sx, sy)
         self._draw_drops(screen, sx, sy)
@@ -3088,6 +3918,29 @@ class BattleScene(Scene):
         rect = pygame.Rect(int(self.wx(0, sx)), int(self.wy(0, sy)),
                            self.world_w, self.world_h)
         pygame.draw.rect(screen, COLOR_ACCENT_DARK, rect, max(2, self.s(3)))
+
+    def _draw_zones(self, screen, sx, sy):
+        """潮汐·涌潮水域：地面半透明水洼（世界坐标），随剩余时间淡出、边缘泛波纹。
+        画在怪/角色之前当作地面贴花；直接用 RGBA 在不透明 screen 上混合（同 _draw_effects）。"""
+        if not getattr(self, "zones", None):
+            return
+        for z in self.zones:
+            x = int(self.wx(z["x"], sx))
+            y = int(self.wy(z["y"], sy))
+            r = int(z["r"])
+            if r <= 0:
+                continue
+            fade = max(0.0, min(1.0, z["t"] / max(1e-4, z["max_t"])))
+            base_a = int(78 * min(1.0, fade * 4.0))   # 到期前快速收敛，不硬切
+            pygame.draw.circle(screen, (60, 140, 210, base_a), (x, y), r)
+            pygame.draw.circle(screen, (150, 215, 255, min(215, base_a + 95)),
+                               (x, y), r, max(2, self.s(3)))
+            phase = (self.elapsed * 0.5) % 1.0
+            for k in (0.0, 0.5):
+                rr = int(r * ((phase + k) % 1.0))
+                if rr > 2:
+                    pygame.draw.circle(screen, (205, 238, 255, 44), (x, y), rr,
+                                       max(1, self.s(2)))
 
     # ================================================================ 绘制缓存
     def _cached_surf(self, key, size, draw_fn):
@@ -3239,10 +4092,47 @@ class BattleScene(Scene):
                         a0 + half * 0.25, a1 - half * 0.25, max(1, lw // 2))
 
     def _ef_melee_tex(self, ov, e, sx, sy):
-        """近战斩击贴图：蛇形态=旋风环随风旋转，人形态=X 形斩小角度修正 + 缩放弹跳；
-        统一 10% 快淡入 / 尾段 45% 淡出，并沿挥向漂移，命中观感流畅不硬切。"""
+        """近战斩击贴图：kind=arc 弧痕扫掠（潮汐 1/2 段，第 2 段镜像反扫）；
+        kind=ring 涌浪环扩散（潮汐 3 段）；无 kind 走薄荷旧路径（蛇=旋风环旋转、
+        人=X 形斩小角度修正 + 缩放弹跳）。统一 10% 快淡入 / 尾段 45% 淡出。"""
         ratio = max(0.0, min(1.0, e["life"] / e["max_life"]))
         prog = 1.0 - ratio
+        kind = e.get("kind", "")
+        if kind == "arc":
+            if e.get("flip"):
+                base = self._melee_fx_surf_flip(e["rel"], e["size"])
+            else:
+                base = self._melee_fx_surf(e["rel"], e["size"])
+            if base is None:
+                return
+            # 弧痕绕自身扫过 ±55°（镜像段反向），并沿挥向漂一点增强甩动感
+            sweep = -55.0 + 110.0 * prog
+            rot = math.degrees(e["ang"]) + (-sweep if e.get("flip") else sweep)
+            img = self._rot_surf(base, rot)
+            if img is None:
+                return
+            env = min(1.0, prog / 0.10, ratio / 0.45)
+            img.set_alpha(int(235 * max(0.0, min(1.0, env))))
+            drift = e["size"] * 0.10 * prog
+            x = int(self.wx(e["x"] + math.cos(e["ang"]) * drift, sx))
+            y = int(self.wy(e["y"] + math.sin(e["ang"]) * drift, sy))
+            ov.blit(img, img.get_rect(center=(x, y)))
+            return
+        if kind == "ring":
+            base = self._melee_fx_surf(e["rel"], e["size"])
+            if base is None:
+                return
+            # 涌浪环：ease-out 快速铺开再放缓，中心不漂移（踏地即以自身为圆心）
+            scale = 0.55 + 0.60 * (1.0 - (1.0 - prog) ** 2)
+            img = self._rotozoom_surf(base, 0.0, scale)
+            if img is None:
+                return
+            env = min(1.0, prog / 0.10, ratio / 0.45)
+            img.set_alpha(int(235 * max(0.0, min(1.0, env))))
+            x = int(self.wx(e["x"], sx))
+            y = int(self.wy(e["y"], sy))
+            ov.blit(img, img.get_rect(center=(x, y)))
+            return
         base = self._melee_fx_surf(e["rel"], e["size"])
         if base is None:
             return
@@ -3589,6 +4479,35 @@ class BattleScene(Scene):
                                        (int(px), int(y + size / 2 + self.s(6))),
                                        max(1, self.s(2)))
 
+    def _mark_petal_surf(self, h):
+        """单片花瓣指示底图：粉色花瓣（椭圆）+ 白芯高光，按高度档缓存。"""
+        h = max(6, int(h))
+        key = ("markpetal", h)
+        if key in self._surf_cache:
+            return self._surf_cache[key]
+        w = max(4, int(h * 0.72))
+        s = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.ellipse(s, (255, 170, 200, 235), s.get_rect())
+        pygame.draw.ellipse(s, (255, 235, 245, 200),
+                            pygame.Rect(w // 4, h // 4, w // 2, h // 2))
+        self._surf_cache[key] = s
+        return s
+
+    def _draw_mark_petals(self, screen, x, y, size, stacks):
+        """花瓣标记层数指示：每层一片花瓣贴在目标身周，随时间轻摆。
+
+        叠几层贴几片＝层数可视化；旋转角度量化查表，不逐帧重采样。
+        """
+        base = self._mark_petal_surf(self.s(14))
+        rr = size * 0.44
+        for k in range(min(stacks, 6)):
+            a = -math.pi / 2 + (k - (stacks - 1) / 2.0) * 0.85 \
+                + 0.10 * math.sin(self.elapsed * 2.6 + k * 1.7)
+            px = x + math.cos(a) * rr
+            py = y + math.sin(a) * rr * 0.85
+            img = self._rot_surf(base, math.degrees(a) + 90.0)
+            screen.blit(img, img.get_rect(center=(int(px), int(py))))
+
     def _draw_mobs(self, screen, sx, sy):
         for m in self.mobs:
             size = max(12, int(m.radius * 2.2))
@@ -3612,6 +4531,9 @@ class BattleScene(Scene):
                                                  (gd // 2, gd // 2), gr))
                 screen.blit(glow, glow.get_rect(center=rect.center))
             screen.blit(img, rect)
+            # 花瓣标记指示：每层贴一片花瓣（贴身上方，随时间轻摆）
+            if m.mark_t > 0 and m.mark_stacks > 0:
+                self._draw_mark_petals(screen, x, y + bob, size, m.mark_stacks)
             if m.hit_flash > 0:
                 # 白闪=整体调透明度：缓存副本只 set_alpha，不每帧 copy+fill
                 fk = ("mflash", sprite, size)
@@ -3651,12 +4573,16 @@ class BattleScene(Scene):
             glow = self._glow_surf(r * 2, b.color, 70)
             screen.blit(glow, glow.get_rect(center=(int(x), int(y))))
             img = self._skill_fx_surf(getattr(b, "fx", None), r * 4)
+            if img is None and getattr(b, "tex_rel", None):
+                # 普攻贴图（樱落花瓣）：缩放变体，尺寸档由段别 tex_mult 决定
+                img = self._melee_fx_surf(b.tex_rel, r * getattr(b, "tex_mult", 4.0))
             if img is None:
                 img = self._bullet_sprite(b.element, r)
             if img is not None:
                 # 技能/元素弹丸贴图：朝速度方向旋转（贴图缺失时回退纯色圆点）
-                # 弹丸直线飞行、方向恒定，旋转结果查表缓存，避免每帧整图重采样
-                ang = math.degrees(math.atan2(b.vel[1], b.vel[0]))
+                # 弧旋/自旋弹方向逐帧变，用弹体累计的 rot；旋转结果查表缓存
+                ang = b.rot if getattr(b, "rot", None) is not None \
+                    else math.degrees(math.atan2(b.vel[1], b.vel[0]))
                 rot = self._rot_surf(img, ang)
                 screen.blit(rot, rot.get_rect(center=(int(x), int(y))))
             else:
@@ -3683,25 +4609,42 @@ class BattleScene(Scene):
         self._surf_cache[key] = img
         return img
 
-    def _skill_fx_surf(self, sid, height):
-        """按技能 id 取缓存的专属贴图（缩放到 height 高）；
-        无 sid / 贴图缺失返回 None，调用方据此回退到程序化 VFX（其他角色零影响）。"""
+    def _skill_fx_surf(self, sid, height, form=None):
+        """按技能 id 取缓存的专属贴图（缩放到 height 高）。
+
+        给了 form 就优先取形态专属图 effects/skills/<sid>_<form>.png，
+        缺图自动回退通用的 <sid>.png；不带 form 即旧行为（HUD 图标走这条）。
+        无 sid / 贴图缺失返回 None，调用方据此回退到程序化 VFX（其他角色零影响）。
+        """
         if not sid:
             return None
         size = max(16, int(height))
-        key = ("skillfx", sid, size)
+        key = ("skillfx", sid, size, form)
         if key in self._surf_cache:
             return self._surf_cache[key]
-        rel = f"effects/skills/{sid}.png"
-        full = os.path.join(S.ASSETS_DIR, rel.replace("/", os.sep))
+        rels = [f"effects/skills/{sid}_{form}.png"] if form else []
+        rels.append(f"effects/skills/{sid}.png")
         img = None
-        if os.path.exists(full):
+        for rel in rels:
+            full = os.path.join(S.ASSETS_DIR, rel.replace("/", os.sep))
+            if not os.path.exists(full):
+                continue
             try:
                 img = self.assets.get_scaled(rel, height=size)
             except Exception:
                 img = None
+            if img is not None:
+                break
         self._surf_cache[key] = img
         return img
+
+    def _active_form(self):
+        """当前出战成员的形态标记 'human' / 'lamia'（与近战贴图分支同一判据）。"""
+        try:
+            am = self.party[self.active_idx]
+        except Exception:
+            return "lamia"
+        return "human" if (self.char_human and am.get("form") == "human") else "lamia"
 
     def _skill_icon_surf(self, sid, box):
         """把技能专属贴图（effects/skills/<sid>.png）等比缩进 box 见方作为图标；
@@ -3723,13 +4666,19 @@ class BattleScene(Scene):
         return img
 
     def _spawn_fx_sprite(self, sid, x, y, size, life=0.5, spin=0.0, expand=1.6):
-        """一次性技能贴图特效：从 size 扩张到 size*expand 并淡出（缺图则不生成）。"""
-        if self._skill_fx_surf(sid, max(16, int(size))) is None:
+        """一次性技能贴图特效：从 size 扩张到 size*expand 并淡出（缺图则不生成）。
+
+        出场瞬间锁定当前形态的贴图：人形态优先 <sid>_human.png、蛇形态 <sid>_lamia.png，
+        缺图回退通用 <sid>.png——没配双形态特效的角色（薄荷等）行为完全不变。
+        """
+        form = self._active_form()
+        if self._skill_fx_surf(sid, max(16, int(size)), form) is None:
             return
         self.fx_sprites.append({
             "sid": sid, "x": x, "y": y, "size": float(size),
             "life": life, "max_life": max(1e-6, life),
             "spin": spin, "expand": expand, "ang": 0.0,
+            "form": form,
         })
 
     def _update_fx_sprites(self, dt):
@@ -3742,7 +4691,7 @@ class BattleScene(Scene):
 
     def _draw_fx_sprites(self, screen, sx, sy):
         for f in self.fx_sprites:
-            base = self._skill_fx_surf(f["sid"], f["size"])
+            base = self._skill_fx_surf(f["sid"], f["size"], f.get("form"))
             if base is None:
                 continue
             ratio = max(0.0, min(1.0, f["life"] / f["max_life"]))
@@ -3988,6 +4937,8 @@ class BattleScene(Scene):
                 fl.fill((255, 255, 255, int(190 * (b.hit_flash / 0.16))),
                         special_flags=pygame.BLEND_RGBA_MULT)
                 screen.blit(fl, rect)
+            if b.mark_t > 0 and b.mark_stacks > 0:
+                self._draw_mark_petals(screen, bx, by, r * 2, b.mark_stacks)
             return
 
         tint = b.tint
@@ -4021,6 +4972,8 @@ class BattleScene(Scene):
             aa = int(200 * (b.hit_flash / 0.16))
             pygame.draw.circle(fl, (255, 255, 255, aa), (r + 2, r + 2), r)
             screen.blit(fl, fl.get_rect(center=(int(bx), int(by))))
+        if b.mark_t > 0 and b.mark_stacks > 0:
+            self._draw_mark_petals(screen, bx, by, r * 2, b.mark_stacks)
 
     # ================================================================ HUD
     def _draw_hud(self):

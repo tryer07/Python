@@ -1,4 +1,4 @@
-# 贪吃蛇娘化版 · 项目说明
+# 鳞光纪 · 项目说明
 
 > 当前状态：**可运行原型（自由移动动作版）**。大地图自由移动 + 自动普攻 + 闪避 + 角色 5 主动+1 被动技能包（可连招、带技能介绍） + 升级三选一属性卡（12 张卡池） + 剧情关卡/无尽双模式 + 精英怪 + Boss 战 + 多存档槽 + 新手指引 + 美术 + 音频已就位。
 > 目录：`D:\Python\Python项目存放点\利用AI开发小游戏（尝试）\贪吃蛇娘化版`
@@ -15,11 +15,11 @@ pip install pygame
 
 **命令行**：`python main.py`
 
-**直接玩打包好的 exe**：`dist\贪吃蛇娘化版.exe`（单文件，双击即玩；存档写在 exe 旁边的 `saves/` 目录）。
+**直接玩打包好的 exe**：`dist\鳞光纪.exe`（单文件，双击即玩；存档写在 exe 旁边的 `saves/` 目录）。
 重新打包的命令（在项目根目录执行，注意 PowerShell 里 `--add-data` 的参数要用**单引号**包住分号）：
 
 ```powershell
-python -m PyInstaller --onefile --noconsole --name '贪吃蛇娘化版' --add-data 'assets;assets' --add-data 'data;data' --clean --noconfirm main.py
+python -m PyInstaller --onefile --noconsole --name '鳞光纪' --add-data 'assets;assets' --add-data 'data;data' --clean --noconfirm main.py
 ```
 
 > 打包后的路径规则在 `settings.py` 顶部：只读资源（assets/data）从 PyInstaller 解压目录 `sys._MEIPASS` 读，
@@ -307,6 +307,6 @@ assets/audio/sfx/  ui_click  ui_hover  ui_back
 │   ├── backgrounds/         场景背景
 │   └── items/               掉落物图标
 ├── saves/                   存档（config.json + slots/<id>.json）
-├── dist/                    打包产物（贪吃蛇娘化版.exe，单文件双击即玩）
+├── dist/                    打包产物（鳞光纪.exe，单文件双击即玩）
 └── tools/                   自检 / 试玩 / 截图 / 素材处理
 ```
