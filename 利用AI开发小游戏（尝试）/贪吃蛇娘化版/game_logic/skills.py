@@ -128,6 +128,12 @@ _BASE_CD = {
     "tide_vortex": lambda: S.TIDE_VORTEX_CD,
     "tide_contract": lambda: S.TIDE_CONTRACT_CD,
     "tide_domain": lambda: S.TIDE_DOMAIN_CD,
+    # 樱落种花闭环五技能（樱属性刺客，数值固定不吃职业系数）
+    "sakura_dash2": lambda: S.SAKURA_DASH2_CD,
+    "sakura_detonate": lambda: S.SAKURA_DETONATE_CD,
+    "sakura_gather": lambda: S.SAKURA_GATHER_CD,
+    "sakura_blade": lambda: S.SAKURA_BLADE_CD,
+    "sakura_channel": lambda: S.SAKURA_CHANNEL_CD,
 }
 
 
@@ -176,6 +182,19 @@ _STAT_FIELDS = {
                       ("inner_cd", "内置CD", _f_sec)],
     "tide_domain": [("time", "领域", _f_sec), ("wet_amp", "湿身易伤", _f_pct),
                     ("slow_mult", "减速后", _f_mult)],
+    # --- 樱落种花闭环五技能：数值与实战同源（伤害按面板算，此处只展机制参数）---
+    "sakura_dash2": [("dist", "突进距离", _f_int), ("plant_cap", "沿途种花上限", _f_int),
+                     ("shield_pct", "护盾(最大生命)", _f_pct),
+                     ("shield_time", "护盾", _f_sec), ("iframe", "无敌帧", _f_sec)],
+    "sakura_detonate": [("radius", "引爆半径", _f_int), ("per_stack", "每层标记", _f_pct),
+                        ("delay", "二次跳延迟", _f_sec), ("delay_pct", "二次跳伤害", _f_pct)],
+    "sakura_gather": [("radius", "花圃半径", _f_int), ("time", "持续", _f_sec),
+                      ("tick", "叠层间隔", _f_sec)],
+    "sakura_blade": [("range", "射程", _f_int), ("width", "刃宽", _f_int),
+                     ("mult", "每段倍率", _f_mult), ("trips", "往返趟数", _f_int),
+                     ("marked_bonus", "对标记者", _f_pct)],
+    "sakura_channel": [("time", "花期", _f_sec), ("stack", "每段叠层", _f_int),
+                       ("bloom_mult", "绽放半径", _f_mult)],
 }
 
 
@@ -268,7 +287,10 @@ class SkillEngine:
         """指定强化等级 lv 下的冷却秒数（数值表/介绍面板用）。
         职业系数：法师技能贵（CD ×1.30）、刺客技能勤（CD ×0.82）。"""
         base = _BASE_CD.get(self._type_of(sid), lambda: 6.0)()
-        role_cd = S.ROLE_CD_MULT.get(self.role, 1.0)
+        # 樱落五技能：CD 按规格固定，不吃职业系数（刺客 CD 缩减会破坏种花节奏）
+        stype = self._type_of(sid)
+        role_cd = 1.0 if stype.startswith("sakura_") \
+            else S.ROLE_CD_MULT.get(self.role, 1.0)
         cd = (base * role_cd * (1.0 - min(0.75, cdr))
               * (1.0 - S.SKILL_ENH_CD_PER_LV * lv))
         return max(0.3, cd)
@@ -763,4 +785,32 @@ class SkillEngine:
                     "time": S.TIDE_DOMAIN_TIME, "wet_amp": S.TIDE_DOMAIN_WET_AMP,
                     "slow_mult": S.TIDE_DOMAIN_SLOW,
                     "shield_per_sec": S.TIDE_DOMAIN_SHIELD_PER_SEC}
+        # ---- 樱落种花闭环五技能（不带 dmg，伤害由 battle._sakura_skill_dmg 按面板算）----
+        if stype == "sakura_dash2":
+            return {"type": "sakura_dash2",
+                    "dist": S.SAKURA_DASH2_DIST, "time": S.SAKURA_DASH2_TIME,
+                    "plant_step": S.SAKURA_DASH2_PLANT_STEP,
+                    "plant_cap": S.SAKURA_DASH2_PLANT_CAP,
+                    "shield_pct": S.SAKURA_DASH2_SHIELD_PCT,
+                    "shield_time": S.SAKURA_DASH2_SHIELD_TIME,
+                    "iframe": S.SAKURA_DASH2_IFRAME}
+        if stype == "sakura_detonate":
+            return {"type": "sakura_detonate",
+                    "radius": S.SAKURA_DETONATE_RADIUS,
+                    "per_stack": S.SAKURA_DETONATE_PER_STACK,
+                    "delay": S.SAKURA_DETONATE_DELAY,
+                    "delay_pct": S.SAKURA_DETONATE_DELAY_PCT}
+        if stype == "sakura_gather":
+            return {"type": "sakura_gather",
+                    "radius": S.SAKURA_GATHER_RADIUS, "time": S.SAKURA_GATHER_TIME,
+                    "tick": S.SAKURA_GATHER_TICK}
+        if stype == "sakura_blade":
+            return {"type": "sakura_blade",
+                    "range": S.SAKURA_BLADE_RANGE, "width": S.SAKURA_BLADE_WIDTH,
+                    "mult": S.SAKURA_BLADE_MULT, "trips": S.SAKURA_BLADE_TRIPS,
+                    "marked_bonus": S.SAKURA_BLADE_MARKED_BONUS}
+        if stype == "sakura_channel":
+            return {"type": "sakura_channel",
+                    "time": S.SAKURA_CHANNEL_TIME, "stack": S.SAKURA_CHANNEL_STACK,
+                    "bloom_mult": S.SAKURA_CHANNEL_BLOOM_MULT}
         return None

@@ -498,6 +498,50 @@ PASSIVE_WAVE_LANDING_TIME = 2.0      # 踏浪登场：增益持续秒
 PASSIVE_WAVE_LANDING_SPEED = 0.20    # 踏浪登场：移速 +20%
 PASSIVE_WAVE_LANDING_REDUCE = 0.10   # 踏浪登场：减伤 10%
 
+# ==================== 樱落 · 种花闭环五技能（樱属性刺客，sakura_* 自定义 type） ====================
+# 核心＝「种花→催放→绽放」：花瓣标记满 3 层立即绽放（范围伤害＋回血）。
+# 普攻段3 是种花主手段，五技能负责补种、提前引爆与放大收割；开局弱、收网重。
+# 数值按规格固定，不吃职业范围/冷却系数（见 skills.cooldown_at 与 _apply_role 的 sakura_ 豁免）。
+# --- 1 花信（sakura_dash2）：突进留分身，路径种花，落地短盾 + 起手无敌 ---
+SAKURA_DASH2_CD = 9.0
+SAKURA_DASH2_DIST = 240          # 突进距离（设计像素）
+SAKURA_DASH2_TIME = 0.18         # 突进耗时（秒）
+SAKURA_DASH2_PLANT_STEP = 60     # 路径每 60 距离种 1 层
+SAKURA_DASH2_PLANT_CAP = 2       # 单次突进补种上限（层）
+SAKURA_DASH2_SHIELD_PCT = 0.08   # 落地盾 = 最大生命 8%
+SAKURA_DASH2_SHIELD_TIME = 1.2   # 落地盾持续秒
+SAKURA_DASH2_IFRAME = 0.15       # 起手无敌秒
+# --- 2 催放（sakura_detonate）：提前引爆全场标记 + 延迟二次跳 ---
+SAKURA_DETONATE_CD = 7.0
+SAKURA_DETONATE_RADIUS = 160     # 引爆半径（设计像素）
+SAKURA_DETONATE_PER_STACK = 0.55 # 每层标记 ×0.55 追加
+SAKURA_DETONATE_DELAY = 1.0      # 引爆后二次跳延迟（秒）
+SAKURA_DETONATE_DELAY_PCT = 0.15 # 二次跳 = 引爆伤害 15%
+# --- 3 落樱引（sakura_gather）：地面圆形花圃，圃内周期叠层 ---
+SAKURA_GATHER_CD = 14.0
+SAKURA_GATHER_RADIUS = 180       # 花圃半径（设计像素）
+SAKURA_GATHER_TIME = 6.0         # 花圃持续秒
+SAKURA_GATHER_TICK = 0.8         # 圃内叠层周期（秒）
+# --- 4 回旋花刃（sakura_blade）：花刃轮往返 2 趟，命中叠层、打标记目标加伤 ---
+SAKURA_BLADE_CD = 11.0
+SAKURA_BLADE_RANGE = 620         # 单趟射程（设计像素）
+SAKURA_BLADE_WIDTH = 40          # 刃轮宽度（设计像素）
+SAKURA_BLADE_MULT = 0.42         # 每段伤害倍率
+SAKURA_BLADE_TRIPS = 2           # 往返趟数
+SAKURA_BLADE_MARKED_BONUS = 0.20 # 命中带标记目标伤害 +20%
+# --- 5 花期（sakura_channel）：增益期普攻每段叠 2 层、绽放半径 +50% ---
+SAKURA_CHANNEL_CD = 20.0
+SAKURA_CHANNEL_TIME = 6.0        # 增益持续秒
+SAKURA_CHANNEL_STACK = 2         # 增益期普攻每段叠层数
+SAKURA_CHANNEL_BLOOM_MULT = 1.5  # 增益期绽放半径倍率
+# --- 结算 / 被动·花守 ---
+SAKURA_BLOOM_PER_STACK = 0.35    # 绽放伤害 = 基础 ×(1+0.35×层数)
+SAKURA_BLOOM_BED_MULT = 1.2      # 目标站在花圃内再 ×1.2
+SAKURA_BLOOM_CD = 0.3            # 同一目标不重复绽放间隔（秒）
+SAKURA_BLOOM_HEAL = 5            # 花守：每次绽放回血
+SAKURA_GUARD_MAX = 5             # 花护上限层数
+SAKURA_GUARD_REDUCE = 0.02       # 花护每层减伤
+
 # ==================== 标记被动（全员：技能叠标记，满 3 层自爆） ====================
 MARKPASSIVE_STACKS = 3          # 标记最多叠几层
 MARKPASSIVE_TIME = 6.0          # 标记持续秒

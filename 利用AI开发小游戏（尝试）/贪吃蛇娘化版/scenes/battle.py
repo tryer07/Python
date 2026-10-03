@@ -244,6 +244,11 @@ class BattleScene(Scene):
         self.cast_pose = None          # 技能释放动作（见 _start_cast_pose）
         self.atk_combo = None          # 近战爪风连击（见 _auto_attack_melee）
         self.gusts = []          # 旋风引：飞行中的阵风实体（风系聚怪）
+        # 樱落·种花闭环持续态：花圃区域 / 花期增益 / 花护层 / 催放延迟二次跳
+        self.sakura_beds = []
+        self.sakura_kaki_t = 0.0
+        self.sakura_guard = 0
+        self.sakura_delay = []
         self.fx_sprites = []     # 一次性技能贴图特效（引爆/爆发等，缺图自动回退程序化 VFX）
         # 鼓舞(rally)增益：key5 技能释放后短时提升攻击/攻速，挂在场景上
         self.rally_t = 0.0
@@ -636,6 +641,11 @@ class BattleScene(Scene):
         self.dash2 = None
         self.channel = None
         self.gusts = []
+        # 樱落·种花闭环持续态随切人清零（花圃/花期/花护/催放延迟跳不跨成员继承）
+        self.sakura_beds = []
+        self.sakura_kaki_t = 0.0
+        self.sakura_guard = 0
+        self.sakura_delay = []
         self.fx_sprites = []
         self.role = m.get("role", "hybrid")
         self.role_armor = S.ROLE_ARMOR.get(self.role, 0.0)
@@ -975,6 +985,7 @@ class BattleScene(Scene):
         self._update_dash2(dt)
         self._update_channel(dt)
         self._update_gusts(dt)
+        self._update_sakura(dt)
         self._update_fx_sprites(dt)
         self._update_tide_fields(dt)
         # 生命再生：血条制下直接把 regen*dt 累加进 hp（浮点），整数变化时飘字
@@ -1729,8 +1740,12 @@ class BattleScene(Scene):
                     self._apply_onhit_passive(m)
                     if not b.from_skill:
                         self._try_contract_proc(m.pos[0], m.pos[1])
+                        # 樱落·花期：期间普攻每段必叠 SAKURA_CHANNEL_STACK 层（不只段3）
+                        if m.alive and self.sakura_kaki_t > 0:
+                            for _ in range(S.SAKURA_CHANNEL_STACK):
+                                self._sakura_mark_stack(m)
                         # 樱落段3 散华：命中必叠花瓣标记（种花主手段），叠满绽放
-                        if b.mark and m.alive:
+                        elif b.mark and m.alive:
                             self._sakura_mark_stack(m)
                     if b.from_skill and m.alive:
                         # 技能飞行物（blade）：命中施加元素副效果 + 叠标记被动
@@ -1758,7 +1773,10 @@ class BattleScene(Scene):
                 self._damage_boss(b.dmg, color=b.color)
                 if not b.from_skill:
                     self._try_contract_proc(bx, by)
-                    if b.mark and self.boss.alive:
+                    if self.boss.alive and self.sakura_kaki_t > 0:
+                        for _ in range(S.SAKURA_CHANNEL_STACK):
+                            self._sakura_mark_stack(self.boss)
+                    elif b.mark and self.boss.alive:
                         self._sakura_mark_stack(self.boss)
 
     # ------------------------------------------------------------ 小怪
@@ -2306,6 +2324,16 @@ class BattleScene(Scene):
             self._skill_contract(ev, px, py)
         elif t == "tide_domain":
             self._skill_domain(ev, px, py)
+        elif t == "sakura_dash2":
+            self._skill_sakura_dash2(ev, px, py, dx, dy)
+        elif t == "sakura_detonate":
+            self._skill_sakura_detonate(ev, px, py)
+        elif t == "sakura_gather":
+            self._skill_sakura_gather(ev, px, py, dx, dy)
+        elif t == "sakura_blade":
+            self._skill_sakura_blade(ev, px, py, base_ang)
+        elif t == "sakura_channel":
+            self._skill_sakura_channel(ev, px, py)
 
     def _damage_segment(self, x1, y1, x2, y2, dmg, color, mark=False):
         reach = self.s(18)
@@ -3077,25 +3105,78 @@ class BattleScene(Scene):
             self._fx_ring(mx, my, self.s(50), (200, 210, 255), life=0.34)
 
     def _sakura_bloom(self, m):
-        """樱花瓣标记叠满：绽放小范围伤害并清除标记。"""
+        """樱花瓣标记叠满绽放：以目标为中心范围伤害并清标记。
+
+        结算顺序（见 _sakura_mark_stack 调用点）：叠层→判满 3 层→绽放清层。
+        伤害 = ELEMENT_SAKURA_BLOOM ×(1 + BLOOM_PER_STACK×层数)，目标站在花圃内
+        再 ×BED_MULT；花期(kaki)期间绽放半径 ×CHANNEL_BLOOM_MULT。同一目标
+        BLOOM_CD 秒内不重复绽放（含被溅射者），避免同帧连锁炸屏。
+        绽放命中即触发花守被动（回血 + 叠花护减伤层）。
+        """
+        if not getattr(m, "alive", False):
+            return
+        # 同目标绽放节流：BLOOM_CD 秒内已绽放过就跳过
+        if self.elapsed - getattr(m, "sakura_bloom_at", -999.0) < S.SAKURA_BLOOM_CD:
+            return
+        m.sakura_bloom_at = self.elapsed
         mx, my = m.pos[0], m.pos[1]
+        stacks = max(1, getattr(m, "mark_stacks", 0))
+        mult = 1.0 + S.SAKURA_BLOOM_PER_STACK * stacks
+        if self._sakura_in_bed(mx, my):
+            mult *= S.SAKURA_BLOOM_BED_MULT
+        dmg = max(1, int(round(S.ELEMENT_SAKURA_BLOOM * mult)))
         r = S.ELEMENT_SAKURA_RADIUS * self.S
+        if self.sakura_kaki_t > 0:
+            r *= S.SAKURA_CHANNEL_BLOOM_MULT
         self._fx_petals(mx, my, r, (255, 150, 190))
+        self._fx_nova(mx, my, r, (255, 170, 200), life=0.4)
         self.game.audio.play("skill_bloom", throttle=0.08)
         for o in list(self.mobs):
             if not o.alive:
                 continue
             if math.hypot(o.pos[0] - mx, o.pos[1] - my) <= r + o.radius:
-                o.mark_t = 0.0
-                o.mark_amp = 0.0
-                o.mark_stacks = 0
-                self._hurt_mob(o, S.ELEMENT_SAKURA_BLOOM, o.pos[0], o.pos[1],
+                o.clear_mark()
+                o.sakura_bloom_at = self.elapsed
+                self._hurt_mob(o, dmg, o.pos[0], o.pos[1],
                                color=(255, 150, 190), spark=8)
         self.mobs = [x for x in self.mobs if x.alive]
-        if self.boss is not None and m is self.boss:
-            # 以 Boss 为中心绽放：Boss 自身清标记并吃绽放伤害
-            self.boss.clear_mark()
-            self._damage_boss(S.ELEMENT_SAKURA_BLOOM, color=(255, 150, 190))
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - mx, by - my) <= r + self.boss.radius_px:
+                self.boss.clear_mark()
+                self.boss.sakura_bloom_at = self.elapsed
+                self._damage_boss(dmg, color=(255, 150, 190))
+        # 花守被动：每次绽放回固定血 + 叠 1 层花护减伤
+        if self.passive_kind == "bloomguard":
+            self._sakura_bloomguard(mx, my)
+
+    def _sakura_bloomguard(self, mx, my):
+        """花守被动落地：绽放即回复 SAKURA_BLOOM_HEAL 生命并叠 1 层花护（有上限）。"""
+        sn = self.snake
+        if sn.alive and sn.hp < sn.hp_max:
+            healed = min(S.SAKURA_BLOOM_HEAL, sn.hp_max - sn.hp)
+            if healed > 0:
+                sn.hp += healed
+                self._float(f"+{int(round(healed))} HP", mx, my - self.s(20), COLOR_HP)
+        if self.sakura_guard < S.SAKURA_GUARD_MAX:
+            self.sakura_guard += 1
+
+    def _sakura_in_bed(self, x, y):
+        """坐标是否落在任意活跃花圃内（绽放 ×BED_MULT 判据）。"""
+        for b in self.sakura_beds:
+            if math.hypot(x - b["x"], y - b["y"]) <= b["r"]:
+                return True
+        return False
+
+    def _sakura_skill_dmg(self, ev=None, mult=1.0):
+        """樱落技能伤害基数：随等级(attack)/技能伤卡/职业系数/局内强化成长。
+
+        mult 为各技能自己的倍率（花刃每段、催放每层等）。事件里没有 dmg 字段，
+        伤害全部在此按当前面板计算，让 atk/技能伤卡与强化等级照常生效。"""
+        lv = (ev or {}).get("lv", 0)
+        sd = self.stats.get("skilldmg", 1.0) * self.role_skilldmg
+        enh = 1.0 + S.SKILL_ENH_DMG_PER_LV * lv
+        return max(1, int(round(self.snake.attack * sd * enh * mult)))
 
     def _sakura_mark_stack(self, m):
         """樱落普攻段3：确定性叠花瓣标记（种花主手段），叠满即绽放。
@@ -3110,6 +3191,236 @@ class BattleScene(Scene):
         self._fx_petals(m.pos[0], m.pos[1], self.s(48), (255, 170, 200))
         if getattr(m, "mark_stacks", 0) >= S.ELEMENT_SAKURA_STACKS:
             self._sakura_bloom(m)
+
+    # -------------------------------------------------- 樱落·种花闭环五技能
+    # 樱属性刺客：延时爆发（种花→催放→绽放）。花瓣标记叠满 3 层立即绽放；
+    # 五个技能各自围绕「叠层 / 引爆 / 铺花圃 / 往返叠层 / 花期增益」，数值固定
+    # 不吃职业系数（见 skills.cooldown_at 豁免），伤害由 _sakura_skill_dmg 按面板算。
+    def _skill_sakura_dash2(self, ev, px, py, dx, dy):
+        """① 花信：朝瞄准方向突进 dist，沿途每 plant_step 为敌人种 1 层花瓣标记
+        （单怪上限 plant_cap），中途留樱分身爆散，落地获 shield_time 护盾（吸收
+        shield_pct 最大生命）+ 起手 iframe 无敌帧。"""
+        color = ev.get("color", (255, 150, 190))
+        dist = ev.get("dist", S.SAKURA_DASH2_DIST) * self.S
+        step = max(1.0, ev.get("plant_step", S.SAKURA_DASH2_PLANT_STEP) * self.S)
+        cap = max(1, int(ev.get("plant_cap", S.SAKURA_DASH2_PLANT_CAP)))
+        x2 = min(max(px + dx * dist, self.snake.radius), self.world_w - self.snake.radius)
+        y2 = min(max(py + dy * dist, self.snake.radius), self.world_h - self.snake.radius)
+        self.game.audio.play("skill_dash")
+        iframe = ev.get("iframe", S.SAKURA_DASH2_IFRAME)
+        if iframe > 0:
+            self.snake.invincible = max(self.snake.invincible, iframe)
+        # 沿途种花：按 plant_step 取样路径点，对附近敌人叠标记（单怪限 cap 次）
+        planted = {}
+        reach = self.s(70)
+        d = math.hypot(x2 - px, y2 - py) or 1.0
+        n = max(1, int(d // step))
+        for i in range(1, n + 1):
+            wx = px + (x2 - px) * i / n
+            wy = py + (y2 - py) * i / n
+            self._fx_petals(wx, wy, self.s(40), (255, 190, 215))
+            for m in list(self.mobs):
+                if not m.alive:
+                    continue
+                if math.hypot(m.pos[0] - wx, m.pos[1] - wy) <= reach + m.radius:
+                    if planted.get(id(m), 0) < cap:
+                        planted[id(m)] = planted.get(id(m), 0) + 1
+                        self._sakura_mark_stack(m)
+            if self.boss is not None and self.boss.alive:
+                bx, by = self.boss.pos
+                if (math.hypot(bx - wx, by - wy) <= reach + self.boss.radius_px
+                        and planted.get("boss", 0) < cap):
+                    planted["boss"] = planted.get("boss", 0) + 1
+                    self._sakura_mark_stack(self.boss)
+        self.mobs = [m for m in self.mobs if m.alive]
+        # 突进本体伤害（路径上的敌人吃一次斩冲）+ 位移到落点
+        self._damage_segment(px, py, x2, y2, self._sakura_skill_dmg(ev, 0.5), color)
+        self.snake.pos[0], self.snake.pos[1] = x2, y2
+        self._fx_trail(px, py, x2, y2, color)
+        # 樱分身：中点爆散
+        midx, midy = (px + x2) / 2, (py + y2) / 2
+        self._spawn_fx_sprite(ev.get("sid"), midx, midy, self.s(150),
+                              life=0.4, expand=1.7, spin=2.5)
+        self._burst(midx, midy, (255, 190, 215), 18)
+        # 落地护盾（护盾卡加成同潮汐交接）
+        shield_pct = ev.get("shield_pct", S.SAKURA_DASH2_SHIELD_PCT)
+        shield_time = ev.get("shield_time", S.SAKURA_DASH2_SHIELD_TIME)
+        smult = 1.0 + min(S.SHIELD_STAT_CAP, self.stats.get("shield", 0.0))
+        self.snake.grant_shield(shield_time * smult,
+                                self.snake.hp_max * shield_pct * smult)
+        self._burst(x2, y2, color, 20)
+        self._fx_ring(x2, y2, self.s(80), (255, 200, 225), life=0.4)
+        self._float(ev.get("name", "花信"), px, py - self.s(54), color, 30)
+        self.shake = max(self.shake, 0.28)
+
+    def _skill_sakura_detonate(self, ev, px, py):
+        """② 催放：立即引爆半径内所有花瓣标记（不等满层），每层 ×per_stack 追加伤害；
+        引爆后 delay 秒对同一批目标再补一跳 delay_pct 的余震。"""
+        r = ev.get("radius", S.SAKURA_DETONATE_RADIUS) * self.S
+        per_stack = ev.get("per_stack", S.SAKURA_DETONATE_PER_STACK)
+        delay = ev.get("delay", S.SAKURA_DETONATE_DELAY)
+        delay_pct = ev.get("delay_pct", S.SAKURA_DETONATE_DELAY_PCT)
+        color = ev.get("color", (255, 180, 210))
+        base = self._sakura_skill_dmg(ev, 1.0)
+        self.game.audio.play("skill_storm")
+        self._fx_nova(px, py, r, color, life=0.6)
+        self._spawn_fx_sprite(ev.get("sid"), px, py, max(self.s(90), r * 1.5),
+                              life=0.55, expand=1.6, spin=2.0)
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if math.hypot(m.pos[0] - px, m.pos[1] - py) <= r + m.radius:
+                stacks = getattr(m, "mark_stacks", 0)
+                if stacks > 0:
+                    dmg = int(round(base * (1.0 + per_stack * stacks)))
+                    m.clear_mark()
+                    self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=12)
+                    if m.alive and delay > 0:
+                        self.sakura_delay.append(
+                            {"t": delay, "mob": m, "boss": False,
+                             "dmg": max(1, int(round(dmg * delay_pct))),
+                             "color": color})
+        self.mobs = [m for m in self.mobs if m.alive]
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - px, by - py) <= r + self.boss.radius_px:
+                stacks = getattr(self.boss, "mark_stacks", 0)
+                if stacks > 0:
+                    bdmg = int(round(base * (1.0 + per_stack * stacks)))
+                    self.boss.clear_mark()
+                    self._damage_boss(bdmg, color=color)
+                    if self.boss.alive and delay > 0:
+                        self.sakura_delay.append(
+                            {"t": delay, "mob": self.boss, "boss": True,
+                             "dmg": max(1, int(round(bdmg * delay_pct))),
+                             "color": color})
+        self._float(ev.get("name", "催放"), px, py - self.s(58), color, 30)
+        self.shake = max(self.shake, 0.34)
+
+    def _skill_sakura_gather(self, ev, px, py, dx, dy):
+        """③ 落樱引：在指定点铺一片持续 time 秒的圆形花圃，圃内敌人每 tick 叠 1 层
+        花瓣标记，叠满 3 层立即绽放（绽放结算见 _update_sakura / _sakura_bloom）。
+        指定点优先取最近敌人脚下，否则沿瞄准方向抛出。"""
+        r = ev.get("radius", S.SAKURA_GATHER_RADIUS) * self.S
+        gt = ev.get("time", S.SAKURA_GATHER_TIME)
+        tick = ev.get("tick", S.SAKURA_GATHER_TICK)
+        color = ev.get("color", (255, 160, 200))
+        tgt = self._nearest_target(max_range=r * 3.0)
+        if tgt is not None:
+            _kind, obj = tgt
+            cx, cy = obj.pos[0], obj.pos[1]
+        else:
+            cx, cy = px + dx * r, py + dy * r
+        cx = min(max(cx, r), max(r, self.world_w - r))
+        cy = min(max(cy, r), max(r, self.world_h - r))
+        self.sakura_beds.append({"x": cx, "y": cy, "r": r, "t": gt, "max_t": gt,
+                                 "tick": max(0.05, tick), "acc": 0.0,
+                                 "color": color, "sid": ev.get("sid")})
+        self.game.audio.play("skill_storm")
+        self._fx_rune(cx, cy, r, color, life=0.6)
+        self._fx_petals(cx, cy, r, (255, 190, 215))
+        self._spawn_fx_sprite(ev.get("sid"), cx, cy, max(self.s(120), r * 1.6),
+                              life=0.7, expand=1.3, spin=1.2)
+        self._float(ev.get("name", "落樱引"), px, py - self.s(58), color, 30)
+
+    def _sakura_bed_tick(self, bed):
+        """花圃每 tick：对圃内敌人叠 1 层花瓣标记（满层由 _sakura_mark_stack 触发绽放），
+        并补一圈法阵让花圃在存续期内持续可见。"""
+        x, y, r = bed["x"], bed["y"], bed["r"]
+        color = bed["color"]
+        self._fx_rune(x, y, r, color, life=0.85)
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if math.hypot(m.pos[0] - x, m.pos[1] - y) <= r + m.radius:
+                self._sakura_mark_stack(m)
+        self.mobs = [m for m in self.mobs if m.alive]
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - x, by - y) <= r + self.boss.radius_px:
+                self._sakura_mark_stack(self.boss)
+
+    def _skill_sakura_blade(self, ev, px, py, base_ang):
+        """④ 回旋花刃：沿瞄准方向甩出花刃轮往返 trips 趟，每趟对射线走廊内敌人
+        造成 mult 倍伤害并叠 1 层花瓣标记；命中已带标记者额外 +marked_bonus。"""
+        rng = ev.get("range", S.SAKURA_BLADE_RANGE) * self.S
+        halfw = ev.get("width", S.SAKURA_BLADE_WIDTH) * self.S * 0.5
+        mult = ev.get("mult", S.SAKURA_BLADE_MULT)
+        trips = max(1, int(ev.get("trips", S.SAKURA_BLADE_TRIPS)))
+        bonus = ev.get("marked_bonus", S.SAKURA_BLADE_MARKED_BONUS)
+        color = ev.get("color", (255, 170, 200))
+        x2 = px + math.cos(base_ang) * rng
+        y2 = py + math.sin(base_ang) * rng
+        self.game.audio.play("skill_bloom")
+        base = self._sakura_skill_dmg(ev, mult)
+        for trip in range(trips):
+            self._fx_beam(px, py, x2, y2, halfw * 2, color, life=0.3)
+            self._spawn_fx_sprite(ev.get("sid"), (px + x2) / 2, (py + y2) / 2,
+                                  self.s(150), life=0.35, expand=1.4,
+                                  spin=(4.0 if trip % 2 == 0 else -4.0))
+            for m in list(self.mobs):
+                if not m.alive:
+                    continue
+                if _seg_dist(m.pos[0], m.pos[1], px, py, x2, y2) <= halfw + m.radius:
+                    had = getattr(m, "mark_stacks", 0) > 0
+                    dmg = int(round(base * (1.0 + bonus))) if had else base
+                    self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=6)
+                    if m.alive:
+                        self._sakura_mark_stack(m)
+            self.mobs = [m for m in self.mobs if m.alive]
+            if self.boss is not None and self.boss.alive:
+                bx, by = self.boss.pos
+                if _seg_dist(bx, by, px, py, x2, y2) <= halfw + self.boss.radius_px:
+                    had = getattr(self.boss, "mark_stacks", 0) > 0
+                    bdmg = int(round(base * (1.0 + bonus))) if had else base
+                    self._damage_boss(bdmg, color=color)
+                    self._sakura_mark_stack(self.boss)
+        self._float(ev.get("name", "回旋花刃"), px, py - self.s(58), color, 30)
+        self.shake = max(self.shake, 0.26)
+
+    def _skill_sakura_channel(self, ev, px, py):
+        """⑤ 花期：进入 time 秒的花期状态——期间普攻每段必叠 stack 层花瓣标记
+        （见弹丸钩子），且绽放半径 ×bloom_mult（见 _sakura_bloom）。"""
+        gt = ev.get("time", S.SAKURA_CHANNEL_TIME)
+        color = ev.get("color", (255, 200, 220))
+        self.sakura_kaki_t = max(self.sakura_kaki_t, gt)
+        self.game.audio.play("skill_shield")
+        self._fx_aura(px, py, self.s(120), color, life=0.7)
+        self._spawn_fx_sprite(ev.get("sid"), px, py, self.s(170),
+                              life=0.7, expand=1.6, spin=1.5)
+        self._burst(px, py, color, 20)
+        self._float(ev.get("name", "花期") + " 绽放增益!", px, py - self.s(58), color, 30)
+
+    def _update_sakura(self, dt):
+        """樱落持续态每帧推进：花期倒计时 / 催放延迟二次跳 / 花圃区域叠层绽放。"""
+        if self.sakura_kaki_t > 0:
+            self.sakura_kaki_t = max(0.0, self.sakura_kaki_t - dt)
+        # 催放延迟二次跳：到期对仍存活的目标补一跳余震
+        if self.sakura_delay:
+            for d in self.sakura_delay:
+                d["t"] -= dt
+            due = [d for d in self.sakura_delay if d["t"] <= 0]
+            self.sakura_delay = [d for d in self.sakura_delay if d["t"] > 0]
+            for d in due:
+                m = d["mob"]
+                if not getattr(m, "alive", False):
+                    continue
+                if d["boss"]:
+                    self._damage_boss(d["dmg"], color=d["color"])
+                else:
+                    self._hurt_mob(m, d["dmg"], m.pos[0], m.pos[1],
+                                   color=d["color"], spark=6)
+                    self._fx_petals(m.pos[0], m.pos[1], self.s(40), d["color"])
+            self.mobs = [m for m in self.mobs if m.alive]
+        # 花圃区域：每 tick 叠层，存续时间到即消散
+        if self.sakura_beds:
+            for bed in self.sakura_beds:
+                bed["t"] -= dt
+                bed["acc"] += dt
+                if bed["acc"] >= bed["tick"]:
+                    bed["acc"] -= bed["tick"]
+                    self._sakura_bed_tick(bed)
+            self.sakura_beds = [b for b in self.sakura_beds if b["t"] > 0]
 
     def _fire_blast(self, mx, my):
         """火元素爆燃：小范围灼烧 + 即时伤害。"""
@@ -3347,6 +3658,9 @@ class BattleScene(Scene):
         mult = 1.0
         if self.passive_kind == "guard":
             mult *= S.PASSIVE_NIGHT_REDUCE
+        # 樱落·花守：花护层数减伤（每层 SAKURA_GUARD_REDUCE，绽放叠层，上限 GUARD_MAX）
+        if self.passive_kind == "bloomguard" and self.sakura_guard > 0:
+            mult *= (1.0 - S.SAKURA_GUARD_REDUCE * self.sakura_guard)
         # 潮汐·后浪：潮汐在后台且存活时，出战角色免伤（强化达标 20%，否则 15%）
         bw = self._backwave_reduce()
         if bw > 0:
