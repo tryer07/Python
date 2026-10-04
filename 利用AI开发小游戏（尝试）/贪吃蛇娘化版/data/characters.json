@@ -236,7 +236,7 @@
     "element": "星",
     "growth": "法术",
     "role": "mage",
-    "desc": "仰观星象的蛇娘，发间与尾尖都拖着一道星轨。",
+    "desc": "仰观星象的蛇娘，发间与尾尖都拖着一道星轨。普攻为远程星尘弹三段「星尘连辉」：段3 扇形星散可穿透敌人，命中留下一道微星痕。",
     "story": "星璃是一位占星者，终年仰观星象，发间与尾尖都拖着一道星轨。她相信每个人的命运都写在天上，却从不说破——因为她见过太多人得知命运后反而迷失。她只默默记下星象的偏移，在灾厄将至时悄悄拨动轨迹。她的神秘，是一种温柔的沉默。",
     "egg_lines": {
       "head": ["你的星轨…今晚格外明亮呢。", "发间的星星，是我为某人留的灯。"],
@@ -263,6 +263,20 @@
         {"id": "p_starlight", "name": "星辉", "desc": "击杀敌人缩短专属主动的冷却。", "color": [200, 170, 255], "vfx": "cdr"},
         {"id": "p_stella_mark", "name": "星之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即星爆伤害周围敌人。", "color": [210, 180, 255], "vfx": "markstack"}
       ]
+    },
+    "ranged": {
+      "name": "星尘连辉",
+      "range": 460,
+      "exit_range": 520,
+      "bullet_radius": 8,
+      "stages": [
+        {"count": 1, "spread_deg": 0, "speed": 840, "mult": 1.00, "life": 1.1, "curve": 0.0, "spin": 0.0, "trail": 0, "mark": 0, "pierce": 0, "hit_trace": 0},
+        {"count": 2, "spread_deg": 40, "speed": 740, "mult": 0.62, "life": 1.1, "curve": 0.0, "spin": 0.0, "trail": 0, "mark": 0, "pierce": 0, "hit_trace": 0},
+        {"count": 5, "spread_deg": 100, "speed": 620, "mult": 0.45, "life": 1.3, "curve": 0.0, "spin": 120.0, "trail": 1, "mark": 0, "pierce": 1, "hit_trace": 0.8}
+      ],
+      "hitstop": 0.08,
+      "shake_px": 2.0,
+      "shake_px_finisher": 3.0
     },
     "head": "characters/lamia_stella/head.png",
     "full": "characters/lamia_stella/full.png",

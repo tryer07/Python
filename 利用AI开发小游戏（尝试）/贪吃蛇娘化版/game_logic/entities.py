@@ -249,6 +249,7 @@ class PlayerBullet:
         self.rot = None
         self.trail = False            # 旋转拖尾：飞行中撒花瓣粒子（battle 端结算）
         self.mark = False             # 命中必叠花瓣标记（段3 种花主手段）
+        self.star_trace = False       # 命中微星痕（仅视觉，不进标记/星轨系统）
         self.tex_rel = None           # 普攻贴图相对路径（effects/melee/…，缩放变体）
         self.trail_acc = 0.0
         self.alive = True

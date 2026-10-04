@@ -1434,7 +1434,8 @@ class BattleScene(Scene):
             if not isinstance(st, dict):
                 return None
             d = {"count": 1.0, "spread_deg": 0.0, "speed": 820.0, "mult": 1.0,
-                 "life": 1.1, "curve": 0.0, "spin": 0.0, "trail": 0.0, "mark": 0.0}
+                 "life": 1.1, "curve": 0.0, "spin": 0.0, "trail": 0.0, "mark": 0.0,
+                 "pierce": 0.0, "hit_trace": 0.0}
             for k in d:
                 try:
                     d[k] = float(st.get(k, d[k]))
@@ -1516,10 +1517,12 @@ class BattleScene(Scene):
             b = PlayerBullet(
                 (px, py), (math.cos(a) * spd, math.sin(a) * spd), dmg, radius,
                 life=st["life"], color=self._ranged_color(),
-                element=self._active_element(), curve=curve, spin=st["spin"])
+                element=self._active_element(), curve=curve, spin=st["spin"],
+                pierce=int(st["pierce"]))
             b.rot = math.degrees(a)
             b.trail = st["trail"] > 0
             b.mark = st["mark"] > 0
+            b.star_trace = st["hit_trace"] > 0   # 星璃段3：命中留微星痕（纯视觉）
             b.tex_rel = tex
             b.tex_mult = tex_mult
             self.bullets.append(b)
@@ -1757,6 +1760,8 @@ class BattleScene(Scene):
                     b.hit_ids.add(m.uid)
                     self._hurt_mob(m, b.dmg, m.pos[0], m.pos[1], color=b.color, spark=6)
                     self._apply_onhit_passive(m)
+                    if b.star_trace:
+                        self._fx_starfall(m.pos[0], m.pos[1], self.s(46), life=0.8)
                     if not b.from_skill:
                         self._try_contract_proc(m.pos[0], m.pos[1])
                         # 樱落·花期：期间普攻每段必叠 SAKURA_CHANNEL_STACK 层（不只段3）
@@ -1790,6 +1795,8 @@ class BattleScene(Scene):
             if math.hypot(b.pos[0] - bx, b.pos[1] - by) <= b.radius + r:
                 b.alive = False
                 self._damage_boss(b.dmg, color=b.color)
+                if b.star_trace:
+                    self._fx_starfall(bx, by, self.s(46), life=0.8)
                 if not b.from_skill:
                     self._try_contract_proc(bx, by)
                     if self.boss.alive and self.sakura_kaki_t > 0:
@@ -3863,10 +3870,10 @@ class BattleScene(Scene):
         self.effects.append({"type": "petals", "x": x, "y": y, "r": r,
                              "color": color, "life": 0.6, "max_life": 0.6})
 
-    def _fx_starfall(self, x, y, r):
-        """星陨拖尾：星元素的坠落星辉。"""
+    def _fx_starfall(self, x, y, r, life=0.6):
+        """星陨拖尾：星元素的坠落星辉（星璃段3 命中留 0.8s 微星痕亦复用此）。"""
         self.effects.append({"type": "starfall", "x": x, "y": y, "r": r,
-                             "color": (190, 150, 255), "life": 0.6, "max_life": 0.6})
+                             "color": (190, 150, 255), "life": life, "max_life": life})
 
     def _fx_element(self, el, x, y, r):
         """按元素追加一层专属特效，让同框架连招不同元素视觉各异。"""
