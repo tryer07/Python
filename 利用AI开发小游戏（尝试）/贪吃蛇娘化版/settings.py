@@ -623,6 +623,67 @@ STELLA_CONST_DMG = 45            # 每条星座星轨伤害
 STELLA_CONST_MAX_LINES = 15      # 星座星轨条数上限
 STELLA_CONST_WINDOW = 6.0        # 后续新落星位自动连线窗口（秒，不限间距）
 
+# ==================== 月见 · 月相盈亏五技能（月属性坦克，数值固定不吃职业系数） ====================
+# 月相状态机：新月(0)→上弦(1)→满月(2)→下弦(3) 循环；技能/普攻命中推进一相。
+# 相位增益常驻生效；技能二段结算按释放时的相位走对应分支。
+LUNA_PHASE_NAMES = ("新月", "上弦", "满月", "下弦")
+# --- 相位增益 ---
+LUNA_PHASE_NEW_REDUCE = 0.15     # 新月：受伤 -15%
+LUNA_PHASE_NEW_SHIELD = 1.30     # 新月：护盾获取 +30%
+LUNA_PHASE_UP_CDR = 0.10         # 上弦：技能冷却缩减 +10%
+LUNA_PHASE_UP_SPEED = 1.10       # 上弦：移速 +10%
+LUNA_PHASE_FULL_DMG = 1.20       # 满月：技能输出 +20%
+LUNA_PHASE_FULL_WEAKEN = 0.45    # 满月：削弱加深（碰触伤害倍率 0.6→0.45）
+LUNA_PHASE_DOWN_REGEN = 0.01     # 下弦：每秒回复 1% 最大生命
+LUNA_RING_SIZE = 24              # 头顶月相指示环直径（像素）
+LUNA_ADVANCE_CD = 1.2            # 普攻命中推进月相的节流间隔（秒）
+# --- 技能命中后的相位即时增益（boon，按释放时相位发一小段 buff）---
+LUNA_BOON_SHIELD_PCT = 0.08      # 新月：护盾（最大生命比例）
+LUNA_BOON_SHIELD_TIME = 4.0
+LUNA_BOON_SPEED_MULT = 1.20      # 上弦：移速场倍率
+LUNA_BOON_SPEED_TIME = 3.0
+LUNA_BOON_DMG_MULT = 1.25        # 满月：下次输出增益倍率
+LUNA_BOON_DMG_TIME = 4.0
+LUNA_BOON_HEAL_PCT = 0.06        # 下弦：立即治疗（最大生命比例）
+# --- 1 月渡（luna_phase_dash）：相位前冲短无敌 + 落点月痕，二段按相位结算 ---
+LUNA_DASH_CD = 7.0
+LUNA_DASH_DIST = 300             # 前冲距离（设计像素）
+LUNA_DASH_TIME = 0.18            # 冲刺时长（秒）
+LUNA_DASH_IFRAME = 0.35          # 冲刺无敌帧（秒）
+LUNA_DASH_MARK_T = 2.0           # 落点月痕残留秒数（残留期间再按=二段）
+LUNA_DASH_FIELD_RADIUS = 190     # 二段落点场半径（设计像素）
+LUNA_DASH_FIELD_TIME = 3.0       # 二段场持续秒
+LUNA_DASH_SPEED_MULT = 1.25      # 上弦二段：场内移速倍率
+LUNA_DASH_BURST_MULT = 0.60      # 满月二段：范围伤害倍率（吃面板）
+LUNA_DASH_HEAL_PCT = 0.10        # 下弦二段：治疗圈内回复（最大生命比例）
+# --- 2 月弧（luna_arc）：环形刃引爆标记 + 削弱 + 推进一相 ---
+LUNA_ARC_CD = 8.0
+LUNA_ARC_RADIUS = 260            # 引爆半径（设计像素）
+LUNA_ARC_MULT = 0.50             # 基础伤害倍率（吃面板）
+LUNA_ARC_PER_STACK = 0.35        # 每层标记额外倍率
+# --- 3 月华引（luna_pull）：持续拉拽 + 削弱，每拉中一个推进一相 ---
+LUNA_PULL_CD = 10.0
+LUNA_PULL_RADIUS = 320           # 拉拽半径（设计像素）
+LUNA_PULL_STRENGTH = 420         # 拉拽强度（像素/秒）
+LUNA_PULL_TIME = 1.5             # 持续秒
+LUNA_PULL_SHIELD_PCT = 0.04      # 每拉中一个：护盾（最大生命比例）
+LUNA_PULL_SHIELD_TIME = 4.0
+# --- 4 新月刃（luna_crescent）：追踪刃叠印记，满月相位刃数 +2 ---
+LUNA_BLADE_CD = 6.0
+LUNA_BLADE_COUNT = 3             # 刃数
+LUNA_BLADE_MULT = 0.35           # 单刃伤害倍率（吃面板）
+LUNA_BLADE_SPEED = 720           # 弹速（设计像素/秒）
+LUNA_BLADE_LIFE = 1.6            # 存续秒
+LUNA_BLADE_FULL_EXTRA = 2        # 满月相位额外刃数
+# --- 5 望月（luna_fullmoon）：大招吟唱→锁满月 8s 全场持续削弱+自身减伤 ---
+LUNA_FULL_CD = 36.0
+LUNA_FULL_TIME = 1.2             # 吟唱秒（可移动）
+LUNA_FULL_LOCK_TIME = 8.0        # 满月锁定秒
+LUNA_FULL_WEAKEN_TICK = 1.0      # 锁定期全场削弱间隔（秒）
+LUNA_FULL_REDUCE = 0.30          # 锁定期自身减伤 30%
+LUNA_FULL_BURST_DMG = 40         # 结束月爆：每次削弱计数的伤害
+LUNA_FULL_BURST_CAP = 12         # 月爆次数上限
+
 # ==================== 标记被动（全员：技能叠标记，满 3 层自爆） ====================
 MARKPASSIVE_STACKS = 3          # 标记最多叠几层
 MARKPASSIVE_TIME = 6.0          # 标记持续秒
