@@ -147,6 +147,12 @@ _BASE_CD = {
     "stella_well": lambda: S.STELLA_WELL_CD,
     "stella_shower": lambda: S.STELLA_SHOWER_CD,
     "stella_constellation": lambda: S.STELLA_CONST_CD,
+    # 月见月相盈亏五技能（月属性坦克，数值固定不吃职业系数）
+    "luna_phase_dash": lambda: S.LUNA_DASH_CD,
+    "luna_arc": lambda: S.LUNA_ARC_CD,
+    "luna_pull": lambda: S.LUNA_PULL_CD,
+    "luna_crescent": lambda: S.LUNA_BLADE_CD,
+    "luna_fullmoon": lambda: S.LUNA_FULL_CD,
 }
 
 
@@ -232,6 +238,24 @@ _STAT_FIELDS = {
     "stella_constellation": [("time", "吟唱", _f_sec), ("dmg", "每条星轨伤害", _f_int),
                              ("max_lines", "星轨上限", _f_int),
                              ("window", "自动连线窗口", _f_sec)],
+    # --- 月见月相盈亏五技能：伤害按面板算（mult），此处只展机制参数 ---
+    "luna_phase_dash": [("dist", "前冲距离", _f_int), ("iframe", "无敌帧", _f_sec),
+                        ("mark_t", "月痕残留", _f_sec),
+                        ("field_radius", "二段场半径", _f_int),
+                        ("burst_mult", "满月二段倍率", _f_mult),
+                        ("heal_pct", "下弦二段治疗", _f_pct)],
+    "luna_arc": [("radius", "引爆半径", _f_int), ("mult", "基础倍率", _f_mult),
+                 ("per_stack", "每层标记", _f_mult)],
+    "luna_pull": [("radius", "拉拽半径", _f_int), ("time", "持续", _f_sec),
+                  ("strength", "拉拽强度", _f_int),
+                  ("shield_pct", "每拉中护盾", _f_pct)],
+    "luna_crescent": [("count", "刃数", _f_int), ("mult", "单刃倍率", _f_mult),
+                      ("speed", "弹速", _f_int), ("life", "存续", _f_sec)],
+    "luna_fullmoon": [("time", "吟唱", _f_sec), ("lock_time", "满月锁定", _f_sec),
+                      ("weaken_tick", "削弱间隔", _f_sec),
+                      ("reduce", "自身减伤", _f_pct),
+                      ("dmg", "每次月爆伤害", _f_int),
+                      ("burst_cap", "月爆上限", _f_int)],
 }
 
 
@@ -324,10 +348,11 @@ class SkillEngine:
         """指定强化等级 lv 下的冷却秒数（数值表/介绍面板用）。
         职业系数：法师技能贵（CD ×1.30）、刺客技能勤（CD ×0.82）。"""
         base = _BASE_CD.get(self._type_of(sid), lambda: 6.0)()
-        # 樱落/绯焰/星璃专属五技能：CD 按规格固定，不吃职业系数（会破坏闭环节奏）
+        # 樱落/绯焰/星璃/月见专属五技能：CD 按规格固定，不吃职业系数（会破坏闭环节奏）
         stype = self._type_of(sid)
         role_cd = 1.0 if (stype.startswith("sakura_") or stype.startswith("flare_")
-                          or stype.startswith("stella_")) \
+                          or stype.startswith("stella_")
+                          or stype.startswith("luna_")) \
             else S.ROLE_CD_MULT.get(self.role, 1.0)
         cd = (base * role_cd * (1.0 - min(0.75, cdr))
               * (1.0 - S.SKILL_ENH_CD_PER_LV * lv))
@@ -477,10 +502,12 @@ class SkillEngine:
         role = self.role or "hybrid"
         if role not in ("tank", "mage", "assassin"):
             return ev
-        # 潮汐切人五技能 / 樱落种花五技能 / 绯焰灼烧引爆五技能 / 星璃连星成轨五技能：
-        # 数值按规格固定，不吃职业范围/射程/读条系数（局内强化仍由 _scale_event 统一放大）。
+        # 潮汐切人五技能 / 樱落种花五技能 / 绯焰灼烧引爆五技能 / 星璃连星成轨五技能
+        # / 月见月相盈亏五技能：数值按规格固定，不吃职业范围/射程/读条系数
+        # （局内强化仍由 _scale_event 统一放大）。
         if (stype.startswith("tide_") or stype.startswith("sakura_")
-                or stype.startswith("flare_") or stype.startswith("stella_")):
+                or stype.startswith("flare_") or stype.startswith("stella_")
+                or stype.startswith("luna_")):
             return ev
         area = S.ROLE_AREA_MULT.get(role, 1.0)
         for k in ("radius", "range", "length", "width"):
@@ -715,6 +742,16 @@ class SkillEngine:
             ev["count"] = ev.get("count", 6) + 2                # 多两枚流星
         elif stype == "stella_constellation":
             ev["max_lines"] = ev.get("max_lines", 15) + 5       # 星座更密
+        elif stype == "luna_phase_dash":
+            ev["iframe"] = ev.get("iframe", 0.35) + 0.15        # 无敌帧更久
+        elif stype == "luna_arc":
+            ev["per_stack"] = ev.get("per_stack", 0.35) + 0.15  # 每层标记加成更高
+        elif stype == "luna_pull":
+            ev["shield_pct"] = ev.get("shield_pct", 0.04) * 1.5  # 每拉中护盾更厚
+        elif stype == "luna_crescent":
+            ev["count"] = ev.get("count", 3) + 2                # 多两道月刃
+        elif stype == "luna_fullmoon":
+            ev["burst_cap"] = ev.get("burst_cap", 12) + 4       # 月爆上限更高
         # 元素副效果满级质变：把该元素的招牌副效果再放大一档
         el = self.element
         if el == "水" and "freeze_time" in ev:
@@ -905,4 +942,40 @@ class SkillEngine:
                     "time": S.STELLA_CONST_TIME, "dmg": S.STELLA_CONST_DMG,
                     "max_lines": S.STELLA_CONST_MAX_LINES,
                     "window": S.STELLA_CONST_WINDOW}
+        # ---- 月见月相盈亏五技能（伤害按面板算 mult，仅望月带 dmg 绝对值供缩放）----
+        if stype == "luna_phase_dash":
+            return {"type": "luna_phase_dash",
+                    "dist": S.LUNA_DASH_DIST, "time": S.LUNA_DASH_TIME,
+                    "iframe": S.LUNA_DASH_IFRAME, "mark_t": S.LUNA_DASH_MARK_T,
+                    "field_radius": S.LUNA_DASH_FIELD_RADIUS,
+                    "field_time": S.LUNA_DASH_FIELD_TIME,
+                    "speed_mult": S.LUNA_DASH_SPEED_MULT,
+                    "burst_mult": S.LUNA_DASH_BURST_MULT,
+                    "heal_pct": S.LUNA_DASH_HEAL_PCT,
+                    "shield_pct": S.LUNA_BOON_SHIELD_PCT,
+                    "shield_time": S.LUNA_BOON_SHIELD_TIME}
+        if stype == "luna_arc":
+            return {"type": "luna_arc",
+                    "radius": S.LUNA_ARC_RADIUS, "mult": S.LUNA_ARC_MULT,
+                    "per_stack": S.LUNA_ARC_PER_STACK,
+                    "max_stacks": S.MARKPASSIVE_STACKS}
+        if stype == "luna_pull":
+            return {"type": "luna_pull",
+                    "radius": S.LUNA_PULL_RADIUS,
+                    "strength": S.LUNA_PULL_STRENGTH,
+                    "time": S.LUNA_PULL_TIME,
+                    "shield_pct": S.LUNA_PULL_SHIELD_PCT,
+                    "shield_time": S.LUNA_PULL_SHIELD_TIME}
+        if stype == "luna_crescent":
+            return {"type": "luna_crescent",
+                    "count": S.LUNA_BLADE_COUNT, "mult": S.LUNA_BLADE_MULT,
+                    "speed": S.LUNA_BLADE_SPEED, "life": S.LUNA_BLADE_LIFE,
+                    "max_stacks": S.MARKPASSIVE_STACKS}
+        if stype == "luna_fullmoon":
+            return {"type": "luna_fullmoon",
+                    "time": S.LUNA_FULL_TIME, "lock_time": S.LUNA_FULL_LOCK_TIME,
+                    "weaken_tick": S.LUNA_FULL_WEAKEN_TICK,
+                    "reduce": S.LUNA_FULL_REDUCE,
+                    "dmg": S.LUNA_FULL_BURST_DMG,
+                    "burst_cap": S.LUNA_FULL_BURST_CAP}
         return None
