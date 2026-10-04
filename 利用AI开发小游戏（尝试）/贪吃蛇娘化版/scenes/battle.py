@@ -1257,6 +1257,16 @@ class BattleScene(Scene):
                 cfg[k] = float(cfg.get(k, v))
             except (TypeError, ValueError):
                 cfg[k] = v
+        # 逐段倍率（可选）：给满 3 个值即覆盖 hit_mult/finisher_mult 的两值模型
+        # （月见三段各自倍率）；未给或非法则为 None，回退两值模型（潮汐/薄荷零影响）。
+        sm = cfg.get("stage_mult")
+        if isinstance(sm, (list, tuple)) and len(sm) >= 3:
+            try:
+                cfg["stage_mult"] = [float(v) for v in sm[:3]]
+            except (TypeError, ValueError):
+                cfg["stage_mult"] = None
+        else:
+            cfg["stage_mult"] = None
         return cfg
 
     def _melee_recover_secs(self, cfg):
@@ -1353,9 +1363,12 @@ class BattleScene(Scene):
             self.hitstop_t = max(self.hitstop_t, cfg["hitstop"])
         if not hits:
             return
-        dmg = self.player_damage * cfg["hit_mult"]
-        if stage == 3:
-            dmg *= cfg["finisher_mult"]
+        sm = cfg.get("stage_mult")
+        if sm:
+            mult = sm[min(2, max(0, stage - 1))]
+        else:
+            mult = cfg["hit_mult"] * (cfg["finisher_mult"] if stage == 3 else 1.0)
+        dmg = self.player_damage * mult
         dmg = max(1, int(round(dmg)))
         for kind, obj in hits:
             if kind == "mob":

@@ -323,6 +323,26 @@
         {"id": "p_luna_mark", "name": "月之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即月爆伤害周围敌人。", "color": [215, 220, 255], "vfx": "markstack"}
       ]
     },
+    "melee": {
+      "name": "盈亏月刃",
+      "range": 170,
+      "arc_deg": 130,
+      "finisher_radius": 120,
+      "exit_range": 210,
+      "windup": 0.16,
+      "hit_window": 0.14,
+      "recover": 0.30,
+      "recover_min": 0.15,
+      "idle_return": 0.15,
+      "stage_mult": [1.0, 0.62, 0.45],
+      "finisher_knock": 300,
+      "hitstop": 0.12,
+      "shake_px": 2.0,
+      "shake_px_finisher": 4.5,
+      "shield_pct": 0.0,
+      "shield_cap": 0.0,
+      "shield_time": 0.0
+    },
     "head": "characters/lamia_luna/head.png",
     "full": "characters/lamia_luna/full.png",
     "full_human": "characters/lamia_luna/full_human.png",
