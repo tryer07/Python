@@ -1,0 +1,37 @@
+{
+  "slot_name": "存档 1",
+  "created_at": 1791044463.2573917,
+  "player_name": "玩家",
+  "currency": 0,
+  "gacha_tickets": 5,
+  "owned_characters": [
+    "sakura"
+  ],
+  "selected_character": "sakura",
+  "selected_scene": "campus_garden",
+  "character_data": {
+    "snake_basic": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0
+    },
+    "sakura": {
+      "level": 1,
+      "exp": 0,
+      "skill_points": 0,
+      "enhance": 0
+    }
+  },
+  "story_unlocked": 1,
+  "story_cleared": [],
+  "tutorial_done": true,
+  "progress": {
+    "best_score": 0,
+    "best_level": 0,
+    "total_kills": 0,
+    "total_runs": 0,
+    "total_stardust": 0,
+    "total_wins": 0,
+    "bosses_defeated": {}
+  }
+}

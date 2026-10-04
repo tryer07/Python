@@ -4229,13 +4229,18 @@ class BattleScene(Scene):
                                         ring_r * 2, ring_r * 2),
                             math.pi / 2, math.pi / 2 + math.tau * fade,
                             max(1, self.s(2)))
-        # 引力井：内卷漩涡 + 井口细环
+        # 引力井：涡井贴图铺地旋转 + 井口细环（贴图缺则回退纯程序化圆环）
         for w in self.stella_wells:
             x = int(self.wx(w["x"], sx))
             y = int(self.wy(w["y"], sy))
             r = int(w["r"])
             fade = max(0.0, min(1.0, w["t"] / max(1e-4, w["max_t"])))
             a = int(90 * min(1.0, fade * 3.0))
+            wf = self._skill_fx_surf(w.get("fx"), max(24, r * 2), self._active_form())
+            if wf is not None:
+                rot = pygame.transform.rotate(wf, math.degrees(self.elapsed * 2.4) % 360.0)
+                rot.set_alpha(int(200 * min(1.0, fade * 3.0)))
+                screen.blit(rot, rot.get_rect(center=(x, y)))
             pygame.draw.circle(screen, (*self._STELLA_COL, a), (x, y), r)
             pygame.draw.circle(screen, (*self._STELLA_COL2, min(215, a + 90)),
                                (x, y), r, max(2, self.s(3)))
