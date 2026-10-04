@@ -288,6 +288,19 @@ class BattleScene(Scene):
         self.handoff_transfer = S.TIDE_HANDOFF_TRANSFER  # 交接盾转移比例（满级 0.75）
         self.landing_t = 0.0             # 踏浪登场增益剩余秒（移速+减伤）
 
+        # ---- 月见·月相盈亏场景级状态（_activate 按出战技能包启用/清零）----
+        self.luna_phase = None           # 当前月相 0新月/1上弦/2满月/3下弦（None=未启用）
+        self.luna_adv_cd = 0.0           # 普攻命中推进月相的节流计时
+        self.luna_boon_speed_t = 0.0     # 上弦 boon：移速增益剩余秒
+        self.luna_boon_speed_mult = 1.0
+        self.luna_boon_dmg_t = 0.0       # 满月 boon：输出增益剩余秒
+        self.luna_boon_dmg_mult = 1.0
+        self.luna_mark = None            # 月渡一段落点月痕：{"x","y","t","ev"}
+        self.luna_fields = []            # 月渡二段落点场：[{"x","y","r","t","kind","mult"|"heal_pct"}]
+        self.luna_pull = None            # 月华引涡旋：{"t","r","strength",...}
+        self.luna_lock = None            # 望月满月锁定：{"t","tick","weaken","ev","color"}
+        self.white_flash = 0.0           # 月爆全屏白闪（0..1）
+
         # ---- 实体容器 ----
         self.drops = []
         self.mobs = []
@@ -677,6 +690,20 @@ class BattleScene(Scene):
         self.stella_mark_supply = any(
             p.get("id") == "p_stella_mark"
             for p in getattr(self.skills, "passives", []))
+        # 月见·月相盈亏：出战技能包带 luna_* 主动才启用月相状态机（从新月起转），
+        # 切到其他角色清零全部月相态（月痕/落点场/涡旋/满月锁定不跨成员继承）
+        self.luna_phase = 0 if any(
+            (a.get("type") or "").startswith("luna_")
+            for a in getattr(self.skills, "actives", [])) else None
+        self.luna_adv_cd = 0.0
+        self.luna_boon_speed_t = 0.0
+        self.luna_boon_speed_mult = 1.0
+        self.luna_boon_dmg_t = 0.0
+        self.luna_boon_dmg_mult = 1.0
+        self.luna_mark = None
+        self.luna_fields = []
+        self.luna_pull = None
+        self.luna_lock = None
         self.fx_sprites = []
         self.role = m.get("role", "hybrid")
         self.role_armor = S.ROLE_ARMOR.get(self.role, 0.0)
@@ -831,6 +858,17 @@ class BattleScene(Scene):
         # 潮汐·踏浪登场：在水域上切人后短时移速 +20%
         if getattr(self, "landing_t", 0.0) > 0:
             mult *= (1.0 + S.PASSIVE_WAVE_LANDING_SPEED)
+        # 月见·上弦月相：常驻移速 +10%；技能 boon 短时移速再叠乘
+        if self.luna_phase == 1:
+            mult *= S.LUNA_PHASE_UP_SPEED
+        if getattr(self, "luna_boon_speed_t", 0.0) > 0:
+            mult *= self.luna_boon_speed_mult
+        # 月渡二段·上弦落点场：站在场内移速提升
+        for f in getattr(self, "luna_fields", []):
+            if (f["kind"] == "speed"
+                    and math.hypot(self.snake.pos[0] - f["x"],
+                                   self.snake.pos[1] - f["y"]) <= f["r"]):
+                mult *= f["mult"]
         return S.PLAYER_SPEED * self.S * self.stats["speed"] * mult
 
     @property
@@ -1019,10 +1057,14 @@ class BattleScene(Scene):
         self._update_sakura(dt)
         self._update_flare(dt)
         self._update_stella(dt)
+        self._update_luna(dt)
         self._update_fx_sprites(dt)
         self._update_tide_fields(dt)
         # 生命再生：血条制下直接把 regen*dt 累加进 hp（浮点），整数变化时飘字
         regen = self.stats.get("regen", 0.0)
+        # 月见·下弦月相：每秒回复 1% 最大生命（并入再生通道，整数变化才飘字）
+        if self.luna_phase == 3 and self.snake.alive:
+            regen += S.LUNA_PHASE_DOWN_REGEN * self.snake.hp_max
         if regen > 0 and self.snake.alive and self.snake.hp < self.snake.hp_max:
             before = int(self.snake.hp)
             self.snake.hp = min(float(self.snake.hp_max),
@@ -1043,6 +1085,8 @@ class BattleScene(Scene):
 
         self.shake = max(0.0, self.shake - dt * 3.2)
         self.flash = max(0.0, self.flash - dt * 2.4)
+        if self.white_flash > 0:
+            self.white_flash = max(0.0, self.white_flash - dt * 1.6)
 
         self.particles = list(self._tick_particles(dt))
         if len(self.particles) > S.PARTICLE_MAX:
@@ -1829,6 +1873,10 @@ class BattleScene(Scene):
                     self._stella_add_node(bx, by)
                 if b.star_trace:
                     self._fx_starfall(bx, by, self.s(46), life=0.8)
+                if getattr(b, "luna_blade", False) and self.boss.alive:
+                    # 月见·新月刃：命中叠印记并推进一相（月爆额外再推进）
+                    self._apply_mark_stack(self.boss)
+                    self._luna_advance(1)
                 if not b.from_skill:
                     self._try_contract_proc(bx, by)
                     if self.boss.alive and self.sakura_kaki_t > 0:
@@ -1926,6 +1974,14 @@ class BattleScene(Scene):
         """按 key(1-5) 释放对应主动：1=专属大招，2-5=连招组件。"""
         # dash2 二段：一段释放后技能即进冷却，再按同键会被冷却门控拦下；
         # 这里识别「实体仍挂起 + 按键正是 dash2」直接触发瞬移引爆（绕过冷却）。
+        # 月见·月渡二段：一段后落点月痕残留，残留期再按同键直接结算（绕过冷却）
+        if self.luna_mark is not None:
+            a = self.skills._active_by_key(key)
+            if a is not None and (a.get("type") or a.get("id")) == "luna_phase_dash":
+                self._skill_luna_dash(self.luna_mark["ev"])
+                self._start_cast_pose(key)
+                self._cancel_atk_recover()
+                return
         if self.dash2 is not None:
             a = self.skills._active_by_key(key)
             if a is not None:
@@ -1949,7 +2005,7 @@ class BattleScene(Scene):
                     self._start_cast_pose(key)
                     self._cancel_atk_recover()
                     return
-        ev = self.skills.cast(self.snake.pos, key, self.stats["cdr"])
+        ev = self.skills.cast(self.snake.pos, key, self._eff_cdr())
         if ev:
             # 法师「消耗多」：伤害型技能自伤一小截血（起手就扣，
             # dash2 再按引爆走上面的分支，不会重复计费）
@@ -1974,7 +2030,8 @@ class BattleScene(Scene):
             self.cast_pose = {"key": int(key), "t": 0.0,
                               # 吟唱/漩涡引导：姿势保持到读条结束（见 update 里的 hold 分支）
                               "hold": bool(a) and a.get("type") in (
-                                  "channel", "tide_vortex", "stella_constellation")}
+                                  "channel", "tide_vortex", "stella_constellation",
+                                  "luna_fullmoon")}
 
     def _cast_pose_alpha(self):
         """姿势透明度包络：快淡入 → 保持 → 淡出，smoothstep 让交叉更顺。"""
@@ -2423,6 +2480,16 @@ class BattleScene(Scene):
             self._skill_stella_shower(ev, px, py, base_ang)
         elif t == "stella_constellation":
             self._skill_stella_constellation(ev, px, py)
+        elif t == "luna_phase_dash":
+            self._skill_luna_dash(ev, px, py, dx, dy)
+        elif t == "luna_arc":
+            self._skill_luna_arc(ev, px, py)
+        elif t == "luna_pull":
+            self._skill_luna_pull(ev, px, py)
+        elif t == "luna_crescent":
+            self._skill_luna_crescent(ev, px, py, base_ang)
+        elif t == "luna_fullmoon":
+            self._skill_luna_fullmoon(ev, px, py)
 
     def _damage_segment(self, x1, y1, x2, y2, dmg, color, mark=False):
         reach = self.s(18)
@@ -2792,6 +2859,8 @@ class BattleScene(Scene):
                 self._finish_vortex(ch["ev"], ch["color"])
             elif ch.get("stella_const"):
                 self._finish_constellation(ch["ev"], ch["color"])
+            elif ch.get("luna_full"):
+                self._finish_fullmoon(ch["ev"], ch["color"])
             else:
                 self._finish_channel(ch["ev"], ch["color"])
 
@@ -3111,6 +3180,9 @@ class BattleScene(Scene):
         max_stacks = S.MARKPASSIVE_STACKS if max_stacks is None else max_stacks
         full = m.apply_mark(amp, time, max_stacks)
         self._fx_rune(m.pos[0], m.pos[1], m.radius * 2.4, (255, 220, 150), life=0.28)
+        # 月见·月相：印记叠满自爆（月爆）额外推进一相
+        if full and self.luna_phase is not None:
+            self._luna_advance(1)
         if full:
             if self.stella_mark_supply:
                 # 星璃「星之标记」供料：叠满 3 层不再自爆，改在敌人脚下落 1 颗星位
@@ -3159,6 +3231,10 @@ class BattleScene(Scene):
             m.apply_slow(S.PASSIVE_COLD_SLOW, S.PASSIVE_COLD_TIME)
         elif self.passive_kind == "burn":
             m.apply_burn(S.PASSIVE_EMBER_BURN_DPS, S.PASSIVE_EMBER_BURN_TIME)
+        # 月见·月相：普攻命中节流推进一相（LUNA_ADVANCE_CD 秒内只推进一次）
+        if self.luna_phase is not None and self.luna_adv_cd <= 0:
+            self.luna_adv_cd = S.LUNA_ADVANCE_CD
+            self._luna_advance(1)
         self._apply_element_proc(m)
 
     # ------------------------------------------------------------ 元素对怪效果
@@ -3206,7 +3282,7 @@ class BattleScene(Scene):
         elif el == "星":
             self._star_pierce(m)
         elif el == "月":
-            m.apply_weaken(S.ELEMENT_MOON_WEAKEN, S.ELEMENT_MOON_TIME)
+            m.apply_weaken(self._luna_weaken_mult(), S.ELEMENT_MOON_TIME)
             self.ward_t = max(self.ward_t, S.ELEMENT_MOON_WARD)
             self._fx_ring(mx, my, self.s(50), (200, 210, 255), life=0.34)
 
@@ -4468,6 +4544,489 @@ class BattleScene(Scene):
         elif self.passive_kind == "cdr":
             self.skills.reduce_cd(S.PASSIVE_STARLIGHT_CDR)
 
+    # -------------------------------------------------- 月见·月相盈亏五技能
+    # 月属性坦克：月相状态机 新月(0)→上弦(1)→满月(2)→下弦(3) 循环，
+    # 技能/普攻命中推进一相（见 _apply_onhit_passive / _apply_mark_stack）。
+    # 相位增益常驻：新月=受伤-15%+护盾获取+30% / 上弦=CD-10%+移速+10% /
+    # 满月=输出+20%+削弱加深 / 下弦=每秒回1%血。数值固定不吃职业系数，
+    # 伤害由 _luna_skill_dmg 按面板算（同 _sakura_skill_dmg 范式）。
+    _LUNA_PHASE_COL = ((232, 236, 250), (184, 196, 240),
+                       (240, 226, 170), (138, 148, 216))
+
+    @property
+    def _eff_cdr(self):
+        """月见·上弦月相：冷却缩减在面板 cdr 上再 +10%（封顶 0.75 同 skills）。"""
+        cdr = self.stats.get("cdr", 0.0)
+        if self.luna_phase == 1:
+            cdr = min(0.75, cdr + S.LUNA_PHASE_UP_CDR)
+        return cdr
+
+    def _luna_weaken_mult(self):
+        """月削弱倍率：满月月相加深（0.6→0.45），其余用元素默认值。"""
+        if self.luna_phase == 2:
+            return S.LUNA_PHASE_FULL_WEAKEN
+        return S.ELEMENT_MOON_WEAKEN
+
+    def _luna_advance(self, n=1):
+        """推进月相 n 步（取模 4 循环），头顶飘相位名 + 月轮光环提示。"""
+        if self.luna_phase is None:
+            return
+        self.luna_phase = (self.luna_phase + int(n)) % 4
+        px, py = self.snake.pos
+        col = self._LUNA_PHASE_COL[self.luna_phase]
+        self._float(S.LUNA_PHASE_NAMES[self.luna_phase],
+                    px, py - self.s(110), col, 22)
+        self._fx_ring(px, py - self.s(96), self.s(30), col, life=0.3)
+
+    def _luna_skill_dmg(self, ev, mult):
+        """月见技能伤害基数：面板 attack × 技能伤卡 × 职业系数 × 局内强化
+        × 满月相位 +20% × boon 增益 × 技能倍率（同 _sakura_skill_dmg 范式）。"""
+        lv = (ev or {}).get("lv", 0)
+        sd = self.stats.get("skilldmg", 1.0) * self.role_skilldmg
+        enh = 1.0 + S.SKILL_ENH_DMG_PER_LV * lv
+        phase = S.LUNA_PHASE_FULL_DMG if self.luna_phase == 2 else 1.0
+        boon = self.luna_boon_dmg_mult if self.luna_boon_dmg_t > 0 else 1.0
+        return max(1, int(round(self.snake.attack * sd * enh * phase * boon * mult)))
+
+    def _luna_shield_mult(self):
+        """护盾获取倍率：新月月相 +30%（叠护盾卡加成）。"""
+        m = 1.0 + min(S.SHIELD_STAT_CAP, self.stats.get("shield", 0.0))
+        if self.luna_phase == 0:
+            m *= S.LUNA_PHASE_NEW_SHIELD
+        return m
+
+    def _luna_grant_shield(self, pct, time):
+        """按最大生命比例上护盾（吃新月相位/护盾卡加成）。"""
+        if pct <= 0 or not self.snake.alive:
+            return
+        mult = self._luna_shield_mult()
+        self.snake.grant_shield(time * mult, self.snake.hp_max * pct * mult)
+
+    def _luna_boon(self, px, py, color):
+        """技能命中的相位即时增益：新月=小护盾 / 上弦=短时移速 /
+        满月=短时输出 / 下弦=立即治疗。"""
+        if self.luna_phase == 0:
+            self._luna_grant_shield(S.LUNA_BOON_SHIELD_PCT, S.LUNA_BOON_SHIELD_TIME)
+            self._fx_ring(px, py, self.s(64), color, life=0.4)
+        elif self.luna_phase == 1:
+            self.luna_boon_speed_t = S.LUNA_BOON_SPEED_TIME
+            self.luna_boon_speed_mult = S.LUNA_BOON_SPEED_MULT
+            self._float("月疾!", px, py - self.s(80), color, 22)
+        elif self.luna_phase == 2:
+            self.luna_boon_dmg_t = S.LUNA_BOON_DMG_TIME
+            self.luna_boon_dmg_mult = S.LUNA_BOON_DMG_MULT
+            self._float("月盈!", px, py - self.s(80), color, 22)
+        elif self.luna_phase == 3 and self.snake.alive:
+            healed = min(max(0.0, self.snake.hp_max - self.snake.hp),
+                         self.snake.hp_max * S.LUNA_BOON_HEAL_PCT)
+            if healed > 0:
+                self.snake.hp += healed
+                self._float(f"+{int(round(healed))} HP", px, py - self.s(40),
+                            COLOR_HP, 22)
+
+    def _luna_weaken_all(self, time=None, count=False):
+        """全场削弱（望月锁定周期用）：小怪必削，Boss 有 apply_weaken 才削。"""
+        t = S.ELEMENT_MOON_TIME if time is None else time
+        wm = self._luna_weaken_mult()
+        n = 0
+        for m in self.mobs:
+            if m.alive:
+                m.apply_weaken(wm, t)
+                n += 1
+        if self.boss is not None and self.boss.alive \
+                and hasattr(self.boss, "apply_weaken"):
+            self.boss.apply_weaken(wm, t)
+            n += 1
+        return n if count else None
+
+    def _skill_luna_dash(self, ev, px=None, py=None, dx=None, dy=None):
+        """① 月渡：一段=相位前冲 + 短无敌 + 落点月痕残留；
+        残留期再按同键=二段，按释放时相位结算：新月盾 / 上弦移速场 /
+        满月范围伤 / 下弦治疗圈，结算后推进一相。"""
+        color = ev.get("color", (200, 210, 255))
+        if px is None:
+            # 二段结算：在月痕落点按相位开字段（ev 为一段释放时的事件快照）
+            mk = self.luna_mark
+            self.luna_mark = None
+            if mk is None:
+                return
+            x, y = mk["x"], mk["y"]
+            r = ev.get("field_radius", S.LUNA_DASH_FIELD_RADIUS) * self.S
+            phase = self.luna_phase if self.luna_phase is not None else 0
+            self.game.audio.play("skill_storm", throttle=0.05)
+            self._spawn_fx_sprite(ev.get("sid"), x, y, r, life=0.5, expand=1.2)
+            self._fx_ring(x, y, r, color, life=0.5)
+            if phase == 0:
+                self._luna_grant_shield(ev.get("shield_pct", S.LUNA_BOON_SHIELD_PCT),
+                                        ev.get("shield_time", S.LUNA_BOON_SHIELD_TIME))
+                self._float("新月·月盾", x, y - self.s(58), color, 24)
+            elif phase == 1:
+                self.luna_fields.append({
+                    "x": x, "y": y, "r": r, "kind": "speed",
+                    "mult": ev.get("speed_mult", S.LUNA_DASH_SPEED_MULT),
+                    "t": ev.get("field_time", S.LUNA_DASH_FIELD_TIME),
+                    "max_t": ev.get("field_time", S.LUNA_DASH_FIELD_TIME),
+                    "fx": ev.get("sid"), "heal_pct": 0.0})
+                self._float("上弦·月疾场", x, y - self.s(58), color, 24)
+            elif phase == 2:
+                dmg = self._luna_skill_dmg(ev, ev.get("burst_mult",
+                                                      S.LUNA_DASH_BURST_MULT))
+                self._fx_nova(x, y, r, color, life=0.5)
+                for m in list(self.mobs):
+                    if not m.alive:
+                        continue
+                    if math.hypot(m.pos[0] - x, m.pos[1] - y) <= r + m.radius:
+                        self._hurt_mob(m, dmg, m.pos[0], m.pos[1],
+                                       color=color, spark=8)
+                        self._apply_mark_stack(m, max_stacks=S.MARKPASSIVE_STACKS)
+                self.mobs = [m for m in self.mobs if m.alive]
+                if self.boss is not None and self.boss.alive:
+                    bx, by = self.boss.pos
+                    if math.hypot(bx - x, by - y) <= r + self.boss.radius_px:
+                        self._damage_boss(dmg, color=color)
+                self.shake = max(self.shake, 0.25)
+                self._float("满月·月爆", x, y - self.s(58), color, 24)
+            else:
+                self.luna_fields.append({
+                    "x": x, "y": y, "r": r, "kind": "heal",
+                    "heal_pct": ev.get("heal_pct", S.LUNA_DASH_HEAL_PCT)
+                    / max(0.2, ev.get("field_time", S.LUNA_DASH_FIELD_TIME)),
+                    "mult": 1.0,
+                    "t": ev.get("field_time", S.LUNA_DASH_FIELD_TIME),
+                    "max_t": ev.get("field_time", S.LUNA_DASH_FIELD_TIME),
+                    "fx": ev.get("sid")})
+                self._float("下弦·月沐", x, y - self.s(58), color, 24)
+            self._luna_advance(1)
+            return
+        # 一段：前冲 + 无敌帧 + 落点月痕（残留期内再按=二段）
+        dist = ev.get("dist", S.LUNA_DASH_DIST) * self.S
+        x2 = min(max(px + dx * dist, self.snake.radius),
+                 self.world_w - self.snake.radius)
+        y2 = min(max(py + dy * dist, self.snake.radius),
+                 self.world_h - self.snake.radius)
+        self.game.audio.play("skill_dash")
+        iframe = ev.get("iframe", S.LUNA_DASH_IFRAME)
+        if iframe > 0:
+            self.snake.invincible = max(self.snake.invincible, iframe)
+        self._fx_trail(px, py, x2, y2, color, life=0.3)
+        self.snake.pos[0], self.snake.pos[1] = x2, y2
+        mark_t = ev.get("mark_t", S.LUNA_DASH_MARK_T)
+        self.luna_mark = {"x": x2, "y": y2, "t": mark_t, "max_t": mark_t,
+                          "ev": ev, "fx": ev.get("sid")}
+        self._spawn_fx_sprite(ev.get("sid"), x2, y2, self.s(120), life=0.45,
+                              expand=1.4)
+        self._burst(x2, y2, color, 14)
+        self._float(ev.get("name", "月渡"), px, py - self.s(54), color, 28)
+
+    def _skill_luna_arc(self, ev, px, py):
+        """② 月弧：环形月刃引爆周围敌人的印记（每层额外倍率）+ 削弱
+        + 推进一相 + 相位 boon。"""
+        color = ev.get("color", (232, 236, 250))
+        r = ev.get("radius", S.LUNA_ARC_RADIUS) * self.S
+        per = ev.get("per_stack", S.LUNA_ARC_PER_STACK)
+        base_mult = ev.get("mult", S.LUNA_ARC_MULT)
+        self.game.audio.play("skill_storm")
+        self._spawn_fx_sprite(ev.get("sid"), px, py, r, life=0.5, expand=1.2)
+        self._fx_ring(px, py, r, color, life=0.45)
+        wm = self._luna_weaken_mult()
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if math.hypot(m.pos[0] - px, m.pos[1] - py) <= r + m.radius:
+                stacks = getattr(m, "mark_stacks", 0)
+                dmg = self._luna_skill_dmg(ev, base_mult + per * stacks)
+                m.clear_mark()
+                m.apply_weaken(wm, S.ELEMENT_MOON_TIME)
+                self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=8)
+        self.mobs = [m for m in self.mobs if m.alive]
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - px, by - py) <= r + self.boss.radius_px:
+                stacks = getattr(self.boss, "mark_stacks", 0)
+                dmg = self._luna_skill_dmg(ev, base_mult + per * stacks)
+                self.boss.clear_mark()
+                if hasattr(self.boss, "apply_weaken"):
+                    self.boss.apply_weaken(wm, S.ELEMENT_MOON_TIME)
+                self._damage_boss(dmg, color=color)
+        self._luna_advance(1)
+        self._luna_boon(px, py, color)
+        self.shake = max(self.shake, 0.22)
+        self._float(ev.get("name", "月弧"), px, py - self.s(58), color, 30)
+
+    def _skill_luna_pull(self, ev, px, py):
+        """③ 月华引：以自身为心持续 time 秒拉拽（每帧结算见 _update_luna），
+        每个首次被拉中的敌人削弱 + 护盾 + 推进一相。"""
+        color = ev.get("color", (184, 196, 240))
+        r = ev.get("radius", S.LUNA_PULL_RADIUS) * self.S
+        self.game.audio.play("skill_storm")
+        self.luna_pull = {
+            "t": ev.get("time", S.LUNA_PULL_TIME),
+            "max_t": ev.get("time", S.LUNA_PULL_TIME),
+            "r": r, "strength": ev.get("strength", S.LUNA_PULL_STRENGTH) * self.S,
+            "shield_pct": ev.get("shield_pct", S.LUNA_PULL_SHIELD_PCT),
+            "shield_time": ev.get("shield_time", S.LUNA_PULL_SHIELD_TIME),
+            "pulled": set(), "color": color, "fx": ev.get("sid"),
+        }
+        self._fx_vortex(px, py, r, color, life=0.5)
+        self._float(ev.get("name", "月华引"), px, py - self.s(58), color, 30)
+
+    def _skill_luna_crescent(self, ev, px, py, base_ang):
+        """④ 新月刃：甩出 count 枚追踪月刃（满月相位 +FULL_EXTRA 枚），
+        命中叠印记 + 削弱 + 推进一相（见 _update_bullets 的 luna_blade 分支）。"""
+        color = ev.get("color", (232, 236, 250))
+        n = max(1, int(ev.get("count", S.LUNA_BLADE_COUNT)))
+        if self.luna_phase == 2:
+            n += S.LUNA_BLADE_FULL_EXTRA
+        spd = ev.get("speed", S.LUNA_BLADE_SPEED) * self.S
+        life = ev.get("life", S.LUNA_BLADE_LIFE)
+        dmg = self._luna_skill_dmg(ev, ev.get("mult", S.LUNA_BLADE_MULT))
+        onhit = {"weaken_mult": self._luna_weaken_mult(),
+                 "weaken_time": S.ELEMENT_MOON_TIME}
+        pool = self._nearest_mobs(n)
+        self.game.audio.play("skill_bloom")
+        for i in range(n):
+            ang = base_ang + (i - (n - 1) / 2.0) * 0.42
+            b = PlayerBullet(
+                (px, py), (math.cos(ang) * spd, math.sin(ang) * spd), dmg,
+                self.s(9), life=life, color=color,
+                element="月", from_skill=True, onhit=onhit, fx=ev.get("sid"))
+            b.luna_blade = True
+            if i < len(pool):
+                b.homing = pool[i]
+            self.bullets.append(b)
+        self._burst(px, py, color, 14)
+        self._float(ev.get("name", "新月刃"), px, py - self.s(54), color, 28)
+
+    def _skill_luna_fullmoon(self, ev, px, py):
+        """⑤ 望月（大招）：吟唱 time 秒（可移动，复用 channel 读条），
+        读满锁定满月 lock_time 秒：全场周期削弱 + 自身减伤 30%，
+        结束按削弱次数结算月爆（见 _finish_fullmoon / _finish_fullmoon_lock）。"""
+        color = ev.get("color", (240, 226, 170))
+        self.game.audio.play("skill_shield")
+        self.channel = {"t": 0.0,
+                        "total": max(0.05, ev.get("time", S.LUNA_FULL_TIME)),
+                        "ev": ev, "color": color, "fx": ev.get("sid"),
+                        "luna_full": True}
+        self.atk_combo = None   # 吟唱接管动作（同 _skill_channel）
+        self._fx_aura(px, py, self.s(110), color, life=0.5)
+        self._float(ev.get("name", "望月") + " 吟唱中…", px, py - self.s(58),
+                    color, 26)
+
+    def _finish_fullmoon(self, ev, color):
+        """望月吟唱读满：锁定满月相位 + 开启 lock_time 秒月华倾泻。"""
+        px, py = self.snake.pos
+        self.luna_phase = 2
+        lock_t = ev.get("lock_time", S.LUNA_FULL_LOCK_TIME)
+        self.luna_lock = {"t": lock_t, "max_t": lock_t,
+                          "tick": ev.get("weaken_tick", S.LUNA_FULL_WEAKEN_TICK),
+                          "weaken": 0, "ev": ev, "color": color,
+                          "fx": ev.get("sid")}
+        self._spawn_fx_sprite(ev.get("sid"), px, py, self.s(220), life=0.6,
+                              expand=1.8, spin=2.0)
+        self._fx_ultimate(px, py, color)
+        self.game.audio.play("skill_storm")
+        self.shake = max(self.shake, 0.45)
+        self._float("满月锁定!", px, py - self.s(96), color, 32)
+
+    def _finish_fullmoon_lock(self, ev, color):
+        """满月锁定结束：按削弱次数结算月爆（每次 ev[dmg]，上限 burst_cap），
+        全屏月光白闪；月爆触发的印记自爆再额外推进一相（见 _apply_mark_stack）。"""
+        lk = self.luna_lock
+        self.luna_lock = None
+        n = min(int(ev.get("burst_cap", S.LUNA_FULL_BURST_CAP)),
+                max(0, (lk or {}).get("weaken", 0)))
+        if n <= 0:
+            return
+        dmg = max(1, int(ev.get("dmg", S.LUNA_FULL_BURST_DMG)))
+        px, py = self.snake.pos
+        self.white_flash = max(self.white_flash, 0.55)
+        self.game.audio.play("skill_storm")
+        self.shake = max(self.shake, 0.5)
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            self._spawn_fx_sprite(ev.get("sid"), m.pos[0], m.pos[1],
+                                  m.radius * 4, life=0.4, expand=1.5)
+            self._hurt_mob(m, dmg * n, m.pos[0], m.pos[1], color=color, spark=10)
+        self.mobs = [m for m in self.mobs if m.alive]
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            self._damage_boss(dmg * n, color=color)
+        self._float(f"月爆 ×{n}", px, py - self.s(96), color, 34)
+
+    def _update_luna(self, dt):
+        """月见持续态每帧推进：节流计时 / boon 到期 / 月痕残留 / 落点场 /
+        月华引拉拽 / 望月锁定周期削弱与到期月爆。"""
+        if self.luna_phase is None:
+            return
+        if self.luna_adv_cd > 0:
+            self.luna_adv_cd = max(0.0, self.luna_adv_cd - dt)
+        if self.luna_boon_speed_t > 0:
+            self.luna_boon_speed_t = max(0.0, self.luna_boon_speed_t - dt)
+        if self.luna_boon_dmg_t > 0:
+            self.luna_boon_dmg_t = max(0.0, self.luna_boon_dmg_t - dt)
+        # 月渡一段月痕：残留到期未二段即消散
+        if self.luna_mark is not None:
+            self.luna_mark["t"] -= dt
+            if self.luna_mark["t"] <= 0:
+                self.luna_mark = None
+        # 落点场：上弦=移速场（player_speed 读）；下弦=治疗圈（按比例逐秒回复）
+        if self.luna_fields:
+            px, py = self.snake.pos
+            for f in self.luna_fields:
+                f["t"] -= dt
+                if (f["kind"] == "heal" and self.snake.alive
+                        and self.snake.hp < self.snake.hp_max
+                        and math.hypot(px - f["x"], py - f["y"]) <= f["r"]):
+                    before = int(self.snake.hp)
+                    self.snake.hp = min(
+                        float(self.snake.hp_max),
+                        self.snake.hp + f["heal_pct"] * self.snake.hp_max * dt)
+                    gained = int(self.snake.hp) - before
+                    if gained > 0:
+                        self._float(f"+{gained}", px, py - self.s(34),
+                                    COLOR_HP, 20)
+            self.luna_fields = [f for f in self.luna_fields if f["t"] > 0]
+        # 月华引：持续把范围内敌人拉向自身，首次拉中削弱+护盾+推进一相
+        if self.luna_pull is not None:
+            p = self.luna_pull
+            p["t"] -= dt
+            cx, cy = self.snake.pos
+            wm = self._luna_weaken_mult()
+            for m in self.mobs:
+                if not m.alive:
+                    continue
+                dx, dy = cx - m.pos[0], cy - m.pos[1]
+                d = math.hypot(dx, dy)
+                if d <= p["r"] + m.radius and d > 1.0:
+                    m.pos[0] += dx / d * p["strength"] * dt
+                    m.pos[1] += dy / d * p["strength"] * dt
+                    if m.uid not in p["pulled"]:
+                        p["pulled"].add(m.uid)
+                        m.apply_weaken(wm, S.ELEMENT_MOON_TIME)
+                        self._luna_grant_shield(p["shield_pct"], p["shield_time"])
+                        self._luna_advance(1)
+                        self._fx_ring(m.pos[0], m.pos[1], m.radius * 2.2,
+                                      p["color"], life=0.3)
+            self.mobs = [m for m in self.mobs if m.alive]
+            if p["t"] <= 0:
+                self.luna_pull = None
+        # 望月满月锁定：周期全场削弱计数，到期按次数结算月爆
+        if self.luna_lock is not None:
+            lk = self.luna_lock
+            lk["t"] -= dt
+            lk["tick"] -= dt
+            if lk["tick"] <= 0:
+                lk["tick"] += max(0.1, lk.get("weaken_tick",
+                                              S.LUNA_FULL_WEAKEN_TICK))
+                n = self._luna_weaken_all()
+                if n:
+                    lk["weaken"] += 1
+                    self._fx_ring(self.snake.pos[0], self.snake.pos[1],
+                                  self.s(300), lk["color"], life=0.4)
+            if lk["t"] <= 0:
+                self._finish_fullmoon_lock(lk["ev"], lk["color"])
+
+    def _draw_luna(self, screen, sx, sy):
+        """月见地面层：月痕残留 / 落点场 / 月华引涡旋（画在怪与角色之前）。"""
+        # 月渡一段月痕：丝线月轮贴地淡出（二段窗口提示）
+        mk = self.luna_mark
+        if mk is not None:
+            x = int(self.wx(mk["x"], sx))
+            y = int(self.wy(mk["y"], sy))
+            fade = max(0.0, min(1.0, mk["t"] / max(1e-4, mk.get("max_t", 1.0))))
+            img = self._skill_fx_surf(mk.get("fx"), self.s(110), self._active_form())
+            if img is not None:
+                img.set_alpha(int(150 * fade))
+                screen.blit(img, img.get_rect(center=(x, y)))
+            pygame.draw.circle(screen, (*self._LUNA_PHASE_COL[0], int(90 * fade)),
+                               (x, y), int(self.s(40)), max(1, self.s(2)))
+        # 落点场：旋转贴图 + 相位色细环 + 剩余寿命弧
+        for f in self.luna_fields:
+            x = int(self.wx(f["x"], sx))
+            y = int(self.wy(f["y"], sy))
+            r = max(8, int(f["r"]))
+            fade = max(0.0, min(1.0, f["t"] / max(1e-4, f["max_t"])))
+            col = self._LUNA_PHASE_COL[1] if f["kind"] == "speed" \
+                else self._LUNA_PHASE_COL[3]
+            img = self._skill_fx_surf(f.get("fx"), r * 2, self._active_form())
+            if img is not None:
+                rot = self._rot_surf(img, math.degrees(self.elapsed * 40.0) % 360.0)
+                rot.set_alpha(int(90 * min(1.0, fade * 3.0)))
+                screen.blit(rot, rot.get_rect(center=(x, y)))
+            pygame.draw.circle(screen, (*col, int(60 * min(1.0, fade * 3.0))),
+                               (x, y), r, max(2, self.s(2)))
+            pygame.draw.arc(screen, (*col, 160),
+                            pygame.Rect(x - r, y - r, r * 2, r * 2),
+                            math.pi / 2, math.pi / 2 + math.tau * fade,
+                            max(1, self.s(2)))
+        # 月华引：涡旋贴图旋转 + 拉拽半径环
+        p = self.luna_pull
+        if p is not None:
+            x = int(self.wx(self.snake.pos[0], sx))
+            y = int(self.wy(self.snake.pos[1], sy))
+            r = max(8, int(p["r"]))
+            fade = max(0.0, min(1.0, p["t"] / max(1e-4, p["max_t"])))
+            img = self._skill_fx_surf(p.get("fx"), r * 2, self._active_form())
+            if img is not None:
+                rot = self._rot_surf(img, math.degrees(self.elapsed * 140.0) % 360.0)
+                rot.set_alpha(int(110 * min(1.0, fade * 3.0)))
+                screen.blit(rot, rot.get_rect(center=(x, y)))
+            pygame.draw.circle(screen, (*p["color"], int(70 * fade)),
+                               (x, y), r, max(2, self.s(2)))
+
+    def _draw_luna_overhead(self, screen, sx, sy):
+        """月见头顶层：望月锁定期常驻半透明月轮 + 月相指示环（四相位盈亏）。"""
+        if self.luna_phase is None:
+            return
+        sn = self.snake
+        cx = int(self.wx(sn.pos[0], sx))
+        cy = int(self.wy(sn.pos[1], sy)) - self.s(118)
+        lk = self.luna_lock
+        if lk is not None:
+            # 满月锁定：头顶常驻月轮贴图（半透明脉动）+ 剩余秒数弧
+            img = self._skill_fx_surf(lk.get("fx"), self.s(150), self._active_form())
+            if img is not None:
+                pulse = 0.85 + 0.15 * math.sin(self.elapsed * 3.0)
+                halo = self._rotozoom_surf(img, self.elapsed * 12.0, pulse)
+                halo.set_alpha(120)
+                screen.blit(halo, halo.get_rect(center=(cx, cy)))
+            r = int(self.s(34))
+            ratio = max(0.0, min(1.0, lk["t"] / max(1e-4, lk.get("max_t", 1.0))))
+            pygame.draw.arc(screen, (*lk["color"], 190),
+                            pygame.Rect(cx - r, cy - r, r * 2, r * 2),
+                            math.pi / 2, math.pi / 2 + math.tau * ratio,
+                            max(2, self.s(2)))
+        ring = self._draw_luna_ring_surf(int(self.s(S.LUNA_RING_SIZE) // 2),
+                                         self.luna_phase)
+        screen.blit(ring, ring.get_rect(center=(cx, cy)))
+
+    def _draw_luna_ring_surf(self, r, phase):
+        """月相指示环贴图（按半径+相位缓存）：新月=空环 / 上弦=右半亮 /
+        满月=全亮 / 下弦=左半亮。"""
+        r = max(4, int(r))
+        return self._cached_surf(
+            ("lunaring", r, phase), (r * 2 + 4, r * 2 + 4),
+            lambda srf: self._paint_luna_ring(srf, r, phase))
+
+    def _paint_luna_ring(self, surf, r, phase):
+        c = r + 2
+        col = self._LUNA_PHASE_COL[phase % 4]
+        pygame.draw.circle(surf, (20, 18, 30, 150), (c, c), r)          # 暗底盘
+        if phase == 1:
+            surf.fill((*col, 230), pygame.Rect(c, c - r, r, r * 2))      # 上弦右半
+        elif phase == 2:
+            pygame.draw.circle(surf, (*col, 245), (c, c), r)             # 满月全盘
+        elif phase == 3:
+            surf.fill((*col, 230), pygame.Rect(c - r, c - r, r, r * 2))  # 下弦左半
+        elif phase == 0:
+            pygame.draw.circle(surf, (*col, 90), (c, c), r - max(2, r // 6))
+        # 裁成圆形（fill 的半盘会带直角，clip 后与底盘同圆）
+        mask = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        pygame.draw.circle(mask, (255, 255, 255, 255), (c, c), r)
+        surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        pygame.draw.circle(surf, (*col, 200), (c, c), r, max(1, r // 8))  # 外环描边
+
     def _pay_skill_cost(self, frac):
         """技能自身代价（法师「消耗多」）：按最大生命比例自伤。
 
@@ -4514,6 +5073,11 @@ class BattleScene(Scene):
         mult *= (1.0 - armor)
         if self.ward_t > 0:
             mult *= S.ELEMENT_MOON_WARD_MULT
+        # 月见·新月月相：受伤 -15%；望月满月锁定：自身再减伤 30%
+        if self.luna_phase == 0:
+            mult *= (1.0 - S.LUNA_PHASE_NEW_REDUCE)
+        if self.luna_lock is not None:
+            mult *= (1.0 - S.LUNA_FULL_REDUCE)
         amt = max(0.0, float(amount) * mult)
         if amt <= 0:
             return 0.0
@@ -5015,6 +5579,7 @@ class BattleScene(Scene):
         self._draw_world_border(screen, sx, sy)
         self._draw_zones(screen, sx, sy)
         self._draw_stella_fields(screen, sx, sy)
+        self._draw_luna(screen, sx, sy)
         self._draw_effects(screen, sx, sy)
         self._draw_boss_telegraph(screen, sx, sy)
         self._draw_drops(screen, sx, sy)
@@ -5025,6 +5590,7 @@ class BattleScene(Scene):
         self._draw_gusts(screen, sx, sy)
         self._draw_fx_sprites(screen, sx, sy)
         self._draw_snake(screen, sx, sy)
+        self._draw_luna_overhead(screen, sx, sy)
         self._draw_channel_bar(screen, sx, sy)
         self._draw_projectiles(screen, sx, sy)
         self._draw_particles(screen, sx, sy)
@@ -5033,6 +5599,11 @@ class BattleScene(Scene):
         if self.flash > 0:
             veil = self._overlay()
             veil.fill((255, 70, 100, int(70 * self.flash)))
+            screen.blit(veil, (0, 0))
+        if self.white_flash > 0:
+            # 月见·月爆收场：全屏月光白闪（区别于受击红纱）
+            veil = self._overlay()
+            veil.fill((240, 244, 255, int(90 * self.white_flash)))
             screen.blit(veil, (0, 0))
 
         self._draw_hud()
@@ -6366,7 +6937,7 @@ class BattleScene(Scene):
         n_act = len(actives)
         slot = self.s(54)
         gap = self.s(9)
-        cdr = self.stats["cdr"]
+        cdr = self._eff_cdr()
         n_total = n_act + 1                       # 主动 + 被动
         total = slot * n_total + gap * (n_total - 1)
         x0 = self.W // 2 - total // 2

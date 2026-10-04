@@ -304,19 +304,19 @@
     },
     "kit": {
       "active": {
-        "id": "luna_dash2",
-        "name": "月影·渡",
-        "desc": "相位前冲并获得短暂无敌；再按在落点加一层护盾。",
+        "id": "luna_phase_dash",
+        "name": "月渡",
+        "desc": "相位前冲并短暂无敌，落点留下月痕；残留期再按按当前月相结算：新月=护盾 / 上弦=移速场 / 满月=范围月爆 / 下弦=治疗圈，随后推进一相。",
         "color": [200, 210, 255],
         "vfx": "moon",
         "key": 1
       },
       "actives": [
-        {"id": "luna_dash2", "type": "dash2", "name": "月影·渡", "key": 1, "color": [200, 210, 255], "vfx": "moon", "desc": "相位前冲并获得短暂无敌；再按在落点加一层护盾。"},
-        {"id": "luna_detonate", "type": "detonate", "name": "月印", "key": 2, "color": [215, 222, 255], "vfx": "flame", "desc": "引爆范围内敌人的标记并削弱周围敌人，同时为自身加盾。"},
-        {"id": "luna_gather", "type": "gather", "name": "月华引", "key": 3, "color": [190, 205, 250], "vfx": "wave", "desc": "垂落月光把周围敌人拉向自己并削弱，叠印记并为自身加盾。"},
-        {"id": "luna_blade", "type": "blade", "name": "新月刃", "key": 4, "color": [205, 214, 255], "vfx": "star", "desc": "甩出多道弯月刃，叠印记并削弱敌人。"},
-        {"id": "luna_channel", "type": "channel", "name": "月佑", "key": 5, "color": [225, 230, 255], "vfx": "guard", "desc": "吟唱片刻（可移动）后持续回复生命并降低受到的伤害（坦克）。"}
+        {"id": "luna_phase_dash", "type": "luna_phase_dash", "name": "月渡", "key": 1, "color": [200, 210, 255], "vfx": "moon", "desc": "相位前冲并短暂无敌，落点留下月痕；残留期再按按当前月相结算：新月=护盾 / 上弦=移速场 / 满月=范围月爆 / 下弦=治疗圈，随后推进一相。"},
+        {"id": "luna_arc", "type": "luna_arc", "name": "月弧", "key": 2, "color": [232, 236, 250], "vfx": "flame", "desc": "环形月刃外扩引爆周围敌人的印记（每层额外伤害）并削弱，推进一相并按相位获得增益。"},
+        {"id": "luna_pull", "type": "luna_pull", "name": "月华引", "key": 3, "color": [184, 196, 240], "vfx": "wave", "desc": "月华涡旋持续把周围敌人拉向自己；每个首次被拉中的敌人削弱，并为自身加盾、推进一相。"},
+        {"id": "luna_crescent", "type": "luna_crescent", "name": "新月刃", "key": 4, "color": [205, 214, 255], "vfx": "star", "desc": "甩出多道追踪弯月刃，命中叠印记并削弱；满月相位额外 +2 道刃。"},
+        {"id": "luna_fullmoon", "type": "luna_fullmoon", "name": "望月", "key": 5, "color": [240, 226, 170], "vfx": "guard", "desc": "吟唱片刻（可移动）后锁定满月 8 秒：全场敌人周期削弱、自身减伤 30%；结束时按削弱次数结算月爆（每次 40，上限 12）。"}
       ],
       "passives": [
         {"id": "p_night", "name": "静夜", "desc": "常驻受到伤害降低。", "color": [210, 215, 255], "vfx": "guard"},
@@ -349,7 +349,7 @@
     "body_seg": "characters/lamia_luna/body_seg.png",
     "tail_tip": "characters/lamia_luna/tail_tip.png",
     "level": 1,
-    "skill": "月影·渡",
+    "skill": "望月",
     "tint": [200, 210, 255]
   }
 ]
