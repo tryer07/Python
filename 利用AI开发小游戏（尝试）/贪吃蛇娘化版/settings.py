@@ -582,6 +582,47 @@ FLARE_BURST_CD = 30.0
 FLARE_BURST_MULT = 0.80          # 引爆基础倍率（层数加成另乘 FLARE_EMBER_BURST_MULT）
 FLARE_BURST_REFUND = 2.0         # 每引爆一个目标返还自身冷却（秒）
 
+# ==================== 星璃 · 连星成轨闭环五技能（星属性游侠，stella_* 自定义 type） ====================
+# 核心＝「星位供料→连星成轨」：技能/被动在地面落发光星点（星位），
+# 两两间距 ≤STELLA_LINK_DIST 自动连成星轨，星轨周期跳动伤害并触发星之贯穿
+# （ELEMENT_STAR_PIERCE，沿线穿到后方敌人）。被动「星之标记」改为供料：
+# 印记叠满 3 层不再自爆，改在敌人脚下落 1 颗星位；被动「星辉」不变（击杀减 CD）。
+# 数值按规格固定，不吃职业范围/冷却系数（见 skills.cooldown_at 与 _apply_role 的 stella_ 豁免）。
+# --- 星位（node）与星轨（link）：地面态核心机制 ---
+STELLA_NODE_MAX = 6              # 场上星位上限（溢出删最旧）
+STELLA_NODE_LIFE = 8.0           # 单颗星位存续秒
+STELLA_LINK_DIST = 260           # 自动连线间距阈值（设计像素）
+STELLA_LINK_TICK = 0.5           # 星轨跳动周期（秒）
+STELLA_LINK_DMG = 12             # 星轨单跳伤害（另触发贯穿）
+STELLA_LINK_WIDTH = 34           # 星轨判定走廊半宽（设计像素）
+# --- 1 落星（stella_place）：闪现位移，起/落点各落 1 星位，二段引爆落点星轨 ---
+STELLA_PLACE_CD = 8.0
+STELLA_PLACE_DIST = 260          # 闪现距离（设计像素）
+STELLA_PLACE_WINDOW = 3.0        # 二段引爆窗口（秒），超时失效不爆
+STELLA_PLACE_DET_RADIUS = 130    # 二段小范围贯穿半径（设计像素）
+STELLA_PLACE_DET_DMG = 40        # 二段引爆伤害
+# --- 2 连星（stella_link）：最近星位两两连线并立即沿线贯穿爆发 ---
+STELLA_LINK_CD = 10.0
+STELLA_LINK_BURST_DMG = 120      # 单条星轨立即爆发伤害（另附贯穿）
+# --- 3 星引（stella_well）：引力井拉扯+眩晕，井心落 1 星位 ---
+STELLA_WELL_CD = 14.0
+STELLA_WELL_RADIUS = 150         # 引力井半径（设计像素）
+STELLA_WELL_TIME = 1.2           # 引力井持续秒
+STELLA_WELL_STRENGTH = 260       # 拉扯强度（像素/秒）
+STELLA_WELL_STUN = 0.6           # 入井眩晕秒
+# --- 4 流星雨（stella_shower）：追踪流星弹，每枚命中在敌人脚下落星位 ---
+STELLA_SHOWER_CD = 12.0
+STELLA_SHOWER_COUNT = 6          # 流星枚数
+STELLA_SHOWER_DMG = 30           # 单枚伤害
+STELLA_SHOWER_SPEED = 620        # 弹速（设计像素/秒）
+STELLA_SHOWER_LIFE = 2.2         # 弹体存续秒
+# --- 5 星图共鸣（stella_constellation）：大招吟唱，全场星位两两连星座 ---
+STELLA_CONST_CD = 30.0
+STELLA_CONST_TIME = 1.2          # 吟唱秒（可移动）
+STELLA_CONST_DMG = 45            # 每条星座星轨伤害
+STELLA_CONST_MAX_LINES = 15      # 星座星轨条数上限
+STELLA_CONST_WINDOW = 6.0        # 后续新落星位自动连线窗口（秒，不限间距）
+
 # ==================== 标记被动（全员：技能叠标记，满 3 层自爆） ====================
 MARKPASSIVE_STACKS = 3          # 标记最多叠几层
 MARKPASSIVE_TIME = 6.0          # 标记持续秒

@@ -236,7 +236,7 @@
     "element": "星",
     "growth": "法术",
     "role": "mage",
-    "desc": "仰观星象的蛇娘，发间与尾尖都拖着一道星轨。普攻为远程星尘弹三段「星尘连辉」：段3 扇形星散可穿透敌人，命中留下一道微星痕。",
+    "desc": "仰观星象的蛇娘，发间与尾尖都拖着一道星轨。普攻为远程星尘弹三段「星尘连辉」：段3 扇形星散可穿透敌人。技能循环「连星成轨」：在地面落发光星位，相近星位自动连成星轨周期伤敌并触发贯穿。",
     "story": "星璃是一位占星者，终年仰观星象，发间与尾尖都拖着一道星轨。她相信每个人的命运都写在天上，却从不说破——因为她见过太多人得知命运后反而迷失。她只默默记下星象的偏移，在灾厄将至时悄悄拨动轨迹。她的神秘，是一种温柔的沉默。",
     "egg_lines": {
       "head": ["你的星轨…今晚格外明亮呢。", "发间的星星，是我为某人留的灯。"],
@@ -245,23 +245,23 @@
     },
     "kit": {
       "active": {
-        "id": "stella_dash2",
-        "name": "星闪·跃",
-        "desc": "向朝向闪现一段并留下星痕；再按在星痕处落星伤害周围敌人。",
+        "id": "stella_place",
+        "name": "落星",
+        "desc": "向朝向闪现 260，起点与落点各落 1 颗星位；3 秒内再按引爆落点处星轨，小范围贯穿伤害。",
         "color": [190, 150, 255],
         "vfx": "star",
         "key": 1
       },
       "actives": [
-        {"id": "stella_dash2", "type": "dash2", "name": "星闪·跃", "key": 1, "color": [190, 150, 255], "vfx": "star", "desc": "向朝向闪现一段并留下星痕；再按在星痕处落星伤害周围敌人。"},
-        {"id": "stella_detonate", "type": "detonate", "name": "星印", "key": 2, "color": [205, 175, 255], "vfx": "flame", "desc": "引爆范围内敌人的标记引动星陨；无标记者叠上一层印记。"},
-        {"id": "stella_gather", "type": "gather", "name": "星引", "key": 3, "color": [180, 140, 250], "vfx": "wave", "desc": "展开引力井把周围敌人拉向自己并短暂眩晕，叠上一层印记。"},
-        {"id": "stella_blade", "type": "blade", "name": "流星", "key": 4, "color": [200, 165, 255], "vfx": "star", "desc": "射出多枚追踪流星弹，叠印记并造成伤害。"},
-        {"id": "stella_channel", "type": "channel", "name": "星辉鼓舞", "key": 5, "color": [220, 200, 255], "vfx": "speed", "desc": "吟唱片刻（可移动）后提升技能伤害并缩短技能冷却（法师）。"}
+        {"id": "stella_place", "type": "stella_place", "name": "落星", "key": 1, "color": [190, 150, 255], "vfx": "star", "desc": "向朝向闪现 260，起点与落点各落 1 颗星位；3 秒内再按引爆落点处星轨，小范围贯穿伤害。"},
+        {"id": "stella_link", "type": "stella_link", "name": "连星", "key": 2, "color": [205, 175, 255], "vfx": "star", "desc": "把最近的星位两两连成星轨并立即沿线贯穿爆发（单条 120 伤害）；场上不足两颗时自身周围补落 2 颗。"},
+        {"id": "stella_well", "type": "stella_well", "name": "星引", "key": 3, "color": [180, 140, 250], "vfx": "wave", "desc": "在前方开引力井（半径 150）拉扯敌人并眩晕 0.6 秒，井心落 1 颗星位。"},
+        {"id": "stella_shower", "type": "stella_shower", "name": "流星雨", "key": 4, "color": [200, 165, 255], "vfx": "star", "desc": "射出 6 枚追踪流星弹，单枚 30 伤害，每枚命中在敌人脚下落 1 颗星位。"},
+        {"id": "stella_constellation", "type": "stella_constellation", "name": "星图共鸣", "key": 5, "color": [220, 200, 255], "vfx": "star", "desc": "大招：吟唱 1.2 秒（可移动），全场星位两两连成星座，每条星轨造成 45 伤害（上限 15 条），随后 6 秒内新落星位自动连线。"}
       ],
       "passives": [
         {"id": "p_starlight", "name": "星辉", "desc": "击杀敌人缩短专属主动的冷却。", "color": [200, 170, 255], "vfx": "cdr"},
-        {"id": "p_stella_mark", "name": "星之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满即星爆伤害周围敌人。", "color": [210, 180, 255], "vfx": "markstack"}
+        {"id": "p_stella_mark", "name": "星之标记", "desc": "所有技能命中都会叠印记（最多3层），叠满不再自爆，改为在敌人脚下落 1 颗星位，供料星轨系统。", "color": [210, 180, 255], "vfx": "markstack"}
       ]
     },
     "ranged": {
@@ -284,7 +284,7 @@
     "body_seg": "characters/lamia_stella/body_seg.png",
     "tail_tip": "characters/lamia_stella/tail_tip.png",
     "level": 1,
-    "skill": "星闪·跃",
+    "skill": "星图共鸣",
     "tint": [190, 150, 255]
   },
   {

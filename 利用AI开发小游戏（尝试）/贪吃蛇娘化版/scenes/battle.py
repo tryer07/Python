@@ -238,6 +238,14 @@ class BattleScene(Scene):
         self.ranged_cfg = None
         self.ranged_engaged = False
         self.hitstop_t = 0.0
+        # 星璃·连星成轨场景级持久态：须在首次 _activate 之前存在
+        # （_activate 会按出战被动计算 stella_mark_supply）。
+        # 星位/星轨/引力井/星座窗口同潮汐水域不随切人消失，随各自计时自然到期。
+        self.stella_nodes = []           # 星位：[{"x","y","t","max_t","ph"}]
+        self.stella_links = []           # 星轨：[{"a","b","t","max_t","tick","dmg","const"}]
+        self.stella_wells = []           # 引力井：[{"x","y","r","t","max_t","strength","stun","hit","fx"}]
+        self.stella_const_t = 0.0        # 星图共鸣余韵：新落星位自动连线窗口剩余秒
+        self.stella_mark_supply = False  # 「星之标记」供料模式（满层落星位不自爆）
         self._activate(0, teleport=False)
 
         self.skill_toast = []
@@ -664,6 +672,11 @@ class BattleScene(Scene):
         self.flare_fuses = []
         self.flare_ring_t = 0.0
         self.flare_ring_amp = 0.0
+        # 星璃·连星成轨：地面态不随切人清理（同 flare_trails/zones），
+        # 只重算「星之标记」供料模式（印记满层落星位而非自爆）
+        self.stella_mark_supply = any(
+            p.get("id") == "p_stella_mark"
+            for p in getattr(self.skills, "passives", []))
         self.fx_sprites = []
         self.role = m.get("role", "hybrid")
         self.role_armor = S.ROLE_ARMOR.get(self.role, 0.0)
@@ -1005,6 +1018,7 @@ class BattleScene(Scene):
         self._update_gusts(dt)
         self._update_sakura(dt)
         self._update_flare(dt)
+        self._update_stella(dt)
         self._update_fx_sprites(dt)
         self._update_tide_fields(dt)
         # 生命再生：血条制下直接把 regen*dt 累加进 hp（浮点），整数变化时飘字
@@ -1760,6 +1774,9 @@ class BattleScene(Scene):
                     b.hit_ids.add(m.uid)
                     self._hurt_mob(m, b.dmg, m.pos[0], m.pos[1], color=b.color, spark=6)
                     self._apply_onhit_passive(m)
+                    if getattr(b, "star_node", False):
+                        # 星璃·流星雨：每枚命中在敌人脚下落 1 颗星位
+                        self._stella_add_node(m.pos[0], m.pos[1])
                     if b.star_trace:
                         self._fx_starfall(m.pos[0], m.pos[1], self.s(46), life=0.8)
                     if not b.from_skill:
@@ -1795,6 +1812,8 @@ class BattleScene(Scene):
             if math.hypot(b.pos[0] - bx, b.pos[1] - by) <= b.radius + r:
                 b.alive = False
                 self._damage_boss(b.dmg, color=b.color)
+                if getattr(b, "star_node", False):
+                    self._stella_add_node(bx, by)
                 if b.star_trace:
                     self._fx_starfall(bx, by, self.s(46), life=0.8)
                 if not b.from_skill:
@@ -1898,12 +1917,22 @@ class BattleScene(Scene):
             a = self.skills._active_by_key(key)
             if a is not None:
                 sid = a.get("id")
-                if (a.get("type") or sid) == "dash2":
+                stype = a.get("type") or sid
+                if stype == "dash2":
                     ev = self.dash2["ev"]
                     sd = self.stats.get("skilldmg", 1.0) * self.role_skilldmg
                     dmg = int(round(ev.get("dmg", S.DASH2_DMG) * sd))
                     px, py = self.snake.pos
                     self._skill_dash2(ev, px, py, *self.snake.aim_dir, dmg=dmg)
+                    self._start_cast_pose(key)
+                    self._cancel_atk_recover()
+                    return
+                if stype == "stella_place":
+                    # 星璃·落星二段：引爆落点处星轨（伤害吃技能伤卡/职业系数）
+                    ev = self.dash2["ev"]
+                    sd = self.stats.get("skilldmg", 1.0) * self.role_skilldmg
+                    dmg = int(round(ev.get("det_dmg", S.STELLA_PLACE_DET_DMG) * sd))
+                    self._skill_stella_place_det(ev, dmg)
                     self._start_cast_pose(key)
                     self._cancel_atk_recover()
                     return
@@ -1931,7 +1960,8 @@ class BattleScene(Scene):
             a = self.skills._active_by_key(int(key))
             self.cast_pose = {"key": int(key), "t": 0.0,
                               # 吟唱/漩涡引导：姿势保持到读条结束（见 update 里的 hold 分支）
-                              "hold": bool(a) and a.get("type") in ("channel", "tide_vortex")}
+                              "hold": bool(a) and a.get("type") in (
+                                  "channel", "tide_vortex", "stella_constellation")}
 
     def _cast_pose_alpha(self):
         """姿势透明度包络：快淡入 → 保持 → 淡出，smoothstep 让交叉更顺。"""
@@ -2370,6 +2400,16 @@ class BattleScene(Scene):
             self._skill_flare_ring(ev, px, py)
         elif t == "flare_burst":
             self._skill_flare_burst(ev, px, py)
+        elif t == "stella_place":
+            self._skill_stella_place(ev, px, py, dx, dy)
+        elif t == "stella_link":
+            self._skill_stella_link(ev, px, py)
+        elif t == "stella_well":
+            self._skill_stella_well(ev, px, py, dx, dy)
+        elif t == "stella_shower":
+            self._skill_stella_shower(ev, px, py, base_ang)
+        elif t == "stella_constellation":
+            self._skill_stella_constellation(ev, px, py)
 
     def _damage_segment(self, x1, y1, x2, y2, dmg, color, mark=False):
         reach = self.s(18)
@@ -2486,6 +2526,10 @@ class BattleScene(Scene):
                 d["t"] = min(d["t"], 0.0)
         if d["t"] <= 0:
             self.dash2 = None
+            if d.get("stella"):
+                # 星璃·落星二段窗口超时：星轨余晖散掉，不爆炸（落点星位仍在）
+                self._fx_ring(d["x"], d["y"], self.s(46), (190, 150, 255), life=0.3)
+                return
             d["radius"] = d["radius"] * 0.75      # 未按再按：实体四散，小范围伤害
             self._dash2_explode(d, d["ev"].get("expire_dmg", S.DASH2_EXPIRE_DMG))
 
@@ -2733,6 +2777,8 @@ class BattleScene(Scene):
             self.channel = None
             if ch.get("vortex"):
                 self._finish_vortex(ch["ev"], ch["color"])
+            elif ch.get("stella_const"):
+                self._finish_constellation(ch["ev"], ch["color"])
             else:
                 self._finish_channel(ch["ev"], ch["color"])
 
@@ -3053,7 +3099,13 @@ class BattleScene(Scene):
         full = m.apply_mark(amp, time, max_stacks)
         self._fx_rune(m.pos[0], m.pos[1], m.radius * 2.4, (255, 220, 150), life=0.28)
         if full:
-            self._mark_explode(m)
+            if self.stella_mark_supply:
+                # 星璃「星之标记」供料：叠满 3 层不再自爆，改在敌人脚下落 1 颗星位
+                m.clear_mark()
+                self._stella_add_node(m.pos[0], m.pos[1])
+                self._fx_starfall(m.pos[0], m.pos[1], self.s(64), life=0.5)
+            else:
+                self._mark_explode(m)
 
     def _mark_explode(self, m):
         """标记叠满自爆：范围伤害 + 清标记 + 华丽 VFX（对精英/Boss 同样生效）。"""
@@ -3769,6 +3821,441 @@ class BattleScene(Scene):
                 self._hurt_mob(o, dmg, o.pos[0], o.pos[1],
                                color=(255, 140, 80), spark=6)
         self.mobs = [x for x in self.mobs if x.alive]
+
+    # -------------------------------------------------- 星璃·连星成轨五技能
+    # 星属性游侠：星位供料 → 连星成轨。地面落发光星点（上限 STELLA_NODE_MAX、
+    # 持续 STELLA_NODE_LIFE 秒），两两间距 ≤STELLA_LINK_DIST 自动连成星轨，
+    # 星轨每 STELLA_LINK_TICK 秒跳动一次伤害并沿线触发星之贯穿。
+    # 数值固定不吃职业系数（见 skills.cooldown_at 与 _apply_role 的 stella_ 豁免），
+    # 事件带 dmg 绝对值，经 cast_skill 技能伤卡与 _scale_event 局内强化缩放。
+    _STELLA_COL = (190, 150, 255)      # 星轨/星位主色（同 _EL_RANGED_COLOR["星"]）
+    _STELLA_COL2 = (255, 214, 140)     # 星芯暖金点缀
+
+    def _stella_link_dmg(self):
+        """星轨单跳伤害：设计基数 × 当前技能伤卡/职业系数快照（建轨时定格）。"""
+        sd = self.stats.get("skilldmg", 1.0) * self.role_skilldmg
+        return max(1, int(round(S.STELLA_LINK_DMG * sd)))
+
+    def _stella_add_node(self, x, y):
+        """在地面落一颗星位：超上限删最旧；与近旁星位自动连成星轨
+        （间距 ≤STELLA_LINK_DIST；星图共鸣窗口内不限间距）。返回新星位。"""
+        x = min(max(float(x), self.s(20)), self.world_w - self.s(20))
+        y = min(max(float(y), self.s(20)), self.world_h - self.s(20))
+        node = {"x": x, "y": y, "t": S.STELLA_NODE_LIFE,
+                "max_t": S.STELLA_NODE_LIFE, "ph": random.uniform(0.0, math.tau)}
+        self.stella_nodes.append(node)
+        while len(self.stella_nodes) > S.STELLA_NODE_MAX:
+            self.stella_nodes.pop(0)          # 溢出删最旧（其星轨随端点失效自清）
+        thresh = S.STELLA_LINK_DIST * self.S
+        for other in self.stella_nodes[:-1]:
+            if self.stella_const_t > 0 or \
+                    math.hypot(other["x"] - x, other["y"] - y) <= thresh:
+                self._stella_try_link(other, node)
+        self._fx_starfall(x, y, self.s(56), life=0.45)
+        self._burst(x, y, self._STELLA_COL2, 6)
+        return node
+
+    def _stella_try_link(self, a, b):
+        """尝试把两颗星位连成星轨（去重：同对星位只连一条）。"""
+        for lk in self.stella_links:
+            if ((lk["a"] is a and lk["b"] is b)
+                    or (lk["a"] is b and lk["b"] is a)):
+                return None
+        lk = {"a": a, "b": b, "t": S.STELLA_NODE_LIFE, "max_t": S.STELLA_NODE_LIFE,
+              "tick": S.STELLA_LINK_TICK, "dmg": self._stella_link_dmg(),
+              "const": self.stella_const_t > 0}
+        self.stella_links.append(lk)
+        self._fx_beam(a["x"], a["y"], b["x"], b["y"], self.s(8),
+                      self._STELLA_COL, life=0.3)
+        return lk
+
+    def _stella_link_tick(self, lk):
+        """星轨一跳：沿线走廊伤害 + 从线上目标向后方延长线触发星之贯穿。"""
+        a, b = lk["a"], lk["b"]
+        x1, y1, x2, y2 = a["x"], a["y"], b["x"], b["y"]
+        half = S.STELLA_LINK_WIDTH * self.S * 0.5
+        dmg = lk["dmg"]
+        touched = []
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if _seg_dist(m.pos[0], m.pos[1], x1, y1, x2, y2) <= half + m.radius:
+                touched.append(m)
+                self._hurt_mob(m, dmg, m.pos[0], m.pos[1],
+                               color=self._STELLA_COL, spark=4)
+        self.mobs = [m for m in self.mobs if m.alive]
+        boss_hit = False
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if _seg_dist(bx, by, x1, y1, x2, y2) <= half + self.boss.radius_px:
+                boss_hit = True
+                self._damage_boss(dmg, color=self._STELLA_COL)
+        src = touched[0] if touched else None
+        if src is None and boss_hit and self.boss is not None:
+            src = self.boss
+        if src is not None:
+            self._stella_pierce(x1, y1, x2, y2, src)
+        self._fx_beam(x1, y1, x2, y2, self.s(10), self._STELLA_COL, life=0.18)
+
+    def _stella_pierce(self, x1, y1, x2, y2, src):
+        """星之贯穿：沿星轨延长线在 src 后方找最近敌人，追加贯穿伤害 + 光束。"""
+        lx, ly = x2 - x1, y2 - y1
+        ln = math.hypot(lx, ly)
+        if ln < 1e-6:
+            return
+        ux, uy = lx / ln, ly / ln
+        sx, sy = src.pos[0], src.pos[1]
+        best = None
+        bd = float("inf")
+        for o in self.mobs:
+            if not o.alive or o is src:
+                continue
+            t = (o.pos[0] - sx) * ux + (o.pos[1] - sy) * uy
+            if t <= o.radius:
+                continue                       # 只认线后方（延长线方向）的目标
+            d = abs((o.pos[0] - sx) * uy - (o.pos[1] - sy) * ux)
+            if d <= S.STELLA_LINK_WIDTH * self.S and t < bd:
+                bd, best = t, o
+        if best is None:
+            return
+        self._fx_beam(sx, sy, best.pos[0], best.pos[1], self.s(6),
+                      self._STELLA_COL, life=0.22)
+        self._hurt_mob(best, S.ELEMENT_STAR_PIERCE, best.pos[0], best.pos[1],
+                       color=self._STELLA_COL, spark=6)
+
+    def _stella_burst_line(self, a, b, dmg, color):
+        """立即沿线贯穿爆发（连星②/星图共鸣⑤共用）：走廊伤害 + 星之贯穿。"""
+        x1, y1, x2, y2 = a["x"], a["y"], b["x"], b["y"]
+        half = S.STELLA_LINK_WIDTH * self.S * 0.5 + self.s(10)
+        self._fx_beam(x1, y1, x2, y2, self.s(16), color, life=0.34)
+        self._spawn_fx_sprite("stella_link", (x1 + x2) / 2, (y1 + y2) / 2,
+                              self.s(110), life=0.35, expand=1.5, spin=1.5)
+        touched = []
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if _seg_dist(m.pos[0], m.pos[1], x1, y1, x2, y2) <= half + m.radius:
+                touched.append(m)
+                self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=10)
+        self.mobs = [m for m in self.mobs if m.alive]
+        src = touched[0] if touched else None
+        if src is None and self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if _seg_dist(bx, by, x1, y1, x2, y2) <= half + self.boss.radius_px:
+                self._damage_boss(dmg, color=color)
+                src = self.boss
+        elif src is not None and self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if _seg_dist(bx, by, x1, y1, x2, y2) <= half + self.boss.radius_px:
+                self._damage_boss(dmg, color=color)
+        if src is not None:
+            self._stella_pierce(x1, y1, x2, y2, src)
+
+    def _skill_stella_place(self, ev, px, py, dx, dy):
+        """① 落星：向朝向闪现 dist，起点与落点各落 1 颗星位；
+        window 秒内再按同键引爆落点处星轨（小范围贯穿，见 _skill_stella_place_det），
+        超时失效不爆（见 _update_dash2 的 stella 分支）。"""
+        color = ev.get("color", self._STELLA_COL)
+        dist = ev.get("dist", S.STELLA_PLACE_DIST) * self.S
+        window = ev.get("window", S.STELLA_PLACE_WINDOW)
+        x2 = min(max(px + dx * dist, self.snake.radius), self.world_w - self.snake.radius)
+        y2 = min(max(py + dy * dist, self.snake.radius), self.world_h - self.snake.radius)
+        self.game.audio.play("skill_dash")
+        self._stella_add_node(px, py)
+        self.snake.pos[0], self.snake.pos[1] = x2, y2
+        self._stella_add_node(x2, y2)
+        self._fx_trail(px, py, x2, y2, color)
+        self._fx_trail(px, py, x2, y2, self._STELLA_COL2, life=0.42)
+        self._spawn_fx_sprite(ev.get("sid"), x2, y2, self.s(130),
+                              life=0.4, expand=1.6, spin=2.0)
+        self._burst(x2, y2, color, 18)
+        # 二段挂起：复用 dash2 容器（stella 标记使到期不爆、不画待爆光球）
+        self.dash2 = {"x": x2, "y": y2, "t": window, "total": window,
+                      "element": "星", "color": color, "ev": ev,
+                      "radius": ev.get("det_radius", S.STELLA_PLACE_DET_RADIUS) * self.S,
+                      "stella": True}
+        self._float(ev.get("name", "落星"), px, py - self.s(54), color, 30)
+        self.shake = max(self.shake, 0.24)
+
+    def _skill_stella_place_det(self, ev, dmg):
+        """① 落星二段：引爆落点处星轨——小范围伤害 + 星之贯穿（由 cast_skill 再按触发）。"""
+        d = self.dash2
+        self.dash2 = None
+        if d is None:
+            return
+        x, y = d["x"], d["y"]
+        r = d["radius"]
+        color = d["color"]
+        self.game.audio.play("skill_storm")
+        self._fx_nova(x, y, r, color, life=0.5)
+        self._fx_starfall(x, y, r, life=0.5)
+        self._burst(x, y, self._STELLA_COL2, 18)
+        src = None
+        for m in list(self.mobs):
+            if not m.alive:
+                continue
+            if math.hypot(m.pos[0] - x, m.pos[1] - y) <= r + m.radius:
+                if src is None:
+                    src = m
+                self._hurt_mob(m, dmg, m.pos[0], m.pos[1], color=color, spark=10)
+        self.mobs = [m for m in self.mobs if m.alive]
+        if src is not None and src.alive:
+            self._stella_pierce(x - r, y, x + r, y, src)   # 横向贯穿后方敌人
+        if self.boss is not None and self.boss.alive:
+            bx, by = self.boss.pos
+            if math.hypot(bx - x, by - y) <= r + self.boss.radius_px:
+                self._damage_boss(dmg, color=color)
+        self.shake = max(self.shake, 0.3)
+
+    def _skill_stella_link(self, ev, px, py):
+        """② 连星：把最近的星位两两连成星轨并立即沿线贯穿爆发（单条 ev[dmg]＋贯穿）；
+        场上不足两颗时先在自身周围补落 2 颗。"""
+        color = ev.get("color", self._STELLA_COL)
+        nodes = list(self.stella_nodes)
+        if len(nodes) < 2:
+            for k in range(2):
+                ang = k * math.pi + 0.6
+                nodes.append(self._stella_add_node(
+                    px + math.cos(ang) * S.STELLA_LINK_DIST * self.S * 0.55,
+                    py + math.sin(ang) * S.STELLA_LINK_DIST * self.S * 0.55))
+        nodes.sort(key=lambda n: math.hypot(n["x"] - px, n["y"] - py))
+        sel = nodes[:4]                       # 取最近 4 颗两两相连（最多 6 条，防满屏光束）
+        dmg = max(1, int(ev.get("dmg", S.STELLA_LINK_BURST_DMG)))
+        self.game.audio.play("skill_storm")
+        for i in range(len(sel)):
+            for j in range(i + 1, len(sel)):
+                lk = self._stella_try_link(sel[i], sel[j])
+                if lk is not None:
+                    lk["const"] = True        # 立即爆发过的轨转常驻，继续周期跳动
+                self._stella_burst_line(sel[i], sel[j], dmg, color)
+        self._burst(px, py, color, 16)
+        self._float(ev.get("name", "连星"), px, py - self.s(58), color, 30)
+        self.shake = max(self.shake, 0.3)
+
+    def _skill_stella_well(self, ev, px, py, dx, dy):
+        """③ 星引：在前方指定点开引力井（优先最近敌人脚下），拉扯敌人并入井眩晕，
+        井心落 1 颗星位（拉扯/眩晕结算见 _update_stella）。"""
+        color = ev.get("color", self._STELLA_COL)
+        r = ev.get("radius", S.STELLA_WELL_RADIUS) * self.S
+        tgt = self._nearest_target(max_range=r * 3.0)
+        if tgt is not None:
+            _kind, obj = tgt
+            cx, cy = obj.pos[0], obj.pos[1]
+        else:
+            cx, cy = px + dx * r * 1.2, py + dy * r * 1.2
+        cx = min(max(cx, r), max(r, self.world_w - r))
+        cy = min(max(cy, r), max(r, self.world_h - r))
+        self.stella_wells.append({
+            "x": cx, "y": cy, "r": r, "t": ev.get("time", S.STELLA_WELL_TIME),
+            "max_t": ev.get("time", S.STELLA_WELL_TIME),
+            "strength": ev.get("strength", S.STELLA_WELL_STRENGTH) * self.S,
+            "stun": ev.get("stun", S.STELLA_WELL_STUN), "hit": set(),
+            "fx": ev.get("sid")})
+        self._stella_add_node(cx, cy)
+        self.game.audio.play("skill_storm")
+        self._fx_vortex(cx, cy, r, color, life=0.55)
+        self._float(ev.get("name", "星引"), px, py - self.s(58), color, 30)
+
+    def _skill_stella_shower(self, ev, px, py, base_ang):
+        """④ 流星雨：count 枚追踪流星弹（homing 转向见 PlayerBullet.update，
+        目标死亡由 _update_stella 重定向），每枚命中在敌人脚下落 1 颗星位。"""
+        color = ev.get("color", self._STELLA_COL)
+        n = max(1, int(ev.get("count", S.STELLA_SHOWER_COUNT)))
+        spd = ev.get("speed", S.STELLA_SHOWER_SPEED) * self.S
+        life = ev.get("life", S.STELLA_SHOWER_LIFE)
+        dmg = max(1, int(ev.get("dmg", S.STELLA_SHOWER_DMG)))
+        targets = self._nearest_mobs(n)
+        for i in range(n):
+            if i < len(targets):
+                tgt = targets[i]
+                ax, ay = tgt.pos[0] - px, tgt.pos[1] - py
+            else:
+                tgt = None
+                ang = base_ang + (i - (n - 1) / 2.0) * 0.5
+                ax, ay = math.cos(ang), math.sin(ang)
+            d0 = math.hypot(ax, ay) or 1.0
+            b = PlayerBullet((px, py), (ax / d0 * spd, ay / d0 * spd), dmg,
+                             self.s(10), life=life, color=color,
+                             pierce=0, element="星", from_skill=True,
+                             fx=ev.get("sid"))
+            b.homing = tgt
+            b.star_node = True
+            b.star_trace = True
+            self.bullets.append(b)
+        self.game.audio.play("skill_bloom")
+        self._burst(px, py, color, 18)
+        self._fx_starfall(px, py, self.s(120))
+        self._float(ev.get("name", "流星雨"), px, py - self.s(58), color, 30)
+
+    def _skill_stella_constellation(self, ev, px, py):
+        """⑤ 星图共鸣（大招）：吟唱 time 秒（可移动，复用 channel 读条），
+        读满全场星位两两连成星座（见 _finish_constellation）。"""
+        color = ev.get("color", self._STELLA_COL)
+        self.game.audio.play("skill_shield")
+        self.channel = {"t": 0.0,
+                        "total": max(0.05, ev.get("time", S.STELLA_CONST_TIME)),
+                        "ev": ev, "color": color, "fx": ev.get("sid"),
+                        "stella_const": True}
+        self.atk_combo = None   # 吟唱接管动作（同 _skill_channel）
+        self._fx_aura(px, py, self.s(110), color, life=0.5)
+        self._float(ev.get("name", "星图共鸣") + " 吟唱中…", px, py - self.s(58),
+                    color, 26)
+
+    def _finish_constellation(self, ev, color):
+        """星图共鸣读满：全场星位两两连成星座（取最近 pair，上限 max_lines 条），
+        每条星轨 ev[dmg] 伤害＋贯穿；随后 window 秒内新落星位自动连线（不限间距），
+        既有星位续满寿命。"""
+        px, py = self.snake.pos
+        nodes = list(self.stella_nodes)
+        pairs = []
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                d = math.hypot(nodes[i]["x"] - nodes[j]["x"],
+                               nodes[i]["y"] - nodes[j]["y"])
+                pairs.append((d, nodes[i], nodes[j]))
+        pairs.sort(key=lambda p: p[0])
+        max_lines = max(1, int(ev.get("max_lines", S.STELLA_CONST_MAX_LINES)))
+        dmg = max(1, int(ev.get("dmg", S.STELLA_CONST_DMG)))
+        made = 0
+        for _d, a, b in pairs:
+            if made >= max_lines:
+                break
+            lk = self._stella_try_link(a, b)
+            if lk is None:
+                continue                      # 已有星轨：不重复建，但仍沿线爆发
+            lk["const"] = True
+            made += 1
+            self._stella_burst_line(a, b, dmg, color)
+        for n in nodes:
+            n["t"] = n["max_t"]               # 共鸣把既有星位续满
+        self.stella_const_t = ev.get("window", S.STELLA_CONST_WINDOW)
+        self._fx_ultimate(px, py, color)
+        self._spawn_fx_sprite(ev.get("sid"), px, py, self.s(220),
+                              life=0.6, expand=1.8, spin=2.0)
+        self.game.audio.play("skill_storm")
+        self.shake = max(self.shake, 0.45)
+        self.flash = max(self.flash, 0.3)
+        self._float(ev.get("name", "星图共鸣"), px, py - self.s(58), color, 34)
+
+    def _update_stella(self, dt):
+        """星璃持续态每帧推进：星位到期 / 星轨跳动 / 引力井拉扯 / 星座窗口倒计时。
+        地面态不随切人停摆（同潮汐水域/绯焰燃径）。"""
+        if self.stella_const_t > 0:
+            self.stella_const_t = max(0.0, self.stella_const_t - dt)
+        # 星位到期：连带清掉挂在它上的星轨
+        if self.stella_nodes:
+            for n in self.stella_nodes:
+                n["t"] -= dt
+            alive = [n for n in self.stella_nodes if n["t"] > 0]
+            if len(alive) != len(self.stella_nodes):
+                self.stella_nodes = alive
+                aset = set(map(id, alive))
+                self.stella_links = [lk for lk in self.stella_links
+                                     if id(lk["a"]) in aset and id(lk["b"]) in aset]
+        # 星轨跳动：每 STELLA_LINK_TICK 秒沿线走廊伤害＋贯穿
+        for lk in self.stella_links:
+            lk["t"] = min(lk["t"], lk["a"]["t"], lk["b"]["t"])   # 随端点星位到期
+            lk["tick"] -= dt
+            if lk["tick"] <= 0:
+                lk["tick"] += S.STELLA_LINK_TICK
+                self._stella_link_tick(lk)
+        self.stella_links = [lk for lk in self.stella_links if lk["t"] > 0]
+        # 引力井：持续拉扯入井敌人，首次入井眩晕一次
+        if self.stella_wells:
+            for w in self.stella_wells:
+                w["t"] -= dt
+                for m in self.mobs:
+                    if not m.alive:
+                        continue
+                    dx, dy = w["x"] - m.pos[0], w["y"] - m.pos[1]
+                    d = math.hypot(dx, dy)
+                    if d <= w["r"] + m.radius and d > 1.0:
+                        m.pos[0] += dx / d * w["strength"] * dt
+                        m.pos[1] += dy / d * w["strength"] * dt
+                        if m.uid not in w["hit"]:
+                            w["hit"].add(m.uid)
+                            m.apply_slow(0.05, w["stun"])   # 眩晕＝极限减速（同星元素 proc）
+                            self._fx_freeze(m.pos[0], m.pos[1], m.radius)
+                self._fx_vortex(w["x"], w["y"], w["r"], self._STELLA_COL, life=0.24)
+            self.stella_wells = [w for w in self.stella_wells if w["t"] > 0]
+        # 流星雨追踪目标死亡：重定向最近敌人（没有就直飞到底）
+        for b in self.bullets:
+            if getattr(b, "star_node", False) and b.alive:
+                tgt = b.homing
+                if tgt is None or not getattr(tgt, "alive", False):
+                    pool = self._nearest_mobs(1)
+                    b.homing = pool[0] if pool else None
+
+    def _draw_stella_fields(self, screen, sx, sy):
+        """星璃·连星成轨地面层：星位/星轨/引力井/星座窗口（画在怪与角色之前，
+        直接用 RGBA 在不透明 screen 上混合，同 _draw_zones）。"""
+        # 星轨：连线 + 沿线流动星光（跳动临近时更亮，给玩家节奏提示）
+        for lk in self.stella_links:
+            a, b = lk["a"], lk["b"]
+            x1, y1 = int(self.wx(a["x"], sx)), int(self.wy(a["y"], sy))
+            x2, y2 = int(self.wx(b["x"], sx)), int(self.wy(b["y"], sy))
+            fade = max(0.0, min(1.0, lk["t"] / max(1e-4, lk["max_t"])))
+            base_a = int(120 * min(1.0, fade * 4.0))
+            glow_a = base_a + int(70 * (1.0 - min(1.0, lk["tick"] / S.STELLA_LINK_TICK)))
+            pygame.draw.line(screen, (*self._STELLA_COL, base_a), (x1, y1), (x2, y2),
+                             max(2, self.s(5)))
+            pygame.draw.line(screen, (*self._STELLA_COL2, min(230, glow_a)),
+                             (x1, y1), (x2, y2), max(1, self.s(2)))
+            t = (self.elapsed * 1.6 + lk["tick"]) % 1.0
+            mx = int(x1 + (x2 - x1) * t)
+            my = int(y1 + (y2 - y1) * t)
+            spark = self._glow_surf(self.s(9), self._STELLA_COL2, min(220, glow_a + 40))
+            screen.blit(spark, spark.get_rect(center=(mx, my)))
+        # 星位：柔光 + 脉动四芒星 + 剩余寿命细环
+        for n in self.stella_nodes:
+            x = int(self.wx(n["x"], sx))
+            y = int(self.wy(n["y"], sy))
+            fade = max(0.0, min(1.0, n["t"] / max(1e-4, n["max_t"])))
+            pulse = 0.75 + 0.25 * math.sin(self.elapsed * 4.0 + n["ph"])
+            r = int(self.s(22) * pulse)
+            glow = self._glow_surf(r * 2, self._STELLA_COL,
+                                   int(90 * min(1.0, fade * 4.0)))
+            screen.blit(glow, glow.get_rect(center=(x, y)))
+            k = r * 0.9
+            pts = [(x, y - k), (x + k * 0.34, y - k * 0.34), (x + k, y),
+                   (x + k * 0.34, y + k * 0.34), (x, y + k),
+                   (x - k * 0.34, y + k * 0.34), (x - k, y),
+                   (x - k * 0.34, y - k * 0.34)]
+            pygame.draw.polygon(screen, (*self._STELLA_COL2,
+                                         int(225 * min(1.0, fade * 4.0))), pts)
+            ring_r = int(self.s(16))
+            pygame.draw.arc(screen, (*self._STELLA_COL, 150),
+                            pygame.Rect(x - ring_r, y - ring_r,
+                                        ring_r * 2, ring_r * 2),
+                            math.pi / 2, math.pi / 2 + math.tau * fade,
+                            max(1, self.s(2)))
+        # 引力井：内卷漩涡 + 井口细环
+        for w in self.stella_wells:
+            x = int(self.wx(w["x"], sx))
+            y = int(self.wy(w["y"], sy))
+            r = int(w["r"])
+            fade = max(0.0, min(1.0, w["t"] / max(1e-4, w["max_t"])))
+            a = int(90 * min(1.0, fade * 3.0))
+            pygame.draw.circle(screen, (*self._STELLA_COL, a), (x, y), r)
+            pygame.draw.circle(screen, (*self._STELLA_COL2, min(215, a + 90)),
+                               (x, y), r, max(2, self.s(3)))
+            phase = (self.elapsed * 0.8) % 1.0
+            rr = int(r * (1.0 - phase))
+            if rr > 2:
+                pygame.draw.circle(screen, (225, 210, 255, 60), (x, y), rr,
+                                   max(1, self.s(2)))
+        # 星图共鸣余韵：全屏星位自动连线窗口，场上星位亮度提升提示
+        if self.stella_const_t > 0 and self.stella_nodes:
+            ratio = min(1.0, self.stella_const_t / S.STELLA_CONST_WINDOW)
+            for i in range(len(self.stella_nodes)):
+                for j in range(i + 1, len(self.stella_nodes)):
+                    a, b = self.stella_nodes[i], self.stella_nodes[j]
+                    x1 = int(self.wx(a["x"], sx))
+                    y1 = int(self.wy(a["y"], sy))
+                    x2 = int(self.wx(b["x"], sx))
+                    y2 = int(self.wy(b["y"], sy))
+                    pygame.draw.line(screen, (*self._STELLA_COL, int(46 * ratio)),
+                                     (x1, y1), (x2, y2), max(1, self.s(2)))
 
     def _star_pierce(self, m):
         """星元素贯穿：对最近另一个敌人追加一道星弹伤害。"""
@@ -4509,6 +4996,7 @@ class BattleScene(Scene):
         self._draw_background(screen, sx, sy)
         self._draw_world_border(screen, sx, sy)
         self._draw_zones(screen, sx, sy)
+        self._draw_stella_fields(screen, sx, sy)
         self._draw_effects(screen, sx, sy)
         self._draw_boss_telegraph(screen, sx, sy)
         self._draw_drops(screen, sx, sy)
@@ -6049,6 +6537,9 @@ class BattleScene(Scene):
         """画出 dash2 一段留下的待引爆元素实体（脉动光环 + 剩余时限细环）。"""
         d = self.dash2
         if d is None:
+            return
+        if d.get("stella"):
+            # 星璃·落星：落点已有星位地面视觉，二段窗口内不再画待爆光球
             return
         x = int(self.wx(d["x"], sx))
         y = int(self.wy(d["y"], sy))

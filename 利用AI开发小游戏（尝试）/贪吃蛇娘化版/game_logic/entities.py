@@ -250,6 +250,10 @@ class PlayerBullet:
         self.trail = False            # 旋转拖尾：飞行中撒花瓣粒子（battle 端结算）
         self.mark = False             # 命中必叠花瓣标记（段3 种花主手段）
         self.star_trace = False       # 命中微星痕（仅视觉，不进标记/星轨系统）
+        # 星璃「流星雨」：homing=追踪目标引用（存活则每帧限角速度转向，
+        # 目标死亡由 battle 端重定向）；star_node=命中在敌人脚下落 1 颗星位。
+        self.homing = None
+        self.star_node = False
         self.tex_rel = None           # 普攻贴图相对路径（effects/melee/…，缩放变体）
         self.trail_acc = 0.0
         self.alive = True
@@ -257,6 +261,16 @@ class PlayerBullet:
 
     def update(self, dt, world_w, world_h):
         self.life -= dt
+        if self.homing is not None and getattr(self.homing, "alive", False):
+            # 追踪转向：朝目标位置限角速度旋转（6 rad/s），弹速不变
+            tx, ty = self.homing.pos[0], self.homing.pos[1]
+            want = math.atan2(ty - self.pos[1], tx - self.pos[0])
+            cur = math.atan2(self.vel[1], self.vel[0])
+            diff = (want - cur + math.pi) % math.tau - math.pi
+            turn = max(-6.0 * dt, min(6.0 * dt, diff))
+            na = cur + turn
+            spd = math.hypot(self.vel[0], self.vel[1])
+            self.vel = [math.cos(na) * spd, math.sin(na) * spd]
         if self.curve:
             # 弧旋弹道：速度向量绕自身旋转，花瓣走弧线而非直线
             ca = self.curve * dt

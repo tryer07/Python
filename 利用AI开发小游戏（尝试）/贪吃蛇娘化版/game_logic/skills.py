@@ -141,6 +141,12 @@ _BASE_CD = {
     "flare_fuse": lambda: S.FLARE_FUSE_CD,
     "flare_ring": lambda: S.FLARE_RING_CD,
     "flare_burst": lambda: S.FLARE_BURST_CD,
+    # 星璃连星成轨闭环五技能（星属性游侠，数值固定不吃职业系数）
+    "stella_place": lambda: S.STELLA_PLACE_CD,
+    "stella_link": lambda: S.STELLA_LINK_CD,
+    "stella_well": lambda: S.STELLA_WELL_CD,
+    "stella_shower": lambda: S.STELLA_SHOWER_CD,
+    "stella_constellation": lambda: S.STELLA_CONST_CD,
 }
 
 
@@ -214,6 +220,18 @@ _STAT_FIELDS = {
                    ("tick", "叠层间隔", _f_sec), ("slow", "减速后", _f_mult),
                    ("amp", "引爆增伤", _f_pct)],
     "flare_burst": [("mult", "引爆倍率", _f_mult), ("refund", "逐人返CD", _f_sec)],
+    # --- 星璃连星成轨闭环五技能：事件带 dmg 绝对值，数值与实战同源 ---
+    "stella_place": [("dist", "闪现距离", _f_int), ("window", "二段窗口", _f_sec),
+                     ("det_radius", "引爆半径", _f_int),
+                     ("det_dmg", "二段引爆伤害", _f_int)],
+    "stella_link": [("dmg", "单条爆发伤害", _f_int)],
+    "stella_well": [("radius", "引力井半径", _f_int), ("time", "持续", _f_sec),
+                    ("strength", "拉扯强度", _f_int), ("stun", "眩晕", _f_sec)],
+    "stella_shower": [("count", "流星枚数", _f_int), ("dmg", "单枚伤害", _f_int),
+                      ("speed", "弹速", _f_int), ("life", "存续", _f_sec)],
+    "stella_constellation": [("time", "吟唱", _f_sec), ("dmg", "每条星轨伤害", _f_int),
+                             ("max_lines", "星轨上限", _f_int),
+                             ("window", "自动连线窗口", _f_sec)],
 }
 
 
@@ -306,9 +324,10 @@ class SkillEngine:
         """指定强化等级 lv 下的冷却秒数（数值表/介绍面板用）。
         职业系数：法师技能贵（CD ×1.30）、刺客技能勤（CD ×0.82）。"""
         base = _BASE_CD.get(self._type_of(sid), lambda: 6.0)()
-        # 樱落/绯焰专属五技能：CD 按规格固定，不吃职业系数（会破坏闭环节奏）
+        # 樱落/绯焰/星璃专属五技能：CD 按规格固定，不吃职业系数（会破坏闭环节奏）
         stype = self._type_of(sid)
-        role_cd = 1.0 if stype.startswith("sakura_") or stype.startswith("flare_") \
+        role_cd = 1.0 if (stype.startswith("sakura_") or stype.startswith("flare_")
+                          or stype.startswith("stella_")) \
             else S.ROLE_CD_MULT.get(self.role, 1.0)
         cd = (base * role_cd * (1.0 - min(0.75, cdr))
               * (1.0 - S.SKILL_ENH_CD_PER_LV * lv))
@@ -458,10 +477,10 @@ class SkillEngine:
         role = self.role or "hybrid"
         if role not in ("tank", "mage", "assassin"):
             return ev
-        # 潮汐切人五技能 / 樱落种花五技能 / 绯焰灼烧引爆五技能：数值按规格固定，
-        # 不吃职业范围/射程/读条系数（局内强化仍由 _scale_event 统一放大）。
+        # 潮汐切人五技能 / 樱落种花五技能 / 绯焰灼烧引爆五技能 / 星璃连星成轨五技能：
+        # 数值按规格固定，不吃职业范围/射程/读条系数（局内强化仍由 _scale_event 统一放大）。
         if (stype.startswith("tide_") or stype.startswith("sakura_")
-                or stype.startswith("flare_")):
+                or stype.startswith("flare_") or stype.startswith("stella_")):
             return ev
         area = S.ROLE_AREA_MULT.get(role, 1.0)
         for k in ("radius", "range", "length", "width"):
@@ -686,6 +705,16 @@ class SkillEngine:
             ev["time"] = ev.get("time", 8.0) + 3.0             # 契约更久
         elif stype == "tide_domain":
             ev["wet_amp"] = ev.get("wet_amp", 0.20) + 0.10      # 湿身易伤更高
+        elif stype == "stella_place":
+            ev["det_radius"] = ev.get("det_radius", 130) * 1.2  # 二段引爆范围更大
+        elif stype == "stella_link":
+            ev["dmg"] = int(round(ev.get("dmg", 120) * 1.25))   # 单条爆发更痛
+        elif stype == "stella_well":
+            ev["stun"] = ev.get("stun", 0.6) + 0.3              # 眩晕更久
+        elif stype == "stella_shower":
+            ev["count"] = ev.get("count", 6) + 2                # 多两枚流星
+        elif stype == "stella_constellation":
+            ev["max_lines"] = ev.get("max_lines", 15) + 5       # 星座更密
         # 元素副效果满级质变：把该元素的招牌副效果再放大一档
         el = self.element
         if el == "水" and "freeze_time" in ev:
@@ -855,4 +884,25 @@ class SkillEngine:
         if stype == "flare_burst":
             return {"type": "flare_burst",
                     "mult": S.FLARE_BURST_MULT, "refund": S.FLARE_BURST_REFUND}
+        # ---- 星璃连星成轨闭环五技能（带 dmg 绝对值，走 cast_skill/_scale_event 缩放）----
+        if stype == "stella_place":
+            return {"type": "stella_place",
+                    "dist": S.STELLA_PLACE_DIST, "window": S.STELLA_PLACE_WINDOW,
+                    "det_radius": S.STELLA_PLACE_DET_RADIUS,
+                    "det_dmg": S.STELLA_PLACE_DET_DMG}
+        if stype == "stella_link":
+            return {"type": "stella_link", "dmg": S.STELLA_LINK_BURST_DMG}
+        if stype == "stella_well":
+            return {"type": "stella_well",
+                    "radius": S.STELLA_WELL_RADIUS, "time": S.STELLA_WELL_TIME,
+                    "strength": S.STELLA_WELL_STRENGTH, "stun": S.STELLA_WELL_STUN}
+        if stype == "stella_shower":
+            return {"type": "stella_shower",
+                    "count": S.STELLA_SHOWER_COUNT, "dmg": S.STELLA_SHOWER_DMG,
+                    "speed": S.STELLA_SHOWER_SPEED, "life": S.STELLA_SHOWER_LIFE}
+        if stype == "stella_constellation":
+            return {"type": "stella_constellation",
+                    "time": S.STELLA_CONST_TIME, "dmg": S.STELLA_CONST_DMG,
+                    "max_lines": S.STELLA_CONST_MAX_LINES,
+                    "window": S.STELLA_CONST_WINDOW}
         return None
