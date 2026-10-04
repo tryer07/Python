@@ -5,18 +5,19 @@ import os
 def _asset_datas():
     """assets 逐文件进包，剔除仅工具期/备份用的死重。
 
-    _old_* 备份目录、*_src_*.png 源图、*/src/ 工具源目录只被
-    tools/prepare_assets.py 读取；运行时代码从不引用、也不遍历
-    assets（已确认无 listdir/walk 扫描），打进 exe 纯属浪费体积。
+    下划线开头的工具目录（_old_* 备份、_raw 白底归档）、*_src_*.png
+    源图、*/src/ 工具源目录只被 tools/prepare_assets.py 读取；运行时
+    代码从不引用、也不遍历 assets（已确认无 listdir/walk 扫描），打进
+    exe 纯属浪费体积（_raw 一类就能占数十 MB）。
     """
     out = []
     for root, dirs, files in os.walk('assets'):
         parts = os.path.relpath(root, 'assets').replace(os.sep, '/').split('/')
-        if any(p.startswith('_old') or p == 'src' for p in parts):
+        if any(p.startswith('_') or p == 'src' for p in parts):
             dirs[:] = []
             continue
         for f in files:
-            if f.startswith('_') or '_src_' in f:
+            if f.startswith('_') or '_src_' in f or '_raw' in f:
                 continue
             src = os.path.join(root, f)
             dst = os.path.dirname(os.path.join(

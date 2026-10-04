@@ -2005,7 +2005,7 @@ class BattleScene(Scene):
                     self._start_cast_pose(key)
                     self._cancel_atk_recover()
                     return
-        ev = self.skills.cast(self.snake.pos, key, self._eff_cdr())
+        ev = self.skills.cast(self.snake.pos, key, self._eff_cdr)
         if ev:
             # 法师「消耗多」：伤害型技能自伤一小截血（起手就扣，
             # dash2 再按引爆走上面的分支，不会重复计费）
@@ -6937,7 +6937,7 @@ class BattleScene(Scene):
         n_act = len(actives)
         slot = self.s(54)
         gap = self.s(9)
-        cdr = self._eff_cdr()
+        cdr = self._eff_cdr
         n_total = n_act + 1                       # 主动 + 被动
         total = slot * n_total + gap * (n_total - 1)
         x0 = self.W // 2 - total // 2
