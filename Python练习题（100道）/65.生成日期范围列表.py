@@ -26,9 +26,16 @@ def get_date_range(begin_date, end_date):
         current_date += datetime.timedelta(days=1)
     return date_range
 
-#测试函数
+#调用函数并接收返回的日期范围列表
 
-date_range = get_date_range('2023-01-01', '2023-01-10')
+begin_date = '2023-01-01'
+end_date = '2023-01-10'
+date_range = get_date_range(begin_date, end_date)
 
-print(date_range)
+#输出结果：先打印标题与总数，再逐行整齐地列出每个日期
+
+print(f"从 {begin_date} 到 {end_date} 的日期范围列表（共 {len(date_range)} 天）：")
+print("-" * 40)
+for index, date_str in enumerate(date_range, start=1):
+    print(f"  {index:>2}. {date_str}")
 
