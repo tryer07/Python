@@ -1,6 +1,4 @@
 #定义一个学生类，用于存储学生基本信息(如姓名、年龄、学号)，并提供查询这些信息的方法
-from streamlit.type_util import async_generator_to_sync
-
 
 #定义学生类
 
