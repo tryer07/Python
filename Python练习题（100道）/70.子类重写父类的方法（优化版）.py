@@ -61,7 +61,7 @@ vehicle_types = {
 
 #辅助函数：读取一个范围内的整数编号（带输入校验，两级菜单复用）
 
-def read_index(prompt, count):
+def read_index(prompt, count) -> int:
 
     """
     反复提示用户输入，直到选择一个 1 ~ count 范围内的合法编号为止。
@@ -70,7 +70,11 @@ def read_index(prompt, count):
     :return: 对应的列表索引（int）
     """
 
-    while True:
+    index = 0
+    valid = False
+
+    #使用标志位控制循环，循环外统一 return，避免 PyCharm 将 while True 误判为可能返回 None
+    while not valid:
         try:
             choice = int(input(prompt))
         except ValueError:
@@ -78,8 +82,12 @@ def read_index(prompt, count):
             continue
         #范围校验独立于 try/except，避免合法数字绕过边界判断
         if 1 <= choice <= count:
-            return choice - 1
-        print(f"输入超出范围，请输入 1 ~ {count} 之间的数字。")
+            index = choice - 1
+            valid = True
+        else:
+            print(f"输入超出范围，请输入 1 ~ {count} 之间的数字。")
+
+    return index
 
 #辅助函数：展示某类别下的车辆列表
 
