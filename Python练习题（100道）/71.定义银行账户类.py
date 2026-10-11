@@ -56,16 +56,16 @@ class BankAccount:
         else:
             raise ValueError("取款金额必须为正数")
 
-        def get_balance(self):
+    def get_balance(self):
 
-            """
-            获取账户余额
-            :param self: 账户对象
-            :return: 账户余额
-            :rtype: float
-            """
-            print("账户余额为：",self.balance)
-            return self.balance
+        """
+        获取账户余额
+        :param self: 账户对象
+        :return: 账户余额
+        :rtype: float
+        """
+        print("账户余额为：",self.balance)
+        return self.balance
 
 #示例使用
 
