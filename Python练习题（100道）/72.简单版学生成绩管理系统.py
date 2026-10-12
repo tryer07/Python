@@ -1,5 +1,5 @@
 # 实现一个简单的学生成绩管理系统，支持添加学生、记录学生成绩，并计算每个学生成绩的平均值
-# 优化点：
+# 实现的内容：
 # 1. 修复原版 Student.calculate_average 引用不存在的 self.students 导致的 AttributeError，平均分改由学生自身负责计算
 # 2. StudentGradeManager 统一存储 Student 对象（而不是裸列表），让学生类与管理类正确协作
 # 3. 菜单式交互：添加学生 / 记录成绩 / 查看平均分 / 查看全部 / 退出
