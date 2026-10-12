@@ -42,7 +42,8 @@ class Student:
         """
         if not self.grades:
             return f'  {self.name}：尚未记录任何成绩'
-        average = self.calculate_average()
+        # 此处已确认成绩列表非空，直接计算，避免接收 calculate_average 的 None | float | int 联合类型
+        average = sum(self.grades) / len(self.grades)
         return (
             f'  {self.name}：共 {len(self.grades)} 条成绩 '
             f'{self.grades}，平均分 {average:.2f}'
@@ -196,7 +197,8 @@ if __name__ == '__main__':
                 else:
                     print(f'  查无此人：{name}，请先添加该学生。')
             else:
-                print(f'  {name} 的平均分为：{average:.2f}')
+                # 显式转 float，规避 PyCharm 对 None | float | int 联合类型的格式化误判（此处 average 必不为 None）
+                print(f'  {name} 的平均分为：{float(average):.2f}')
         elif choice == '4':
             manager.show_all()
         elif choice == '0':
