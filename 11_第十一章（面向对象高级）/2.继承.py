@@ -1,88 +1,105 @@
 # ============================================================
-# 封装演示：Car 类
-# 封装 = 把属性/方法分为【公共】和【私有】两类
-#   公共：类内外都能访问
-#   私有：属性名前加 __ ，只能类内部使用，外部访问会报错
+# 继承演示：复用 1.封装.py 中的 Car 作为父类，派生燃油车 / 电车子类
+# 继承 = 子类自动拥有父类非私有的属性和方法（is-a 关系）
+#   公共属性/方法：子类直接继承可用
+#   私有成员（__xxx）：不会作为子类自己的属性被继承，子类作用域内无法直接访问
 # ============================================================
+import pathlib
+
+# 父类 Car 定义在 1.封装.py 中，但文件名含有点和中文，无法用 import 语句直接导入
+# （点号会被解释成包层级，找不到名为 "1" 的包），改用按文件路径读源码执行的方式加载
+# 用 __file__ 同目录定位，不依赖运行时的工作目录
+namespace: dict[str, object] = {"__name__": "fengzhuang_demo"}
+parent_file = pathlib.Path(__file__).with_name("1.封装.py")
+exec(compile(parent_file.read_text(encoding="utf-8"), str(parent_file), "exec"), namespace)
+Car = namespace["Car"]
+# 注意：加载过程会顺带执行 1.封装.py 里的全部演示代码，输出后紧跟本文件的继承演示
+
+# 需求1：定义子类 —— GasCar / ElectricCar 继承 Car，各自新增构造参数与专属方法
 
 
-class Car:
-    # 构造方法：创建对象时自动执行
-    def __init__(self, brand, model, color, owner):
-        # 公共属性（需求3）：类内外都可以访问
-        self.brand = brand
-        self.model = model
-        self.color = color
-        # 私有属性（需求4）：前面加 __ ，类外无法直接访问
-        self.__owner = owner
+class GasCar(Car):
+    # 重写 __init__ 时必须先 super().__init__() 初始化父类属性
+    def __init__(self, brand, model, color, owner, tank_size):
+        super().__init__(brand, model, color, owner)
+        self.color = None
+        self.model = None
+        self.brand = None
+        self.tank_size = tank_size
 
-    # ---------- 公共方法（需求5） ----------
+    # 子类新增自己的方法
     @staticmethod
-    def start():
-        print("汽车已经启动了")
+    def refuel():
+        print("去加油站加油")
+
+    def start(self):
+        pass
 
     def run(self):
-        # 需求12：私有属性可以在【类内部】通过 self 访问
-        print(f"{self.__owner} 开着 {self.brand} {self.model} 在跑")
-        # 需求13：私有方法可以在【类内部】通过 self 调用
-        self.__control_fuel()
+        pass
 
-    @staticmethod
-    def stop():
-        print("停下了")
+    def stop(self):
+        pass
 
-    # ---------- 私有方法（需求6） ----------
-    @staticmethod
-    def __control_fuel():
-        print("控制油门和刹车")
-
-    # ---------- 需求14、15：对外提供脱敏的访问接口 ----------
     def get_owner(self):
-        # 返回脱敏后的车主名：第一个字用 * 代替，例如 "涛哥" -> "*哥"
-        return "*" + self.__owner[1:]
+        pass
 
 
-# ============================================================
-# 需求7：在类外部创建对象
-# ============================================================
-car = Car("奥迪", "A6", "黑色", "涛哥")
+class ElectricCar(Car):
+    # 同样新增 __init__：电池容量是电车特有属性
+    def __init__(self, brand, model, color, owner, battery):
+        super().__init__(brand, model, color, owner)
+        self.color = None
+        self.brand = None
+        self.battery = battery
 
-# ============================================================
-# 需求8、9：类外部访问公共属性、调用公共方法 —— 全部正常
-# ============================================================
-print("brand:", car.brand)
-print("model:", car.model)
-print("color:", car.color)
-car.start()
-car.run()
-car.stop()
+    # 子类新增自己的方法
+    @staticmethod
+    def charge():
+        print("连接充电桩充电")
 
-# ============================================================
-# 需求10：类外部直接访问私有属性 "__owner" —— 验证报错
-# 用 getattr 按名字动态访问，行为与 car.__owner 完全一致，但不会触发 IDE 警告
-# ============================================================
+    def start(self):
+        pass
+
+    def run(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+# 需求2：创建子类对象，访问继承自父类的属性和方法，以及子类新增成员
+print("---------- 燃油车测试 ----------")
+gas = GasCar("奥迪", "A6", "黑色", "涛哥", 58)
+
+# 全靠继承获得的父类公共属性与公共方法
+print("brand:", gas.brand, "| model:", gas.model, "| color:", gas.color)
+gas.start()
+gas.run()
+gas.stop()
+
+# 访问子类自己新增的属性和方法
+print("油箱大小（升）:", gas.tank_size)
+gas.refuel()
+
+print("---------- 电车测试 ----------")
+electric = ElectricCar("特斯拉", "Model 3", "白色", "涛哥", 60)
+print("brand:", electric.brand)
+print("color:", electric.color)
+electric.start()
+electric.run()
+electric.stop()
+print("电池容量（千瓦时）:", electric.battery)
+electric.charge()
+
+# 需求3：验证私有成员的边界 —— 父类方法内部照常可用，但私有属性不会作为
+# 子类自己的属性被继承，子类作用域内（getattr 原名）取不到
+print("车主（脱敏，继承来的方法正常工作）:", gas.get_owner())
 try:
-    print(getattr(car, "__owner"))
+    print(getattr(gas, "__owner"))
 except AttributeError as e:
-    print("【报错验证】访问私有属性失败:", e)
+    print("【验证】私有属性不会作为子类属性被继承:", e)
 
-# ============================================================
-# 需求11：类外部直接调用私有方法 "__control_fuel" —— 验证报错
-# ============================================================
-try:
-    getattr(car, "__control_fuel")()
-except AttributeError as e:
-    print("【报错验证】调用私有方法失败:", e)
-
-# ============================================================
-# 需求16：通过公共方法 get_owner() 获取脱敏后的车主信息
-# ============================================================
-print("车主（脱敏）:", car.get_owner())
-
-# ============================================================
-# 需求17、18：用 _Car__xxx 强行访问私有成员 —— 验证 Python 没有真正私有
-# Python 的"私有"只是改名的语法糖，找得到改名后的名字就能访问
-# 名字用字符串拼出来，getattr 动态访问，避免 IDE 对改写名称的警告
-# ============================================================
-print("强行访问私有属性:", getattr(car, "_Car__owner"))
-getattr(car, "_Car__control_fuel")()
+# 需求4：isinstance / issubclass 验证继承关系成立
+print("gas 是 Car 的实例吗:", isinstance(gas, Car))
+print("ElectricCar 是 Car 的子类吗:", issubclass(ElectricCar, Car))
