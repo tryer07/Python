@@ -17,7 +17,8 @@ class Car:
         self.__owner = owner
 
     # ---------- 公共方法（需求5） ----------
-    def start(self):
+    @staticmethod
+    def start():
         print("汽车已经启动了")
 
     def run(self):
@@ -26,11 +27,13 @@ class Car:
         # 需求13：私有方法可以在【类内部】通过 self 调用
         self.__control_fuel()
 
-    def stop(self):
+    @staticmethod
+    def stop():
         print("停下了")
 
     # ---------- 私有方法（需求6） ----------
-    def __control_fuel(self):
+    @staticmethod
+    def __control_fuel():
         print("控制油门和刹车")
 
     # ---------- 需求14、15：对外提供脱敏的访问接口 ----------
