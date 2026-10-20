@@ -1,0 +1,36 @@
+[
+  {
+    "type": "normal",
+    "card_no": "1001",
+    "password": "123",
+    "name": "张三",
+    "borrowed_ids": [
+      "B003",
+      "B004",
+      "B002"
+    ]
+  },
+  {
+    "type": "normal",
+    "card_no": "1002",
+    "password": "123",
+    "name": "李四",
+    "borrowed_ids": []
+  },
+  {
+    "type": "vip",
+    "card_no": "9001",
+    "password": "vip888",
+    "name": "王五",
+    "borrowed_ids": [],
+    "vip_level": 2
+  },
+  {
+    "type": "vip",
+    "card_no": "9002",
+    "password": "456",
+    "name": "赵六",
+    "borrowed_ids": [],
+    "vip_level": 1
+  }
+]

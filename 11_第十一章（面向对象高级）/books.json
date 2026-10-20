@@ -1,0 +1,37 @@
+[
+  {
+    "book_id": "B001",
+    "title": "三体",
+    "author": "刘慈欣",
+    "total": 5,
+    "available": 5
+  },
+  {
+    "book_id": "B002",
+    "title": "平凡的世界",
+    "author": "路遥",
+    "total": 3,
+    "available": 2
+  },
+  {
+    "book_id": "B003",
+    "title": "战争与和平",
+    "author": "托尔斯泰",
+    "total": 2,
+    "available": 1
+  },
+  {
+    "book_id": "B004",
+    "title": "我是猫",
+    "author": "夏目漱石",
+    "total": 1,
+    "available": 0
+  },
+  {
+    "book_id": "B005",
+    "title": "唐诗三百首（绝版典藏）",
+    "author": "佚名",
+    "total": 2,
+    "available": 0
+  }
+]
