@@ -116,7 +116,7 @@ bmw.charge_v2()
 # 原有演示：创建子类对象，访问继承自父类的属性和方法，以及子类新增成员
 
 print("---------- 燃油车测试 ----------")
-fuel = FuelCar("奥迪", "A6", "黑色", "涛哥", 58)
+fuel = FuelCar("奥迪", "A6", "黑色", "外收内放", 58)
 
 # 全靠继承获得的父类公共属性与公共方法
 
@@ -131,7 +131,7 @@ print("油箱大小（升）:", fuel.tank_size)
 fuel.refuel()
 
 print("---------- 电车测试 ----------")
-electric = ElectricCar("特斯拉", "Model 3", "白色", "涛哥", 60)
+electric = ElectricCar("特斯拉", "Model 3", "白色", "外收内放", 60)
 print("brand:", electric.brand)
 print("color:", electric.color)
 electric.start()

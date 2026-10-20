@@ -36,7 +36,7 @@ class Car:
 
     # 需求4：对外提供脱敏访问接口 —— 类外通过它间接读取私有属性
     def get_owner(self):
-        # 返回脱敏后的车主名：第一个字用 * 代替，例如 "涛哥" -> "*哥"
+        # 返回脱敏后的车主名：第一个字用 * 代替，例如 "外收内放" -> "*收内放"
         return "*" + self.__owner[1:]
 
     # 补充（供《3.继承（方法重写）.py》演示）：公共方法 charge()
@@ -46,7 +46,7 @@ class Car:
 
 
 # 需求5：类外创建对象，并访问公共属性、调用公共方法 —— 全部正常
-car = Car("奥迪", "A6", "黑色", "涛哥")
+car = Car("奥迪", "A6", "黑色", "外收内放")
 print("brand:", car.brand)
 print("model:", car.model)
 print("color:", car.color)
