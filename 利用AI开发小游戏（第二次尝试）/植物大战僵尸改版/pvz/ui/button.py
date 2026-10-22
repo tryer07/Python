@@ -4,8 +4,8 @@ import math
 
 import pygame
 
-import settings
-from core.assets import get_font
+from .. import settings
+from ..core.assets import get_font
 
 
 class CardButton:

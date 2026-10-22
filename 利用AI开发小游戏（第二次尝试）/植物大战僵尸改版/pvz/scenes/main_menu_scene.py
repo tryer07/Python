@@ -2,10 +2,10 @@
 """主菜单：草坪大背景 + 顶部 logo + 底部模式选择卡片（还原原版布局）"""
 import pygame
 
-import settings
-from core.scene import Scene
-from core.assets import load_image, get_font
-from ui.button import CardButton
+from .. import settings
+from ..core.scene import Scene
+from ..core.assets import load_image, get_font
+from ..ui.button import CardButton
 
 
 class MainMenuScene(Scene):
@@ -30,7 +30,7 @@ class MainMenuScene(Scene):
                                            disabled=disabled, sub_text=sub))
 
     def _to_level_select(self):
-        from scenes.level_select_scene import LevelSelectScene
+        from .level_select_scene import LevelSelectScene
         self.game.change_scene(LevelSelectScene(self.game))
 
     def handle_event(self, event):
@@ -53,7 +53,7 @@ class MainMenuScene(Scene):
             grass.fill((106, 168, 79))
             surface.blit(grass, (0, 260))
 
-        from scenes.loading_scene import _draw_title
+        from .loading_scene import _draw_title
         _draw_title(surface, settings.SCREEN_W // 2, 110)
 
         for btn in self.buttons:

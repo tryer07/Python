@@ -3,7 +3,7 @@
 import os
 import pygame
 
-from settings import BG_DIR, UI_DIR
+from ..settings import BG_DIR, UI_DIR
 
 _cache: dict[str, pygame.Surface] = {}
 

@@ -3,10 +3,10 @@
 当前进度：仅 1-1 解锁，其余显示墓碑（ locked ）。"""
 import pygame
 
-import settings
-from core.scene import Scene
-from core.assets import load_image, get_font
-from ui.button import CardButton
+from .. import settings
+from ..core.scene import Scene
+from ..core.assets import load_image, get_font
+from ..ui.button import CardButton
 
 ROWS, COLS = 5, 10
 UNLOCKED = 1  # 已解锁的关卡总数（后续接入存档）
@@ -31,7 +31,7 @@ class LevelSelectScene(Scene):
         self.gap_x, self.gap_y = gap_x, gap_y
 
     def _to_menu(self):
-        from scenes.main_menu_scene import MainMenuScene
+        from .main_menu_scene import MainMenuScene
         self.game.change_scene(MainMenuScene(self.game))
 
     def _tile_rect(self, index: int) -> pygame.Rect:

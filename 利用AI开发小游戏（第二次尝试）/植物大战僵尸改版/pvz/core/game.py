@@ -2,8 +2,8 @@
 """Game 主控制器：单一主循环 + 场景切换（状态机模式，禁止递归开新循环）"""
 import pygame
 
-import settings
-from core.scene import Scene
+from .. import settings
+from .scene import Scene
 
 
 class Game:

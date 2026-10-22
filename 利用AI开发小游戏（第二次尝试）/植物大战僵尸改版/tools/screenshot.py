@@ -9,11 +9,11 @@ os.environ["SDL_VIDEODRIVER"] = "dummy"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pygame  # noqa: E402
-import settings  # noqa: E402
-from core.game import Game  # noqa: E402
-from scenes.loading_scene import LoadingScene  # noqa: E402
-from scenes.main_menu_scene import MainMenuScene  # noqa: E402
-from scenes.level_select_scene import LevelSelectScene  # noqa: E402
+from pvz import settings  # noqa: E402
+from pvz.core.game import Game  # noqa: E402
+from pvz.scenes.loading_scene import LoadingScene  # noqa: E402
+from pvz.scenes.main_menu_scene import MainMenuScene  # noqa: E402
+from pvz.scenes.level_select_scene import LevelSelectScene  # noqa: E402
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_shots")
 

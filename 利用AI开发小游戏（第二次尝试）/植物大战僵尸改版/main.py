@@ -2,8 +2,8 @@
 """植物大战僵尸·改版 —— 启动入口
 运行: python main.py
 """
-from core.game import Game
-from scenes.loading_scene import LoadingScene
+from pvz.core.game import Game
+from pvz.scenes.loading_scene import LoadingScene
 
 
 def main():

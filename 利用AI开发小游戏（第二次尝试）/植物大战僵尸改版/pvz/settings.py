@@ -10,11 +10,12 @@ FPS = 60
 GAME_TITLE = "植物大战僵尸·改版"
 
 # ---------- 路径 ----------
-# PyInstaller 单文件打包后，资源解压到临时目录 sys._MEIPASS；开发时直接用项目目录
+# PyInstaller 单文件打包后，资源解压到临时目录 sys._MEIPASS；
+# 开发时 assets 在项目根目录（pvz 包的上一级）
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
 else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSET_DIR = os.path.join(BASE_DIR, "assets")
 BG_DIR = os.path.join(ASSET_DIR, "backgrounds")
 UI_DIR = os.path.join(ASSET_DIR, "ui")
@@ -27,7 +28,7 @@ _FONT_CANDIDATES = [
 ]
 
 
-def find_font() -> str:
+def find_font() -> str | None:
     for path in _FONT_CANDIDATES:
         if os.path.exists(path):
             return path

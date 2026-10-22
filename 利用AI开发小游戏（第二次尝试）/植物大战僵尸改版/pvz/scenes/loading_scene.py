@@ -2,9 +2,9 @@
 """启动加载页：深色底 + 标题 logo + 进度条，加载完自动进入主菜单（原版开局即进入菜单界面）"""
 import pygame
 
-import settings
-from core.scene import Scene
-from core.assets import load_image, get_font
+from .. import settings
+from ..core.scene import Scene
+from ..core.assets import load_image, get_font
 
 
 class LoadingScene(Scene):
@@ -26,7 +26,7 @@ class LoadingScene(Scene):
         else:
             self.done_time += dt
             if self.done_time > 0.4:
-                from scenes.main_menu_scene import MainMenuScene
+                from .main_menu_scene import MainMenuScene
                 self.game.change_scene(MainMenuScene(self.game))
 
     def draw(self, surface):
