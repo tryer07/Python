@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """全局配置：分辨率、帧率、路径、字体等"""
 import os
+import sys
 
 # ---------- 窗口 ----------
 SCREEN_W = 800
@@ -9,7 +10,11 @@ FPS = 60
 GAME_TITLE = "植物大战僵尸·改版"
 
 # ---------- 路径 ----------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# PyInstaller 单文件打包后，资源解压到临时目录 sys._MEIPASS；开发时直接用项目目录
+if getattr(sys, "frozen", False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSET_DIR = os.path.join(BASE_DIR, "assets")
 BG_DIR = os.path.join(ASSET_DIR, "backgrounds")
 UI_DIR = os.path.join(ASSET_DIR, "ui")
