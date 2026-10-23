@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.responses import FileResponse
 import uvicorn
 
@@ -43,21 +43,32 @@ client = OpenAI(
     base_url="https://api.deepseek.com",
 )
 
+# 接口分组说明（中文）
+tags_metadata = [
+    {"name": "页面", "description": "返回猜字谜游戏的前端页面"},
+    {"name": "会话管理", "description": "创建并管理一局猜字谜会话"},
+    {"name": "AI 对话", "description": "与猜字谜主持人「柯灵」对话"},
+]
+
 # 创建 FastAPI 实例
-app = FastAPI(title="汉字弥合")
+app = FastAPI(
+    title="汉字弥合",
+    description="汉字猜字谜游戏 —— AI 主持人「柯灵」会出题、判题并记住你们的进度",
+    openapi_tags=tags_metadata,
+)
 
 
 # 统一响应模型：所有接口都按 code / message / data 三个字段返回
 class ApiResponse(BaseModel):
-    code: int
-    message: str
-    data: Any
+    code: int = Field(title="状态码", description="200 表示成功")
+    message: str = Field(title="提示信息")
+    data: Any = Field(title="返回数据")
 
 
 # 聊天请求模型：接收前端 POST 请求体中的 JSON 参数
 class ChatRequest(BaseModel):
-    session_id: str
-    message: str
+    session_id: str = Field(title="会话 ID", description="由“新建会话”接口返回的 id")
+    message: str = Field(title="消息内容", description="本次发给 AI 的话")
 
 
 # 基于当前时间生成绘画（会话）标识
@@ -71,13 +82,13 @@ def get_session_file_name(session_id: str) -> Path:
 
 
 # 访问首页：返回 static/index.html 页面，而不是 JSON
-@app.get("/")
+@app.get("/", summary="打开首页", tags=["页面"])
 def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
 # 新建绘画接口：生成会话标识，初始化会话数据并保存到 JSON 文件
-@app.post("/api/sessions", response_model=ApiResponse)
+@app.post("/api/sessions", response_model=ApiResponse, summary="新建猜字谜会话", tags=["会话管理"])
 def create_session() -> ApiResponse:
     # 生成当前绘画的 id
     session_id = generate_session_id()
@@ -98,7 +109,7 @@ def create_session() -> ApiResponse:
 
 
 # 与 AI 交互接口：读取会话历史，调用 DeepSeek 大模型，保存并返回回复
-@app.post("/api/chat", response_model=ApiResponse)
+@app.post("/api/chat", response_model=ApiResponse, summary="与 AI「柯灵」猜字谜", tags=["AI 对话"])
 def chat(request: ChatRequest) -> ApiResponse:
     # 日志：收到请求
     print(f"[chat] 收到请求 session_id={request.session_id}, message={request.message}")
