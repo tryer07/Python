@@ -108,6 +108,24 @@ def create_session() -> ApiResponse:
     return ApiResponse(code=200, message="创建会话成功", data=session_id)
 
 
+# 获取会话列表接口：读取 sessions 目录下所有会话 id，按时间倒序返回
+@app.get("/api/sessions", response_model=ApiResponse, summary="获取会话列表", tags=["会话管理"])
+def get_sessions() -> ApiResponse:
+    print("[sessions] 正在读取会话列表...")
+
+    # 读取 sessions 目录下的所有文件名
+    file_names = os.listdir(SESSIONS_DIR)
+
+    # 遍历文件名，用 split('.') 去掉 .json 后缀，封装成 session_ids 列表
+    session_ids = [name.split(".")[0] for name in file_names]
+
+    # 按时间倒序排序（最新创建的会话排在最前）
+    session_ids.sort(reverse=True)
+
+    print(f"[sessions] 共找到 {len(session_ids)} 个会话")
+    return ApiResponse(code=200, message="获取会话列表成功", data=session_ids)
+
+
 # 与 AI 交互接口：读取会话历史，调用 DeepSeek 大模型，保存并返回回复
 @app.post("/api/chat", response_model=ApiResponse, summary="与 AI「柯灵」猜字谜", tags=["AI 对话"])
 def chat(request: ChatRequest) -> ApiResponse:
