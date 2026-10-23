@@ -1,0 +1,22 @@
+{
+  "current_session": "2026-10-23_21-04-42_080492",
+  "messages": [
+    {
+      "role": "user",
+      "content": "简单"
+    },
+    {
+      "role": "assistant",
+      "content": "没问题，咱们玩简单的～\n\n字谜：一口咬掉牛尾巴，打一字。\n\n来猜猜看吧～"
+    },
+    {
+      "role": "user",
+      "content": "别搞，这个我不会，换一个"
+    },
+    {
+      "role": "assistant",
+      "content": "哈哈好，换一个更友好的～\n\n字谜：太阳西边下，月儿东边挂，打一字。\n\n慢慢想，不着急～"
+    }
+  ],
+  "name": "尝试游玩"
+}

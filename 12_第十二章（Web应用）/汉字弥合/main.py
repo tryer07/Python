@@ -82,9 +82,14 @@ class ChatRequest(BaseModel):
     message: str = Field(title="消息内容", description="本次发给 AI 的话")
 
 
-# 基于当前时间生成绘画（会话）标识
+# 重命名请求模型：接收前端 PUT 请求体中的新会话名称
+class RenameRequest(BaseModel):
+    name: str = Field(title="会话名称", description="给这一局起的名字")
+
+
+# 基于当前时间生成会话标识（精确到微秒 %f，避免同一秒内新建多局时 id 碰撞互相覆盖）
 def generate_session_id() -> str:
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
 
 
 # 根据 session id 返回 sessions 目录下对应的会话 JSON 文件路径
@@ -104,9 +109,10 @@ def create_session() -> ApiResponse:
     # 生成当前绘画的 id
     session_id = generate_session_id()
 
-    # 组装绘画数据：新建时 messages 为空列表
+    # 组装绘画数据：新建时 name 为空（未命名），messages 为空列表
     session_data = {
         "current_session": session_id,
+        "name": "",
         "messages": [],
     }
 
@@ -119,7 +125,7 @@ def create_session() -> ApiResponse:
     return ApiResponse(code=200, message="创建会话成功", data=session_id)
 
 
-# 获取会话列表接口：读取 sessions 目录下所有会话 id，按时间倒序返回
+# 获取会话列表接口：读取 sessions 目录下所有会话，返回每局的 id、名称、消息数，按时间倒序
 @app.get("/api/sessions", response_model=ApiResponse, summary="获取会话列表", tags=["会话管理"])
 def get_sessions() -> ApiResponse:
     logging.info("[sessions] 正在读取会话列表...")
@@ -127,14 +133,28 @@ def get_sessions() -> ApiResponse:
     # 读取 sessions 目录下的所有文件名
     file_names = os.listdir(SESSIONS_DIR)
 
-    # 遍历文件名，用 split('.') 去掉 .json 后缀，封装成 session_ids 列表
-    session_ids = [name.split(".")[0] for name in file_names]
+    # 逐个读取会话文件，提取 id、显示名（无则回退为 id）与消息条数
+    sessions: list[dict[str, Any]] = []
+    for name in file_names:
+        if not name.endswith(".json"):
+            continue
+        session_id = os.path.splitext(name)[0]
+        display_name = session_id
+        messages_count = 0
+        try:
+            with open(SESSIONS_DIR / name, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            display_name = data.get("name") or session_id
+            messages_count = len(data.get("messages", []))
+        except (OSError, ValueError):
+            logging.info(f"[sessions] 会话文件 {name} 读取失败，回退使用 id 作为名称")
+        sessions.append({"id": session_id, "name": display_name, "messages_count": messages_count})
 
-    # 按时间倒序排序（最新创建的会话排在最前）
-    session_ids.sort(reverse=True)
+    # 按 id（时间戳）倒序排序，最新的会话排在最前
+    sessions.sort(key=lambda s: s["id"], reverse=True)
 
-    logging.info(f"[sessions] 共找到 {len(session_ids)} 个会话")
-    return ApiResponse(code=200, message="获取会话列表成功", data=session_ids)
+    logging.info(f"[sessions] 共找到 {len(sessions)} 个会话")
+    return ApiResponse(code=200, message="获取会话列表成功", data=sessions)
 
 
 # 获取指定会话信息接口：根据路径参数 session_id 读取对应会话 JSON 的完整数据
@@ -170,6 +190,26 @@ def delete_session(session_id: str) -> ApiResponse:
     return ApiResponse(code=200, message="删除会话成功", data=None)
 
 
+# 重命名会话接口：根据 session_id 读取对应 JSON，更新其 name 字段后写回
+@app.put("/api/sessions/{session_id}", response_model=ApiResponse, summary="重命名会话", tags=["会话管理"])
+def rename_session(session_id: str, request: RenameRequest) -> ApiResponse:
+    logging.info(f"[session] 正在将会话 {session_id} 重命名为 {request.name}")
+
+    # 先判断会话文件是否存在，不存在直接返回 404（不抛异常）
+    session_file = get_session_file_name(session_id)
+    if not session_file.exists():
+        return ApiResponse(code=404, message="会话不存在，无法重命名", data=None)
+
+    # 读取原有数据，只更新 name 字段，其余（messages 等）保持不变后写回
+    with open(session_file, "r", encoding="utf-8") as f:
+        session_data = json.load(f)
+    session_data["name"] = request.name
+    with open(session_file, "w", encoding="utf-8") as f:
+        json.dump(session_data, f, ensure_ascii=False, indent=2)
+
+    return ApiResponse(code=200, message="重命名成功", data=None)
+
+
 # 与 AI 交互接口：读取会话历史，调用 DeepSeek 大模型，保存并返回回复
 @app.post("/api/chat", response_model=ApiResponse, summary="与 AI「柯灵」猜字谜", tags=["AI 对话"])
 def chat(request: ChatRequest) -> ApiResponse:
@@ -182,7 +222,8 @@ def chat(request: ChatRequest) -> ApiResponse:
         session_data = json.load(f)
 
     # 2. 构建发给大模型的 messages：系统提示词 + 历史消息 + 本次用户消息
-    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # 注：消息列表元素结构异构（system/user/assistant 字段不同），用 list[Any] 以匹配 openai 的 create 重载
+    messages: list[Any] = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(session_data["messages"])
     messages.append({"role": "user", "content": request.message})
 
@@ -194,7 +235,7 @@ def chat(request: ChatRequest) -> ApiResponse:
         model="deepseek-chat",
         messages=messages,
         stream=False,
-        temperature=1.5,
+        temperature=1.2,
     )
 
     # 4. 解析大模型返回内容

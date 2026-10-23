@@ -11,8 +11,17 @@
 <div class="app">
     <header class="topbar">
         <h1>🀄 汉字弥合 · 猜字谜</h1>
-        <button id="newGameBtn" class="new-btn">新游戏</button>
+        <div class="top-actions">
+            <button id="historyBtn" class="ghost-btn">历史会话</button>
+            <button id="newGameBtn" class="new-btn">新游戏</button>
+        </div>
     </header>
+
+    <!-- 历史会话面板（默认隐藏，点“历史会话”展开） -->
+    <div id="historyPanel" class="history-panel hidden">
+        <div class="history-head">选择一局继续猜：</div>
+        <ul id="historyList" class="history-list"></ul>
+    </div>
 
     <!-- 对话消息显示区 -->
     <main id="chat" class="chat"></main>

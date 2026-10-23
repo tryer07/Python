@@ -58,6 +58,119 @@ body {
     background: #5a4bd1;
 }
 
+/* 顶部按钮组 */
+.top-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* “历史会话”幽灵按钮 */
+.ghost-btn {
+    background: transparent;
+    color: #b9aee0;
+    border: 1px solid #5a4bd1;
+    padding: 8px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.ghost-btn:hover {
+    background: #362a4d;
+    color: #fff;
+}
+
+/* 历史会话面板 */
+.history-panel {
+    background: #1a1226;
+    border-bottom: 1px solid #3d2f52;
+    padding: 12px 16px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.history-panel.hidden {
+    display: none;
+}
+
+.history-head {
+    color: #b9aee0;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.history-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #2a1f3d;
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+.history-id {
+    color: #f0ecff;
+    font-size: 14px;
+    cursor: pointer;
+    word-break: break-all;
+}
+
+.history-id:hover {
+    color: #ffd76a;
+}
+
+.history-del {
+    background: #b0324a;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    margin-left: 10px;
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.history-del:hover {
+    background: #d13c5a;
+}
+
+/* 历史项右侧操作按钮组 */
+.history-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+/* “重命名”按钮 */
+.history-rename {
+    background: #3d6cb0;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.history-rename:hover {
+    background: #4a7fd1;
+}
+
+.history-empty {
+    color: #8a7bb0;
+    font-size: 13px;
+    list-style: none;
+}
+
 /* 聊天区：可滚动 */
 .chat {
     flex: 1;
