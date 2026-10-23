@@ -30,6 +30,12 @@ class ApiResponse(BaseModel):
     data: Any
 
 
+# 聊天请求模型：接收前端 POST 请求体中的 JSON 参数
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+
 # 基于当前时间生成绘画（会话）标识
 def generate_session_id() -> str:
     return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -60,6 +66,17 @@ def create_session() -> ApiResponse:
 
     # 返回统一格式数据
     return ApiResponse(code=200, message="创建会话成功", data=session_id)
+
+
+# 与 AI 交互接口：接收前端传来的 session_id 与 message（此处先做参数接收测试）
+@app.post("/api/chat", response_model=ApiResponse)
+def chat(request: ChatRequest) -> ApiResponse:
+    # 打印接收到的参数，验证后端是否正确收到前端数据
+    print(f"session_id: {request.session_id}")
+    print(f"message: {request.message}")
+
+    # 暂时返回固定字符串，后续再接入真正的大模型
+    return ApiResponse(code=200, message="请求成功", data="AI大模型返回的数据")
 
 
 # 挂载静态资源目录：让 /static 开头的请求自动到 static 目录下查找文件
