@@ -6,6 +6,19 @@ const newGameBtn = document.getElementById('newGameBtn');
 
 let sessionId = null; // 当前会话 id，由后端“新建会话”接口返回
 
+// 清除 AI 回复中的 Markdown 标记符号（#、*、反引号、加粗等），让纯文本气泡更干净
+function cleanMarkdown(text) {
+    if (!text) return text;
+    return text
+        .replace(/```[\s\S]*?```/g, '')            // 多行代码块
+        .replace(/`([^`]*)`/g, '$1')              // 行内代码 `x`
+        .replace(/\*\*([^*]*)\*\*/g, '$1')        // 加粗 **x**
+        .replace(/(^|\n)[ \t]*#{1,6}[ \t]*/g, '$1') // 行首 # 标题
+        .replace(/(^|\n)[ \t]*[*-][ \t]+/g, '$1')  // 行首 * 或 - 列表符
+        .replace(/[ \t]+\n/g, '\n')
+        .trim();
+}
+
 // 追加一条聊天气泡；role 为 'ai' 或 'me'
 function addBubble(role, text) {
     const row = document.createElement('div');
@@ -13,7 +26,8 @@ function addBubble(role, text) {
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
-    bubble.textContent = text; // 用 textContent 防止 XSS，并保留换行
+    // AI 回复先洗一遍 Markdown 符号；textContent 仍防 XSS 并保留换行
+    bubble.textContent = role === 'ai' ? cleanMarkdown(text) : text;
 
     row.appendChild(bubble);
     chatBox.appendChild(row);

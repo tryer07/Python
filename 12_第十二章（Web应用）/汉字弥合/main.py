@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import threading
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -43,7 +45,8 @@ SYSTEM_PROMPT = """你是一位汉字猜字谜游戏的主持人，名叫「柯�
 - 用户猜错时，先给一点点提示，不要直接公布谜底；猜错 3 次后可适当放宽。
 
 【语气与格式】
-- 语气亲切、温柔、体贴、活泼，每次回复尽量简短，适合游戏节奏。"""
+- 语气亲切、温柔、体贴、活泼，每次回复尽量简短，适合游戏节奏。
+- 只用纯文本回复，绝对不要使用任何 Markdown 标记（如 # 井号标题、* 星号加粗、反引号、- 列表符号等）。"""
 
 # 创建 DeepSeek 大模型客户端（api_key 从环境变量读取，避免写死泄露）
 client = OpenAI(
@@ -230,4 +233,6 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # 项目启动入口
 if __name__ == "__main__":
+    # 延迟 1.5 秒自动打开浏览器，确保 uvicorn 已启动并监听端口
+    threading.Timer(1.5, lambda: webbrowser.open("http://localhost:8000/")).start()
     uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)
