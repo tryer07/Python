@@ -1,0 +1,486 @@
+[gd_scene format=3 uid="uid://dptrprm7l5t8g"]
+
+[ext_resource type="PackedScene" uid="uid://c5cke4cm02um7" path="res://scenes/character/plant/plant_000_base.tscn" id="1_2veis"]
+[ext_resource type="Script" uid="uid://d14eqj2deyycu" path="res://scripts/character/plant/plant_018_squash.gd" id="2_rin1p"]
+[ext_resource type="Texture2D" uid="uid://db3ehuxapn0l1" path="res://assets/reanim/Squash_stem.png" id="2_tfn24"]
+[ext_resource type="Texture2D" uid="uid://irbh4snyltu1" path="res://assets/reanim/Squash_body.png" id="3_kh2ri"]
+[ext_resource type="Texture2D" uid="uid://bgijsa0y0ayos" path="res://assets/reanim/Squash_eyes.png" id="4_rin1p"]
+[ext_resource type="Texture2D" uid="uid://kewigqip7qgf" path="res://assets/reanim/Squash_eyebrows.png" id="5_xoecu"]
+[ext_resource type="Animation" uid="uid://v23h6rycvrwm" path="res://animation/character/plant/018_squash/Squash_jumpdown.tres" id="6_3pxe2"]
+[ext_resource type="Animation" uid="uid://qq4s7m264mj1" path="res://animation/character/plant/018_squash/Squash_jumpup.tres" id="7_taict"]
+[ext_resource type="Animation" uid="uid://ph5epkvaxlw8" path="res://animation/character/plant/018_squash/Squash_lookleft.tres" id="8_22da3"]
+[ext_resource type="Animation" uid="uid://bkw8ev4lim0mg" path="res://animation/character/plant/018_squash/Squash_lookright.tres" id="9_0e73g"]
+[ext_resource type="Script" uid="uid://cpqg0k1xevhi5" path="res://scripts/character/components/detect_component/component_detect_squash.gd" id="11_kh2ri"]
+
+[sub_resource type="Animation" id="Animation_kh2ri"]
+length = 0.001
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Body/BodyCorrect/Squash_body:position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(6.6, 5.2)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Body/BodyCorrect/Squash_body:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(0.8, 0.8)]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Body/BodyCorrect/Squash_stem:position")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(35.2, 24.514286)]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Body/BodyCorrect/Anim_eye:position")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(22.12857, 41.100014)]
+}
+tracks/4/type = "value"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("Body/BodyCorrect/Anim_face:position")
+tracks/4/interp = 1
+tracks/4/loop_wrap = true
+tracks/4/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(32.791, 107.247)]
+}
+tracks/5/type = "value"
+tracks/5/imported = false
+tracks/5/enabled = true
+tracks/5/path = NodePath("Body/BodyCorrect/Anim_eye:scale")
+tracks/5/interp = 1
+tracks/5/loop_wrap = true
+tracks/5/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(0.78336, 0.78136)]
+}
+tracks/6/type = "value"
+tracks/6/imported = false
+tracks/6/enabled = true
+tracks/6/path = NodePath("Body/BodyCorrect/Anim_face:scale")
+tracks/6/interp = 1
+tracks/6/loop_wrap = true
+tracks/6/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(0.78336, 0.78136)]
+}
+tracks/7/type = "value"
+tracks/7/imported = false
+tracks/7/enabled = true
+tracks/7/path = NodePath("Body/BodyCorrect/Squash_stem:rotation")
+tracks/7/interp = 1
+tracks/7/loop_wrap = true
+tracks/7/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0113095185]
+}
+tracks/8/type = "value"
+tracks/8/imported = false
+tracks/8/enabled = true
+tracks/8/path = NodePath("Body/BodyCorrect/Anim_eye:rotation")
+tracks/8/interp = 1
+tracks/8/loop_wrap = true
+tracks/8/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.28448868]
+}
+tracks/9/type = "value"
+tracks/9/imported = false
+tracks/9/enabled = true
+tracks/9/path = NodePath("Body/BodyCorrect/Anim_eye:skew")
+tracks/9/interp = 1
+tracks/9/loop_wrap = true
+tracks/9/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+tracks/10/type = "value"
+tracks/10/imported = false
+tracks/10/enabled = true
+tracks/10/path = NodePath("Body/BodyCorrect/Squash_stem:skew")
+tracks/10/interp = 1
+tracks/10/loop_wrap = true
+tracks/10/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [-1.2996048e-07]
+}
+
+[sub_resource type="Animation" id="Animation_cpkc7"]
+resource_name = "Squash_idle"
+length = 1.5833334
+loop_mode = 1
+step = 0.041666668
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Body/BodyCorrect/Anim_eye:position")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.5, 1, 1.0416667, 1.5833334),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(41, 26), Vector2(41, 21.8), Vector2(41, 31), Vector2(41, 31), Vector2(41, 26)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Body/BodyCorrect/Anim_eye:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.5, 1, 1.0416667, 1.5833334),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(0.78336, 0.78136), Vector2(0.768, 0.826), Vector2(0.8, 0.733), Vector2(0.8, 0.733), Vector2(0.78336, 0.78136)]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Body/BodyCorrect/Anim_face:position")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0, 0.5, 1, 1.0416667, 1.5833334),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(42, 31.35), Vector2(42, 27.425), Vector2(42, 35.5), Vector2(42, 35.5), Vector2(42, 31.349998)]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Body/BodyCorrect/Anim_face:scale")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0, 0.5, 1, 1.0416667, 1.5833334),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(0.78336, 0.78136), Vector2(0.768, 0.826), Vector2(0.8, 0.733), Vector2(0.8, 0.733), Vector2(0.78336, 0.78136)]
+}
+tracks/4/type = "value"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("Body/BodyCorrect/Squash_body:position")
+tracks/4/interp = 1
+tracks/4/loop_wrap = true
+tracks/4/keys = {
+"times": PackedFloat32Array(0, 1.5833334),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Vector2(41, 80.5), Vector2(41, 80.5)]
+}
+tracks/5/type = "value"
+tracks/5/imported = false
+tracks/5/enabled = true
+tracks/5/path = NodePath("Body/BodyCorrect/Squash_body:scale")
+tracks/5/interp = 1
+tracks/5/loop_wrap = true
+tracks/5/keys = {
+"times": PackedFloat32Array(0, 0.5, 1, 1.0416667, 1.5833334),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(0.8, 0.8), Vector2(0.761, 0.866), Vector2(0.84, 0.733), Vector2(0.84, 0.733), Vector2(0.79892, 0.80215997)]
+}
+tracks/6/type = "value"
+tracks/6/imported = false
+tracks/6/enabled = true
+tracks/6/path = NodePath("Body/BodyCorrect/Squash_stem:position")
+tracks/6/interp = 1
+tracks/6/loop_wrap = true
+tracks/6/keys = {
+"times": PackedFloat32Array(0, 0.5, 1, 1.0416667),
+"transitions": PackedFloat32Array(1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(33.4, -1.8), Vector2(33.4, -7.15), Vector2(33.4, 5.6), Vector2(33.4, 5.6)]
+}
+tracks/7/type = "value"
+tracks/7/imported = false
+tracks/7/enabled = true
+tracks/7/path = NodePath("Body/BodyCorrect/Squash_stem:scale")
+tracks/7/interp = 1
+tracks/7/loop_wrap = true
+tracks/7/keys = {
+"times": PackedFloat32Array(0, 0.37499967, 0.4583337, 0.5416667, 1.0833334, 1.1249934, 1.2083334, 1.5833334),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(0.8, 0.8), Vector2(0.8, 0.8), Vector2(0.799, 0.799), Vector2(0.8, 0.8), Vector2(0.8, 0.8), Vector2(0.799, 0.799), Vector2(0.8, 0.8), Vector2(0.8, 0.8)]
+}
+tracks/8/type = "value"
+tracks/8/imported = false
+tracks/8/enabled = true
+tracks/8/path = NodePath("Body/BodyCorrect/Squash_stem:rotation")
+tracks/8/interp = 1
+tracks/8/loop_wrap = true
+tracks/8/keys = {
+"times": PackedFloat32Array(0, 0.5, 1, 1.0416667, 1.5833334),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [0.0113095185, 0.08726646259971647, -0.260054, -0.260054, 0.0113095185]
+}
+tracks/9/type = "value"
+tracks/9/imported = false
+tracks/9/enabled = true
+tracks/9/path = NodePath("Body/BodyCorrect:position:y")
+tracks/9/interp = 1
+tracks/9/loop_wrap = true
+tracks/9/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [-75.0]
+}
+tracks/10/type = "value"
+tracks/10/imported = false
+tracks/10/enabled = true
+tracks/10/path = NodePath("Body/BodyCorrect/Anim_eye:skew")
+tracks/10/interp = 1
+tracks/10/loop_wrap = true
+tracks/10/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+tracks/11/type = "value"
+tracks/11/imported = false
+tracks/11/enabled = true
+tracks/11/path = NodePath("Body/BodyCorrect/Anim_eye:rotation")
+tracks/11/interp = 1
+tracks/11/loop_wrap = true
+tracks/11/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+tracks/12/type = "value"
+tracks/12/imported = false
+tracks/12/enabled = true
+tracks/12/path = NodePath("Body/BodyCorrect/Squash_stem:skew")
+tracks/12/interp = 1
+tracks/12/loop_wrap = true
+tracks/12/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_0mrk0"]
+_data = {
+&"RESET": SubResource("Animation_kh2ri"),
+&"Squash_idle": SubResource("Animation_cpkc7"),
+&"Squash_jumpdown": ExtResource("6_3pxe2"),
+&"Squash_jumpup": ExtResource("7_taict"),
+&"Squash_lookleft": ExtResource("8_22da3"),
+&"Squash_lookright": ExtResource("9_0e73g")
+}
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_6i8j2"]
+animation = &"Squash_idle"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_6ilce"]
+animation = &"Squash_jumpdown"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_c5vec"]
+animation = &"Squash_jumpup"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_b3bnl"]
+animation = &"Squash_lookleft"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_hpc5c"]
+animation = &"Squash_lookright"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_7mspd"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_m8m84"]
+advance_mode = 2
+advance_expression = "is_attack and not is_right"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_fa7qm"]
+advance_mode = 2
+advance_expression = "is_attack and is_right"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_q67rh"]
+switch_mode = 2
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_io6vx"]
+switch_mode = 2
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_abnyl"]
+switch_mode = 2
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_r8nbb"]
+states/Squash_idle/node = SubResource("AnimationNodeAnimation_6i8j2")
+states/Squash_idle/position = Vector2(461, 75)
+states/Squash_jumpdown/node = SubResource("AnimationNodeAnimation_6ilce")
+states/Squash_jumpdown/position = Vector2(468, 346)
+states/Squash_jumpup/node = SubResource("AnimationNodeAnimation_c5vec")
+states/Squash_jumpup/position = Vector2(468, 251)
+states/Squash_lookleft/node = SubResource("AnimationNodeAnimation_b3bnl")
+states/Squash_lookleft/position = Vector2(376, 177)
+states/Squash_lookright/node = SubResource("AnimationNodeAnimation_hpc5c")
+states/Squash_lookright/position = Vector2(587, 177)
+transitions = ["Start", "Squash_idle", SubResource("AnimationNodeStateMachineTransition_7mspd"), "Squash_idle", "Squash_lookleft", SubResource("AnimationNodeStateMachineTransition_m8m84"), "Squash_idle", "Squash_lookright", SubResource("AnimationNodeStateMachineTransition_fa7qm"), "Squash_lookleft", "Squash_jumpup", SubResource("AnimationNodeStateMachineTransition_q67rh"), "Squash_lookright", "Squash_jumpup", SubResource("AnimationNodeStateMachineTransition_io6vx"), "Squash_jumpup", "Squash_jumpdown", SubResource("AnimationNodeStateMachineTransition_abnyl")]
+graph_offset = Vector2(-32, 43)
+
+[sub_resource type="AnimationNodeTimeScale" id="AnimationNodeTimeScale_hxowj"]
+
+[sub_resource type="AnimationNodeBlendTree" id="AnimationNodeBlendTree_gvb6j"]
+nodes/output/position = Vector2(560, 140)
+nodes/StateMachine/node = SubResource("AnimationNodeStateMachine_r8nbb")
+nodes/StateMachine/position = Vector2(0, 120)
+nodes/TimeScale/node = SubResource("AnimationNodeTimeScale_hxowj")
+nodes/TimeScale/position = Vector2(360, 120)
+node_connections = [&"output", 0, &"TimeScale", &"TimeScale", 0, &"StateMachine"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_xoecu"]
+size = Vector2(200, 5)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_kh2ri"]
+size = Vector2(80, 5)
+
+[node name="Plant018Squash" unique_id=1518250667 node_paths=PackedStringArray("node2d_detect_in_slope") instance=ExtResource("1_2veis")]
+script = ExtResource("2_rin1p")
+can_attack_plant_status = 5
+can_attack_zombie_status = 5
+is_attack = false
+is_right = true
+plant_type = 18
+node2d_detect_in_slope = [NodePath("HurtBoxComponent/HurtBoxDetection"), NodePath("DetectComponent"), NodePath("Area2DSquashAttack")]
+
+[node name="BodyCorrect" parent="Body" index="0"]
+position = Vector2(-41, -75)
+
+[node name="Squash_stem" type="Sprite2D" parent="Body/BodyCorrect" index="0" unique_id=1693177328]
+position = Vector2(35.2, 24.514286)
+rotation = 0.0113095185
+scale = Vector2(0.8, 0.8)
+texture = ExtResource("2_tfn24")
+centered = false
+
+[node name="Squash_body" type="Sprite2D" parent="Body/BodyCorrect" index="1" unique_id=455285055]
+position = Vector2(6.6, 5.2)
+scale = Vector2(0.8, 0.8)
+texture = ExtResource("3_kh2ri")
+centered = false
+offset = Vector2(-43, -94)
+
+[node name="Anim_face" type="Sprite2D" parent="Body/BodyCorrect" index="2" unique_id=232985898]
+position = Vector2(32.791, 107.247)
+scale = Vector2(0.78336, 0.78136)
+texture = ExtResource("4_rin1p")
+centered = false
+offset = Vector2(-10.736, -1.45)
+
+[node name="Anim_eye" type="Sprite2D" parent="Body/BodyCorrect" index="3" unique_id=651248154]
+position = Vector2(22.12857, 41.100014)
+rotation = 0.28448868
+scale = Vector2(0.78336, 0.78136)
+texture = ExtResource("5_xoecu")
+centered = false
+offset = Vector2(-19.625, -9)
+
+[node name="HpComponent" parent="." index="3"]
+visible = false
+
+[node name="IceDecelerateTimer" type="Timer" parent="." index="5" unique_id=229390365]
+one_shot = true
+
+[node name="BlinkComponent" parent="." index="6"]
+is_enable_default = false
+
+[node name="HurtBoxComponent" parent="." index="8"]
+visible = false
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="." index="9" unique_id=1363257844]
+libraries/ = SubResource("AnimationLibrary_0mrk0")
+
+[node name="AnimationTree" type="AnimationTree" parent="." index="10" unique_id=941727585]
+deterministic = false
+tree_root = SubResource("AnimationNodeBlendTree_gvb6j")
+advance_expression_base_node = NodePath("..")
+anim_player = NodePath("../AnimationPlayer")
+parameters/TimeScale/scale = 0.75
+
+[node name="DetectComponent" type="Node2D" parent="." index="11" unique_id=1832434347]
+visible = false
+script = ExtResource("11_kh2ri")
+is_detect_attack = true
+can_attack_plant_status = 13
+can_attack_zombie_status = 5
+
+[node name="Area2D" type="Area2D" parent="DetectComponent" index="0" unique_id=120322400]
+position = Vector2(0, -25)
+collision_layer = 0
+collision_mask = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DetectComponent/Area2D" index="0" unique_id=181732191]
+shape = SubResource("RectangleShape2D_xoecu")
+
+[node name="Area2DSquashAttack" type="Area2D" parent="." index="12" unique_id=1460817127]
+visible = false
+position = Vector2(0, -25)
+collision_layer = 0
+collision_mask = 4
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2DSquashAttack" index="0" unique_id=450753459]
+shape = SubResource("RectangleShape2D_kh2ri")
+
+[node name="IceFreezeTimer" type="Timer" parent="." index="13" unique_id=1380381947]
+one_shot = true
+
+[node name="Node2D" type="Node2D" parent="." index="14" unique_id=1252343342]
+position = Vector2(24.870956, -188.38235)
+scale = Vector2(0.982, 0.7224)
+
+[connection signal="timeout" from="IceDecelerateTimer" to="." method="_on_ice_decelerate_timer_timeout"]
+[connection signal="timeout" from="IceFreezeTimer" to="." method="_on_ice_freeze_timer_timeout"]

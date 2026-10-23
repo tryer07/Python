@@ -1,0 +1,24 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+.vscode
+
+# ---- 以下是本机追加（2026-10-23）----
+# 原作者为规避版权把 assets 整目录忽略了；本仓库仅作私有备份，改为纳入跟踪。
+# 若只想跟踪代码、不跟踪 173MB 素材：把下面这行取消注释。
+# assets
+
+# Flash 源文件：共 84.5MB，运行时用不到（转换与运行都用 .reanim），完整副本保留在「原版备份」目录
+*.fla
+*.jsfl
+
+# 导出产物
+export/
+*.exe
+*.pck
+*.tpz
+
+# 系统垃圾
+Thumbs.db
+desktop.ini
+*~
