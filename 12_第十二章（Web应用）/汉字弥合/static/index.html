@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>汉字弥合 · 猜字谜</title>
+    <!-- 通过后端挂载的 /static 路径引入样式和脚本 -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app">
+    <header class="topbar">
+        <h1>🀄 汉字弥合 · 猜字谜</h1>
+        <button id="newGameBtn" class="new-btn">新游戏</button>
+    </header>
+
+    <!-- 对话消息显示区 -->
+    <main id="chat" class="chat"></main>
+
+    <!-- 底部输入区 -->
+    <footer class="inputbar">
+        <input id="msgInput" type="text" placeholder="输入你的答案或想说的话，回车发送" autocomplete="off">
+        <button id="sendBtn" class="send-btn">发送</button>
+    </footer>
+</div>
+
+<script src="/static/js/game.js"></script>
+</body>
+</html>
