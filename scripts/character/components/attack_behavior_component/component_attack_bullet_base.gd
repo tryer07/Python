@@ -30,6 +30,9 @@ var is_lane:=true
 
 ## 发射一次子弹信号
 signal signal_shoot_bullet
+## 每次攻击动画开始播放时发出（早于动画里的 _shoot_bullet）。
+## 给需要在真正出手前先做预备动作的植物用（蓄力、抽镖等）。没人监听时无副作用。
+signal signal_attack_anim_start
 
 ## 主游戏场景子弹父节点
 var bullets: Node2D
@@ -71,6 +74,7 @@ func attack_end():
 ## 攻击间隔后触发执行攻击
 func _on_bullet_attack_cd_timer_timeout() -> void:
 	# 在这里调用实际攻击逻辑
+	signal_attack_anim_start.emit()
 	animation_tree.set(attack_para, AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 
 func set_cancel_attack():

@@ -108,6 +108,12 @@ func _apply_show_layout(reference: ResourceCardReference, character: Character00
 			character.position = Vector2(100, 120)
 			if reference.content_id == CharacterRegistry.PlantType.P048CobCannon:
 				character.position = Vector2(60, 130)
+			# 埋锋将军（P005 土豆雷改）：立绘只有约 79px 高（240 贴图缩到 0.35，上下还各有一圈透明边），
+			# 比通用植物矮一大截，用统一的 (100,120) 会整块浮在窗口上半部。
+			# 具体落点与「为什么是 140 不能再低」见 Plant005PotatoMine.ALMANAC_SHOW_POS 的注释
+			# （窗口开了 clip_children，150 就已经切到脚底了）。
+			if reference.content_id == CharacterRegistry.PlantType.P005PotatoMine:
+				character.position = Plant005PotatoMine.ALMANAC_SHOW_POS
 		ResourceCardReference.CardType.Zombie:
 			character.position = Vector2(100, 166)
 			if reference.content_id == CharacterRegistry.ZombieType.Z024Gargantuar:

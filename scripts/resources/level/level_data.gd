@@ -44,6 +44,12 @@ func set_choose_level(curr_game_mode: MainSceneRegistry.MainScenes, curr_level_p
 ## 是否僵尸能进房
 @export var is_zombie_can_home: bool = true
 
+@export_subgroup("草坪铺设(只对白天前院生效)")
+## 已经铺好草皮的行，从 1 开始，取值 1~5。[br]
+## 留空表示五条草坪全部铺好，直接使用整片草坪的背景图（既有关卡默认如此）。[br]
+## 只填部分行时，其余行显示为荒土，且不能种植物、不会出僵尸，用于还原「草坪逐关铺开」。
+@export var sod_rows: Array[int] = []
+
 @export_subgroup("预种植植物(从1开始,0为整行或整列)")
 @export var all_pre_plant_data: Array[PrePlantResource] = []
 

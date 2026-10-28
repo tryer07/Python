@@ -14,6 +14,10 @@ enum MainScenes{
 	ChooseLevelPuzzle,
 	ChooseLevelSurvival,
 	ChooseLevelCustom,
+	## 原版 50 关冒险模式选关界面。
+	## 独立编号是必要的：存档 key 由 game_mode + 页号 + 关卡号组成，
+	## 若与 ChooseLevelAdventure 共用 101，两套关卡的前若干关会共享同一份通关记录。
+	ChooseLevelAdventure50,
 
 	Garden = 200,
 	Almanac,
@@ -32,6 +36,7 @@ enum MainScenes{
 	MainScenes.ChooseLevelPuzzle: "res://scenes/main/04PuzzleChooesLevel.tscn",
 	MainScenes.ChooseLevelSurvival: "res://scenes/main/05SurvivalChooesLevel.tscn",
 	MainScenes.ChooseLevelCustom: "res://scenes/main/06CustomChooesLevel.tscn",
+	MainScenes.ChooseLevelAdventure50: "res://scenes/main/02AdventureChooesLevel50.tscn",
 
 	MainScenes.Garden: "res://scenes/main/10Garden.tscn",
 	MainScenes.Almanac: "res://scenes/main/11Almanac.tscn",

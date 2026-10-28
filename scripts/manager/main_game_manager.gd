@@ -222,6 +222,13 @@ func _ready() -> void:
 				no_choosed_card_start_game()
 		else:
 			main_game_start()
+	# 录帧自检专用：跳关进战斗时会停在选卡界面等人点「一起摇滚吧」，
+	# 命令行带 `autochoose` 就让机器人代点一次（正常游玩不会带这个参数）。
+	if "autochoose" in OS.get_cmdline_user_args():
+		await get_tree().create_timer(1.2).timeout
+		if is_inside_tree() and not is_queued_for_deletion():
+			print("调试：自动点掉选卡界面")
+			EventBus.emit_signal("card_slot_norm_start_game")
 
 ## 主游戏管理器事件总线订阅
 func event_bus_subscribe():
@@ -434,6 +441,369 @@ func main_game_start():
 	refresh_battle_bgm()
 
 	zombie_manager.start_game()
+	_debug_auto_plant_from_args()
+
+
+## 临时调试入口：命令行追加 `-- autoplay1 plant` 时自动种一株豆蔻，
+## 用于无界面自检攻击动作。追加第 3 个参数 `torch` 会在同排第 5 列补一株火炬树桩，
+## 专门验证「飞镖过火炬 → 火焰飞镖」的升级链路。不需要时删掉本函数和上面一行调用即可。
+func _debug_auto_plant_from_args() -> void:
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	print("调试：命令行参数=", args, " 副模式=", Global.autoplay_sub_mode)
+	if args.size() < 2:
+		return
+	# 跳关时副模式被选关脚本搬到了 Global（命令行位置被关卡号占着），
+	# 这里优先取它，取到后立刻清空，避免重开一局又误跑一次。
+	if Global.autoplay_sub_mode != "":
+		var sub: String = Global.autoplay_sub_mode
+		var sub_args: PackedStringArray = Global.autoplay_sub_args
+		Global.autoplay_sub_mode = ""
+		Global.autoplay_sub_args = PackedStringArray()
+		await _debug_run_sub_mode(sub, sub_args)
+		return
+	## 性能压测入口：`-- autoplay1 stress 80` 直接铺 80 只僵尸并每秒打印一次耗时分布
+	if args[1] == "stress":
+		var count: int = 60
+		if args.size() >= 3:
+			count = clampi(args[2].to_int(), 1, 300)
+		await _debug_run_stress(count)
+		return
+	## 波次分帧生成验证入口：`-- autoplay1 wavespawn` 直接跑一次大波，打印跨帧数
+	if args[1] == "wavespawn":
+		await _debug_measure_wave_spawn()
+		return
+	## 朝阳童子自检入口：`-- autoplay1 sunflower` 直接在第 3 行第 3 列种一株朝阳童子，
+	## 用来录帧确认「浮空打坐立绘 + 抬手产阳光」的实际观感。
+	## 追加 `slow 0.5` 可放慢时间轴，抬手/落手各占的帧数更多，便于逐帧核对流畅度。
+	if args[1] == "sunflower":
+		await get_tree().create_timer(0.4).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
+		plant_cell_manager.all_plant_cells[2][2].create_plant(
+			CharacterRegistry.PlantType.P002SunFlower, false, false)
+		print("调试：已在第 3 行第 3 列种下朝阳童子")
+		if args.size() >= 3 and args[2] == "slow":
+			var sun_scale: float = 0.5
+			if args.size() >= 4:
+				sun_scale = clampf(args[3].to_float(), 0.02, 1.0)
+			Engine.time_scale = sun_scale
+			print("调试：时间轴已放慢到 %s 倍" % str(sun_scale))
+		return
+	## 樱桃炸弹自检入口：`-- autoplay1 cherry` 先在右侧放两只僵尸，再种一株樱桃炸弹，
+	## 用来确认「引信节奏 / 双胞胎造型 / 爆炸结算」的实际观感。追加 `slow 0.25` 放慢时间轴。
+	if args[1] == "cherry":
+		await get_tree().create_timer(0.4).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
+		if args.size() >= 3 and args[2] == "slow":
+			var cherry_scale: float = 0.25
+			if args.size() >= 4:
+				cherry_scale = clampf(args[3].to_float(), 0.02, 1.0)
+			Engine.time_scale = cherry_scale
+			print("调试：时间轴已放慢到 %s 倍" % str(cherry_scale))
+		var cherry_cell: PlantCell = plant_cell_manager.all_plant_cells[2][2]
+		for i in 2:
+			zombie_manager.create_skill_zombie(
+				CharacterRegistry.ZombieType.Z001Norm, 2,
+				cherry_cell.global_position.x + 120.0 + i * 70.0)
+		cherry_cell.create_plant(CharacterRegistry.PlantType.P003CherryBomb, false, false)
+		print("调试：已在第 3 行第 3 列种下樱桃炸弹，右侧两只普通僵尸")
+		return
+	## 镇山老翁自检入口：`-- autoplay1 wallnut` 在第 3 行第 3 列种一株坚果，
+	## 用来确认「整图立绘 + 背后竹杖 + 待机摆动」在**战斗场景**里也成立
+	## （图鉴详情页走的是 ready_show，战斗走 ready_norm，是两条不同的初始化路径）。
+	## 追加 `stage 2` 可把它直接压到指定形态，检查换图与抽杖在战场上的观感。
+	if args[1] == "wallnut":
+		await get_tree().create_timer(0.4).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
+		var nut_cell: PlantCell = plant_cell_manager.all_plant_cells[2][2]
+		var nut: Plant000Base = nut_cell.create_plant(
+			CharacterRegistry.PlantType.P004WallNut, false, false)
+		print("调试：已在第 3 行第 3 列种下镇山老翁 → ", nut != null)
+		if nut == null:
+			return
+		# 立绘/竹杖挂好没有（战斗路径最容易漏的就是这一步）
+		var nut_art: Node = nut.find_child("WallnutArt", true, false)
+		var nut_staff: Node = nut.find_child("WallnutStaff", true, false)
+		print("调试：立绘=", nut_art != null, " 竹杖=", nut_staff != null,
+			" 原散件隐藏=", nut.get_node_or_null("Body/BodyCorrect") != null
+			and not (nut.get_node("Body/BodyCorrect") as Node2D).visible)
+		if args.size() >= 3 and args[2] == "stage":
+			var want: int = 2
+			if args.size() >= 4:
+				want = clampi(args[3].to_int(), 1, 2)
+			await get_tree().create_timer(0.6).timeout
+			if not is_instance_valid(nut):
+				return
+			# 阈值沿用场景里的 3666 / 1833：2000 → 态2，800 → 态3
+			var hp_arg: int = 2000 if want == 1 else 800
+			nut._on_hp_loss(hp_arg, true)
+			print("调试：镇山老翁已压到形态 ", nut._stage, "（血量参数 ", hp_arg, "）")
+		return
+	## 魔术师僵尸自检入口：`-- autoplay1 4 magician` 在第 3 行第 3 列种一株坚果当靶子，
+	## 右侧 430 像素放一只魔术师，逐次打印「开始施法 / 掉血 / 恢复行走 / 位置」，
+	## 用来核对「每 10 秒一发、单发 500、施法 2 秒停步、打完继续走」这条链路。
+	## 追加一个数字可改观察时长，例如 `-- autoplay1 4 magician 35`。
+	if args[1] == "magician":
+		await _debug_run_magician(args)
+		return
+	## 醉仙客自检入口：`-- autoplay1 8 chomper` 在第 3 行第 3 列种一株醉仙客，
+	## 并在它右边很近的位置放一只普通僵尸，让咬合与酒葫芦演出很快触发。
+	## 追加 `slow 0.25` 可放慢时间轴逐帧核对「起手 → 拔塞 → 倾口 → 回位」四段。
+	if args[1] == "chomper":
+		await get_tree().create_timer(0.4).timeout
+		if not is_inside_tree() or is_queued_for_deletion():
+			return
+		var chomp_cell: PlantCell = plant_cell_manager.all_plant_cells[2][2]
+		var chomp: Plant000Base = chomp_cell.create_plant(
+			CharacterRegistry.PlantType.P007Chomper, false, false)
+		print("调试：已在第 3 行第 3 列种下醉仙客 → ", chomp != null)
+		if chomp == null:
+			return
+		# 道具层挂好没有（葫芦 / 木塞两张贴图，缺一张演出就哑了）
+		print("调试：葫芦=", chomp.find_child("PropGourd", true, false) != null,
+			" 木塞=", chomp.find_child("PropCap", true, false) != null)
+		# 僵尸放近一点（葫芦的攻击范围有限），免得等它慢慢走过来
+		var z: Zombie000Base = zombie_manager.create_skill_zombie(
+			CharacterRegistry.ZombieType.Z001Norm, 2, chomp_cell.global_position.x + 150.0)
+		print("调试：该行右侧生成僵尸 → %s" % str(z != null))
+		if args.size() >= 3 and args[2] == "slow":
+			var c_scale: float = 0.25
+			if args.size() >= 4:
+				c_scale = clampf(args[3].to_float(), 0.02, 1.0)
+			Engine.time_scale = c_scale
+			print("调试：时间轴已放慢到 %s 倍" % str(c_scale))
+		return
+	if args[1] == "chomp":
+		await _debug_run_chomper(args, 1)
+		return
+	if args[1] != "plant":
+		return
+	await get_tree().create_timer(0.4).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	var row: Array = plant_cell_manager.all_plant_cells[2]
+	var cell: PlantCell = row[2]
+	cell.create_plant(CharacterRegistry.PlantType.P001PeaShooterSingle, false, false)
+	print("调试：已在第 3 行第 3 列种下豆蔻")
+	if args.size() >= 3 and args[2] == "torch":
+		plant_cell_manager.all_plant_cells[2][4].create_plant(
+			CharacterRegistry.PlantType.P023TorchWood, false, false)
+	# 立刻放一只僵尸在它右边，免得等自然出怪
+	var zombie: Zombie000Base = zombie_manager.create_skill_zombie(
+		CharacterRegistry.ZombieType.Z001Norm, 2, cell.global_position.x + 380.0)
+	print("调试：该行右侧生成僵尸 → %s" % str(zombie != null))
+	if args.size() >= 3 and args[2] == "slow":
+		# 放慢时间轴（只给录帧检查动作用），正常游戏不会走到这里
+		# 第 4 个参数可以指定倍率，例如 `-- autoplay1 plant slow 0.1` 看得更细
+		var scale: float = 0.25
+		if args.size() >= 4:
+			scale = clampf(args[3].to_float(), 0.02, 1.0)
+		Engine.time_scale = scale
+		print("调试：时间轴已放慢到 %s 倍" % str(scale))
+
+
+## 临时性能压测：铺满僵尸后逐帧采样，打印中位帧耗时。
+## 只在命令行带 `stress <数量>` 时进入，正常游戏不会走到这里。
+##
+## 实测结论（2026-10-24，本机 Intel Arc 核显，关垂直同步，取中位帧）：
+##   40 只 → 6.5ms(≈153fps)   80 只 → 12.2ms(≈82fps)   160 只 → 28.0ms(≈36fps)
+##   基本线性，约 0.15~0.17ms/只，draw calls 也随之线性涨（80 只约 1350）。
+##
+## 两条已验证/已排除的优化方向：
+##   1) 已修：大波僵尸「同一帧实例化」40 只 102ms、80 只 207ms、160 只 358ms（约 2.2ms/只），
+##      改成按 3ms/帧预算分帧生成后，最慢单帧降到 5ms，僵尸总数与出场顺序不变。
+##      见 zm_zombie_wave_create_manager.gd 的 SPAWN_FRAME_BUDGET_MSEC。
+##   2) 已排除：每个僵尸动画 151 条轨道，其中 22% 是恒定值冗余轨道，删掉/禁用后
+##      80 只僵尸的帧时间没有可测变化（±10% 噪声内），160 只只有 -12%，
+##      说明瓶颈是「每个 AnimationTree 实例的固定开销」，不是轨道数量，别再往这个方向找。
+##   注意：僵尸位移是由 Zombie_walk 动画里 `_ground:position` 这条轨道驱动的（传送带做法），
+##   所以不能给离屏僵尸关 AnimationTree，否则它就不走了。
+## 把自检子模式的分派集中在这里，`_debug_auto_plant_from_args()` 只管解析命令行。
+## [br]`sub_arg_offset` 决定 `slow` 之类的修饰词从 args 的第几个位置开始读：
+## 直接敲命令时是 `autoplay1 chomper slow`（偏移 2），跳关时是 `autoplay1 8 chomper slow`（偏移 3）。
+func _debug_run_sub_mode(sub: String, args: PackedStringArray) -> void:
+	var offset: int = 2 if args.size() >= 2 and args[1].is_valid_int() else 1
+	if args.size() >= 3 and args[1] == "level":
+		offset = 3
+	if sub == "chomper" or sub == "chomp":
+		await _debug_run_chomper(args, offset)
+		return
+	if sub == "magician":
+		await _debug_run_magician(args)
+		return
+	# 其余子模式还没迁过来，保持旧路径（命令行里第 1 个就是子模式）
+	if sub == "plant":
+		Engine.set_meta("debug_plant_sub_args", args)
+		return
+
+
+## 醉仙客自检：种一株 + 近距离放一只僵尸，观察咬合前后的酒葫芦演出。
+## 追加 `garg` 会把那只陪练换成巨人僵尸，用来验「吞不掉 → 吸附掉血 200/跳」那条分支。
+func _debug_run_chomper(args: PackedStringArray, offset: int) -> void:
+	await get_tree().create_timer(0.4).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	var spawn_garg: bool = "garg" in args
+	var chomp_cell: PlantCell = plant_cell_manager.all_plant_cells[2][2]
+	var chomp: Plant000Base = chomp_cell.create_plant(
+		CharacterRegistry.PlantType.P007Chomper, false, false)
+	# 对照尺：左邻格种一株豆蔻，录帧时同一画面比大小
+	# （醉仙客的战场高度 CHOMPER_H 改过几轮，单看一株判断不了偏大偏小）。
+	plant_cell_manager.all_plant_cells[2][1].create_plant(
+		CharacterRegistry.PlantType.P001PeaShooterSingle, false, false)
+	print("调试：已在第 3 行第 3 列种下醉仙客 → ", chomp != null)
+	if chomp == null:
+		return
+	# 位置/可见性诊断：录帧全是空草坪时，最先要排除的就是「植物种到画面外」或「整株不可见」
+	print("调试：醉仙客位置=", chomp.global_position, " 可见=", chomp.visible,
+		" 格位=", chomp_cell.global_position)
+	print("调试：葫芦=", chomp.find_child("PropGourd", true, false) != null,
+		" 木塞=", chomp.find_child("PropCap", true, false) != null)
+	var z: Zombie000Base = zombie_manager.create_skill_zombie(
+		CharacterRegistry.ZombieType.Z024Gargantuar if spawn_garg \
+			else CharacterRegistry.ZombieType.Z001Norm,
+		2, chomp_cell.global_position.x + 150.0)
+	print("调试：该行右侧生成%s → %s，位置=%s" % ["巨人" if spawn_garg else "僵尸",
+		str(z != null), str(z.global_position) if z != null else "null"])
+	if spawn_garg and z != null:
+		print("调试：巨人血量=", z.hp_component.curr_hp, "/", z.hp_component.max_hp)
+	# ⚠️ 不要在这里手改 z.global_position：僵尸位移是 `Zombie_walk` 动画里
+	# `_ground:position` 轨道驱动的（传送带做法），直接赋值会在下一帧被动画覆盖，
+	# 而且镜头拉回全景时坐标基准不一致，实测会把僵尸甩到画面外。
+	# 它自己会走过来，把 quit-after 拉长即可。
+	if args.size() > offset and args[offset] == "slow":
+		var c_scale: float = 0.25
+		if args.size() > offset + 1:
+			c_scale = clampf(args[offset + 1].to_float(), 0.02, 1.0)
+		Engine.time_scale = c_scale
+		print("调试：时间轴已放慢到 %s 倍" % str(c_scale))
+
+
+## 魔术师僵尸自检：种一株坚果当靶子，右侧放一只魔术师，按时间轴打印施法/掉血/位移。
+## 不带慢放：10 秒的间隔必须按真实时间看，放慢会把「每 10 秒一发」的量测搅乱。
+func _debug_run_magician(args: PackedStringArray) -> void:
+	## 观察时长默认 23 秒，正好覆盖两次施法（第 10 秒、第 20 秒）
+	var observe_time: float = 23.0
+	var mode_index: int = args.find("magician")
+	if mode_index >= 0 and args.size() > mode_index + 1 and args[mode_index + 1].is_valid_int():
+		observe_time = clampi(args[mode_index + 1].to_int(), 5, 90)
+
+	await get_tree().create_timer(0.4).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	var cell: PlantCell = plant_cell_manager.all_plant_cells[2][2]
+	var nut: Plant000Base = cell.create_plant(
+		CharacterRegistry.PlantType.P004WallNut, false, false)
+	if nut == null:
+		print("调试：魔术师自检失败，靶子坚果没种下去（格子被占？）")
+		return
+	var spawn_x: float = cell.global_position.x + 430.0
+	var mag: Zombie026Magician = zombie_manager.create_skill_zombie(
+		CharacterRegistry.ZombieType.Z026Magician, 2, spawn_x) as Zombie026Magician
+	if mag == null:
+		print("调试：魔术师自检失败，僵尸没生成出来")
+		return
+	print("调试：魔术师自检开始 → 僵尸hp=%d/%d 出生x=%.0f 靶子hp=%d 观察%.0f秒"
+		% [mag.hp_component.curr_hp, mag.hp_component.max_hp, spawn_x,
+		nut.hp_component.curr_hp, observe_time])
+
+	var begin_ms: int = Time.get_ticks_msec()
+	var last_casting: bool = false
+	var last_target_hp: int = nut.hp_component.curr_hp
+	var last_sample_time: float = 0.0
+	while true:
+		await get_tree().create_timer(0.2).timeout
+		var t: float = (Time.get_ticks_msec() - begin_ms) / 1000.0
+		if not is_instance_valid(mag):
+			print("调试：[%.2f] 魔术师已被释放" % t)
+			break
+		if mag._is_casting != last_casting:
+			last_casting = mag._is_casting
+			print("调试：[%.2f] %s  x=%.0f 靶子hp=%d" % [
+				t, "开始施法（停步）" if last_casting else "施法结束（恢复行走）",
+				mag.global_position.x,
+				nut.hp_component.curr_hp if is_instance_valid(nut) else -1])
+		if is_instance_valid(nut):
+			var hp_now: int = nut.hp_component.curr_hp
+			if hp_now != last_target_hp:
+				print("调试：[%.2f] 靶子掉血 %d → %d（本次 %d）"
+					% [t, last_target_hp, hp_now, last_target_hp - hp_now])
+				last_target_hp = hp_now
+		elif last_target_hp >= 0:
+			print("调试：[%.2f] 靶子已被打掉" % t)
+			last_target_hp = -1
+		if t - last_sample_time >= 4.0:
+			last_sample_time = t
+			print("调试：[%.2f] 位置 x=%.0f 存活=%s"
+				% [t, mag.global_position.x, str(not mag.is_death)])
+		if t >= observe_time or mag.is_death:
+			break
+	print("调试：魔术师自检结束（观察 %.0f 秒）" % observe_time)
+	get_tree().quit()
+
+
+func _debug_run_stress(count: int) -> void:
+	## 压测时必须关垂直同步，否则帧率被锁在显示器刷新率上，量不出真实开销
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	await get_tree().create_timer(0.6).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	var rows: int = plant_cell_manager.all_plant_cells.size()
+	var per_row: int = maxi(1, count / maxi(1, rows))
+	for lane in rows:
+		for i in per_row:
+			zombie_manager.create_skill_zombie(
+				CharacterRegistry.ZombieType.Z001Norm, lane, 620.0 + i * 34.0)
+	print("性能压测：请求 %d 只，实际铺 %d 只" % [count, per_row * rows])
+
+	await _debug_sample_perf("A 正常", 160)
+
+
+## 直接跑一次大波，打印「僵尸数 / 跨了几帧 / 总耗时」，用来确认分帧生成生效。
+## 只在命令行带 `wavespawn` 时进入，正常游戏不会走到这里。
+func _debug_measure_wave_spawn() -> void:
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	await get_tree().create_timer(0.6).timeout
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	var m: ZombieWaveCreateManager = find_child("ZombieWaveCreateManager", true, false) as ZombieWaveCreateManager
+	if m == null:
+		print("[波次生成] 找不到 ZombieWaveCreateManager")
+		return
+	var frame_begin: int = Engine.get_process_frames()
+	var time_begin: int = Time.get_ticks_msec()
+	var list: Array[Zombie000Base] = await m.create_curr_wave_all_zombies(40, true)
+	var span_frames: int = Engine.get_process_frames() - frame_begin
+	var span_msec: int = Time.get_ticks_msec() - time_begin
+	print("[波次生成] 大波僵尸 %d 只，跨 %d 帧，总耗时 %d ms，最慢单帧实例化 %d ms（分帧前约 207ms/80只）"
+		% [list.size(), span_frames, span_msec, m.spawn_max_frame_msec])
+	await _debug_sample_perf("B 分帧生成后", 160)
+
+
+## 逐帧采样取中位数，避免单帧尖峰（出怪那一帧）污染平均值。
+## [param frames] 为采样帧数，前 20 帧作为预热丢弃。
+func _debug_sample_perf(tag: String, frames: int) -> void:
+	for i in 20:
+		await get_tree().process_frame
+	var deltas: Array[float] = []
+	var tick_prev: int = Time.get_ticks_usec()
+	for i in frames:
+		await get_tree().process_frame
+		var tick_now: int = Time.get_ticks_usec()
+		deltas.append(float(tick_now - tick_prev) / 1000000.0)
+		tick_prev = tick_now
+	deltas.sort()
+	var n: int = deltas.size()
+	if n == 0:
+		return
+	var med: float = deltas[n / 2]
+	print("[%s] 中位帧=%.2fms (≈%.1ffps)  p90=%.2fms  最慢=%.2fms  nodes=%d draws=%d"
+		% [tag, med * 1000.0, 1.0 / maxf(med, 0.00001),
+			deltas[mini(n - 1, int(n * 0.9))] * 1000.0, deltas[n - 1] * 1000.0,
+			int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))])
 
 
 #region 游戏结束
@@ -668,6 +1038,9 @@ func update_level_state_data_success():
 	curr_level_state_data["IsSuccess"] = true
 	Global.global_game_state.curr_all_level_state_data[game_para.save_game_name] = curr_level_state_data
 	Global.save_service.save_now()
+	# 冒险模式（50 关版）通关后立即刷新可用植物，下一关选卡就能看到刚解锁的植物
+	if game_para.game_mode == MainSceneRegistry.MainScenes.ChooseLevelAdventure50:
+		AdventurePlantUnlock.apply_to_game_state()
 
 ## 更新当前关卡数据 (多轮游戏)
 func update_level_state_data_multi_round_data(is_have_multi_round_data:=true):

@@ -810,6 +810,7 @@
 [ext_resource type="Texture2D" uid="uid://itotbpb0blnd" path="res://assets/reanim/Zombie_boss_outerarm_lower.png" id="816_2aixh"]
 [ext_resource type="Texture2D" uid="uid://773rlnrhsldg" path="res://assets/reanim/Zombie_boss_outerarm_upper.png" id="817_lwqrl"]
 [ext_resource type="Script" uid="uid://brtidnnpm2a7x" path="res://scripts/resources/card/card_reference.gd" id="card_reference"]
+[ext_resource type="Texture2D" uid="uid://xadekqye4dbc" path="res://assets/image/character/zombie_magician/magician_zombie.png" id="art_026_magician"]
 
 [sub_resource type="Resource" id="CardReference_1_999"]
 script = ExtResource("card_reference")
@@ -1330,6 +1331,11 @@ content_id = 24
 script = ExtResource("card_reference")
 card_type = 2
 content_id = 25
+
+[sub_resource type="Resource" id="CardReference_2_26"]
+script = ExtResource("card_reference")
+card_type = 2
+content_id = 26
 
 [sub_resource type="Resource" id="CardReference_2_1001"]
 script = ExtResource("card_reference")
@@ -11698,6 +11704,21 @@ centered = false
 
 [node name="NodeDrop" type="Node2D" parent="ZombieCards/Card25/CardBg/CharacterStatic/Zombie025Imp/Body" unique_id=800870518]
 visible = false
+
+[node name="Card26" parent="ZombieCards" instance=ExtResource("2_5pqky")]
+layout_mode = 2
+card_reference = SubResource("CardReference_2_26")
+
+[node name="CardBg" parent="ZombieCards/Card26" index="0"]
+texture = ExtResource("3_m4n4y")
+
+[node name="Zombie026Magician" type="Node2D" parent="ZombieCards/Card26/CardBg/CharacterStatic" index="0"]
+
+[node name="Art" type="Sprite2D" parent="ZombieCards/Card26/CardBg/CharacterStatic/Zombie026Magician"]
+position = Vector2(-11.01, -23.46)
+scale = Vector2(0.03271, 0.03271)
+texture = ExtResource("art_026_magician")
+centered = false
 
 [node name="ZombieCards2" type="GridContainer" parent="." unique_id=1467459732]
 unique_name_in_owner = true

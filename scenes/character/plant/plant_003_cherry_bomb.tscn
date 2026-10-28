@@ -1,16 +1,16 @@
-[gd_scene load_steps=59 format=3 uid="uid://dqtpqeh1yldux"]
+[gd_scene load_steps=61 format=3 uid="uid://dqtpqeh1yldux"]
 
 [ext_resource type="PackedScene" uid="uid://c5cke4cm02um7" path="res://scenes/character/plant/plant_000_base.tscn" id="1_mdj76"]
 [ext_resource type="Texture2D" uid="uid://dvuugtbourjhs" path="res://assets/reanim/CherryBomb_leftstem.png" id="2_1003c"]
 [ext_resource type="Script" uid="uid://b3qu8jitytcut" path="res://scripts/character/plant/plant_003_cherry_bomb.gd" id="2_dniyj"]
-[ext_resource type="Texture2D" uid="uid://bmpuc6vb6mfpk" path="res://assets/reanim/CherryBomb_left1.png" id="3_mg664"]
-[ext_resource type="Texture2D" uid="uid://c3mfcmrjen4il" path="res://assets/reanim/CherryBomb_left3.png" id="4_xvxsx"]
+[ext_resource type="Texture2D" path="res://assets/image/character/cherry/cherry_red_body_small.png" id="3_mg664"]
+[ext_resource type="Texture2D" path="res://assets/image/character/cherry/cherry_red_body_big.png" id="4_xvxsx"]
 [ext_resource type="Texture2D" uid="uid://dlayj8ftlothc" path="res://assets/reanim/CherryBomb_lefteye11.png" id="5_fwwkt"]
 [ext_resource type="Texture2D" uid="uid://cuv0j6lkkkr5d" path="res://assets/reanim/CherryBomb_lefteye21.png" id="6_7axkc"]
 [ext_resource type="Texture2D" uid="uid://b6gaqdfa477uw" path="res://assets/reanim/CherryBomb_leftmouth1.png" id="7_dniyj"]
 [ext_resource type="Texture2D" uid="uid://bjdqpef0ve0pg" path="res://assets/reanim/CherryBomb_rightstem.png" id="8_2gy5r"]
-[ext_resource type="Texture2D" uid="uid://dspmy0uy0cacv" path="res://assets/reanim/CherryBomb_right1.png" id="9_ql0xv"]
-[ext_resource type="Texture2D" uid="uid://uklt4t2i3j63" path="res://assets/reanim/CherryBomb_right3.png" id="10_qq8mq"]
+[ext_resource type="Texture2D" path="res://assets/image/character/cherry/cherry_blue_body_small.png" id="9_ql0xv"]
+[ext_resource type="Texture2D" path="res://assets/image/character/cherry/cherry_blue_body_big.png" id="10_qq8mq"]
 [ext_resource type="Texture2D" uid="uid://cfdwh0bhgcrlb" path="res://assets/reanim/CherryBomb_righteye11.png" id="11_s6vx3"]
 [ext_resource type="Texture2D" uid="uid://d0dmytj04iew5" path="res://assets/reanim/CherryBomb_righteye21.png" id="12_0rjum"]
 [ext_resource type="Texture2D" uid="uid://biffa3h6h5rxy" path="res://assets/reanim/CherryBomb_rightmouth1.png" id="13_jel4a"]
@@ -26,6 +26,8 @@
 [ext_resource type="Texture2D" uid="uid://ysajcyiwrdnk" path="res://assets/image/particles/ExplosionPowie.png" id="24_2gy5r"]
 [ext_resource type="Texture2D" uid="uid://nnp13qryaqjx" path="res://assets/image/particles/ExplosionCloud.png" id="24_ql0xv"]
 [ext_resource type="Shader" uid="uid://cikju0ectkkms" path="res://shaders/Mypartical.gdshader" id="25_qq8mq"]
+[ext_resource type="Texture2D" path="res://assets/image/character/cherry/cherry_talisman.png" id="26_talisman"]
+[ext_resource type="Texture2D" path="res://assets/image/character/cherry/cherry_chant_glyph.png" id="27_glyph"]
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_q5e28"]
 _data = {
@@ -49,7 +51,7 @@ advance_expression = "not is_idle"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_xru78"]
 advance_mode = 2
-advance_expression = "not is_show"
+advance_expression = "not is_show and not is_cast"
 
 [sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_fj2s8"]
 states/CherryBomb_explode/node = SubResource("AnimationNodeAnimation_q5e28")
@@ -71,7 +73,7 @@ nodes/TimeScale/position = Vector2(460, 80)
 node_connections = [&"output", 0, &"TimeScale", &"TimeScale", 0, &"AnimationNodeStateMachine"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_2gy5r"]
-size = Vector2(250, 200)
+size = Vector2(228, 280)
 
 [sub_resource type="Curve" id="Curve_2gy5r"]
 _data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.54792, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
@@ -389,6 +391,29 @@ skew = -0.125664
 texture = ExtResource("18_lg8p0")
 centered = false
 
+[node name="Talisman" type="Sprite2D" parent="Body/BodyCorrect"]
+visible = false
+position = Vector2(20, -14)
+texture = ExtResource("26_talisman")
+
+[node name="ChantGlyph1" type="Sprite2D" parent="Body/BodyCorrect"]
+visible = false
+position = Vector2(58, 54)
+scale = Vector2(0.7, 0.7)
+texture = ExtResource("27_glyph")
+
+[node name="ChantGlyph2" type="Sprite2D" parent="Body/BodyCorrect"]
+visible = false
+position = Vector2(58, 54)
+scale = Vector2(0.7, 0.7)
+texture = ExtResource("27_glyph")
+
+[node name="ChantGlyph3" type="Sprite2D" parent="Body/BodyCorrect"]
+visible = false
+position = Vector2(58, 54)
+scale = Vector2(0.7, 0.7)
+texture = ExtResource("27_glyph")
+
 [node name="BlinkComponent" parent="." index="5"]
 is_enable_default = false
 
@@ -417,7 +442,7 @@ input_pickable = false
 monitorable = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="BombComponent/Area2DBomb" index="0"]
-position = Vector2(0, -25)
+position = Vector2(0, 20)
 shape = SubResource("RectangleShape2D_2gy5r")
 
 [node name="BombEffect" type="Node2D" parent="BombComponent" index="1"]

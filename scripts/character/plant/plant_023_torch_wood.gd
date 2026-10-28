@@ -9,7 +9,13 @@ var bullets:Node2D
 ## 子弹升级数据
 const bullet_upgrade_data = {
 	BulletRegistry.BulletType.Bullet001Pea: BulletRegistry.BulletType.Bullet006PeaFire,
-	BulletRegistry.BulletType.Bullet002PeaSnow: BulletRegistry.BulletType.Bullet001Pea,
+	## ⚠️ 2026-10-26 第八轮：原来这里写的是 Bullet001Pea（普通豌豆）——
+	## 雪清仙子的冰球过火会**掉级成既无冰也无火的普通豌豆**，这就是
+	## "寒冰射手过火炬树桩变成原来的豌豆"的真正原因，跟贴图无关。
+	## 现按用户指定改为「冰火球」：伤害翻倍 + 保留减速。
+	BulletRegistry.BulletType.Bullet002PeaSnow: BulletRegistry.BulletType.Bullet103IceFire,
+	## 豆蔻的飞镖穿过火炬树桩后淬火，变成火焰飞镖（伤害翻倍）
+	BulletRegistry.BulletType.Bullet101Dart: BulletRegistry.BulletType.Bullet102DartFire,
 }
 
 func ready_norm() -> void:

@@ -1,0 +1,66 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="PackedScene" uid="uid://cit8bsc5op7f0" path="res://scenes/bullet/bullet_000_linear_base.tscn" id="1_base"]
+[ext_resource type="Script" path="res://scripts/bullet/bullet_102_dart_fire.gd" id="2_script"]
+[ext_resource type="Texture2D" path="res://assets/image/character/douku/douku_dart_fire.png" id="3_body"]
+[ext_resource type="Texture2D" path="res://assets/image/character/douku/douku_dart_fire_trail.png" id="4_trail"]
+[ext_resource type="Script" uid="uid://b8deeas2k62vb" path="res://scripts/fx/bullet_effect/bullet_effect_001_norm.gd" id="5_fx"]
+[ext_resource type="Texture2D" path="res://assets/image/character/douku/douku_dart_splats.png" id="6_splat"]
+[ext_resource type="Texture2D" path="res://assets/image/character/douku/douku_dart_particles.png" id="7_part"]
+
+[sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_firepart"]
+particles_animation = true
+particles_anim_h_frames = 3
+particles_anim_v_frames = 1
+particles_anim_loop = true
+
+[sub_resource type="Curve" id="Curve_firepart"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_firepart"]
+curve = SubResource("Curve_firepart")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_firepart"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 50.0
+initial_velocity_max = 80.0
+gravity = Vector3(0, 100, 0)
+scale_curve = SubResource("CurveTexture_firepart")
+anim_offset_max = 1.0
+
+[node name="Bullet102DartFire" instance=ExtResource("1_base")]
+script = ExtResource("2_script")
+bullet_type = 102
+type_bullet_SFX = 7
+attack_value = 40
+is_can_up = false
+
+[node name="BulletBody" parent="Body" index="0"]
+scale = Vector2(1.1, 1.1)
+texture = ExtResource("3_body")
+
+[node name="FireTrail" type="Sprite2D" parent="Body"]
+z_index = -1
+position = Vector2(-34, 0)
+texture = ExtResource("4_trail")
+
+[node name="BulletEffect" parent="." index="2"]
+script = ExtResource("5_fx")
+
+[node name="Splats" type="Sprite2D" parent="BulletEffect" index="0"]
+scale = Vector2(1.9, 1.9)
+self_modulate = Color(1, 0.66, 0.34, 1)
+texture = ExtResource("6_splat")
+hframes = 4
+
+[node name="GPUParticles2D" type="GPUParticles2D" parent="BulletEffect/AllParticles2D" index="0"]
+self_modulate = Color(1, 0.68, 0.36, 1)
+material = SubResource("CanvasItemMaterial_firepart")
+emitting = false
+amount = 10
+texture = ExtResource("7_part")
+one_shot = true
+explosiveness = 1.0
+process_material = SubResource("ParticleProcessMaterial_firepart")

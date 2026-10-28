@@ -16,6 +16,10 @@ func _ready() -> void:
 
 	plant_page.init_almanac_page()
 	zombie_page.init_almanac_page()
+	# 录帧自检：命令行带 `-- plants` 时跳过索引页、直接进植物图鉴，
+	# 免得为了截一张缩略图还得手动点「查看植物」。正常游玩不会带这个参数。
+	if "plants" in OS.get_cmdline_user_args():
+		_on_plant_button_pressed()
 
 ## 返回开始菜单
 func _on_exit_button_pressed() -> void:

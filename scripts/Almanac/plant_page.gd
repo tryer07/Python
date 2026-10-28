@@ -30,6 +30,21 @@ func init_almanac_page() -> void:
 			first_reference = reference
 	if first_reference != null:
 		almanac_character_show_panel.show_card(first_reference)
+	# 录帧自检：命令行带 `select=<植物编号>` 时改把该植物放进详情面板
+	# （网格缩略图排布不变），用来单独核对某一株的裁切与大小。
+	# 例如 `-- plants select=7` 直接看醉仙客（P007）。正常游玩不会带这个参数。
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("select="):
+			continue
+		var want_id: int = arg.substr("select=".length()).to_int()
+		for child: Node in card_grid_container.get_children():
+			var grid_card := child as Card
+			if grid_card == null or grid_card.card_reference == null:
+				continue
+			if grid_card.card_reference.content_id != want_id:
+				continue
+			almanac_character_show_panel.show_card(grid_card.card_reference)
+			return
 
 
 ## [param card] 为被点击的植物图鉴卡；详情通过其引用选择角色与资料。

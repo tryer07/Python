@@ -1217,6 +1217,7 @@ parameters/TimeScale/scale = 1.0
 
 [node name="AttackComponent" type="Node2D" parent="." index="10" unique_id=408193386 node_paths=PackedStringArray("markers_2d_bullet")]
 script = ExtResource("17_rdoq1")
+attack_cd = 1.2
 markers_2d_bullet = [NodePath("../Body/BodyCorrect/Anim_stem/stem_correct/Marker2DBullet")]
 
 [node name="BulletAttackCdTimer" type="Timer" parent="AttackComponent" index="0" unique_id=524750138]

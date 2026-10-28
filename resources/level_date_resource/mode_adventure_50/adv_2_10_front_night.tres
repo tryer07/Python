@@ -1,0 +1,130 @@
+[gd_resource type="Resource" script_class="ResourceLevelData" load_steps=25 format=3]
+
+[ext_resource type="Script" uid="uid://bke3sg5otco7s" path="res://scripts/resources/level/pre_plant_in_level.gd" id="1_pre"]
+[ext_resource type="Script" uid="uid://bjt3l56exxmdw" path="res://scripts/resources/level/level_data.gd" id="2_ld"]
+[ext_resource type="Script" path="res://scripts/resources/card/card_reference.gd" id="3_cardref"]
+[ext_resource type="Script" path="res://scripts/resources/card/card_weight.gd" id="4_cardweight"]
+
+[sub_resource type="Resource" id="CardRef_0"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 1
+
+[sub_resource type="Resource" id="CardRef_1"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 2
+
+[sub_resource type="Resource" id="CardRef_2"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 3
+
+[sub_resource type="Resource" id="CardRef_3"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 4
+
+[sub_resource type="Resource" id="CardRef_4"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 6
+
+[sub_resource type="Resource" id="CardRef_5"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 8
+
+[sub_resource type="Resource" id="CardRef_6"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 9
+
+[sub_resource type="Resource" id="CardRef_7"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 10
+
+[sub_resource type="Resource" id="CardRef_8"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 11
+
+[sub_resource type="Resource" id="CardRef_9"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 13
+
+[sub_resource type="Resource" id="CardWeight_0"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_0")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_1"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_1")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_2"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_2")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_3"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_3")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_4"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_4")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_5"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_5")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_6"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_6")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_7"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_7")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_8"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_8")
+weight = 1
+
+[sub_resource type="Resource" id="CardWeight_9"]
+script = ExtResource("4_cardweight")
+card_reference = SubResource("CardRef_9")
+weight = 1
+
+[resource]
+script = ExtResource("2_ld")
+game_sences = 0
+game_BG = 1
+game_BGM = 1
+is_fog = false
+is_day = false
+is_day_sun = false
+is_lawn_mover = true
+is_zombie_can_home = true
+look_show_zombie = true
+monster_mode = 1
+max_wave = 20
+zombie_refresh_types = Array[int]([1, 2, 3, 6, 7, 8])
+is_have_tombston = true
+init_tombstone_num = 11
+can_choosed_card = false
+card_mode = 2
+conveyor_weights = Array[ResourceCardWeight]([SubResource("CardWeight_0"), SubResource("CardWeight_1"), SubResource("CardWeight_2"), SubResource("CardWeight_3"), SubResource("CardWeight_4"), SubResource("CardWeight_5"), SubResource("CardWeight_6"), SubResource("CardWeight_7"), SubResource("CardWeight_8"), SubResource("CardWeight_9")])
+max_choosed_card_num = 10
+start_sun = 0
+is_shovel = true
+metadata/_custom_type_script = "uid://bjt3l56exxmdw"

@@ -31,6 +31,10 @@ var all_lawn_movers_type:Array = []
 var all_lawn_movers_global_pos:Array[Vector2] = []
 var all_lawn_movers:Array[LawnMover] = []
 
+## 每一行是否有小推车，下标即行号。草坪没铺满时只有铺了草皮的行才有车，
+## 其余行留空占位，保持与行号一一对应（all_lawn_movers 用行号做下标）。
+var lawn_mover_lane_enabled: Array[bool] = []
+
 var game_scene:MainSceneRegistry.MainScenes
 
 func _ready() -> void:
@@ -48,6 +52,7 @@ func init_lawn_movers() -> void:
 ## 生成所有的小推车
 func create_all_lawn_movers(is_has_all_lawn_mover:Array=[]):
 	all_lawn_movers_type = AllLawnMoverTypeFromGameScenes[game_scene]
+	update_lawn_mover_lane_enabled()
 
 	print("创建小推车, 小推车类型", all_lawn_movers_type)
 	assert(game_item_manager.main_game.zombie_manager.all_zombie_rows.size() == all_lawn_movers_type.size(), "小推车数量与僵尸行数量不一致")
@@ -56,11 +61,29 @@ func create_all_lawn_movers(is_has_all_lawn_mover:Array=[]):
 		var global_pos_lawn_mover:Vector2 = Vector2(GlobalXLawnMover, zombie_row.zombie_create_position.global_position.y)
 		all_lawn_movers_global_pos.append(global_pos_lawn_mover)
 		var new_lawn_mover:LawnMover
-		if is_has_all_lawn_mover.is_empty() or is_has_all_lawn_mover[lane] == true:
+		# 没有草皮的行不放车：这一行本来就种不了植物、也不会有僵尸
+		if not lawn_mover_lane_enabled[lane]:
+			new_lawn_mover = null
+		elif is_has_all_lawn_mover.is_empty() or is_has_all_lawn_mover[lane] == true:
 			new_lawn_mover = create_lawn_mover(lane, all_lawn_movers_type[lane], all_lawn_movers_global_pos[lane])
 		else:
 			new_lawn_mover = null
 		all_lawn_movers.append(new_lawn_mover)
+
+	var created_count: int = 0
+	for mover: LawnMover in all_lawn_movers:
+		if mover != null:
+			created_count += 1
+	print("小推车按行启用：", lawn_mover_lane_enabled, "，实际生成 %d 辆" % created_count)
+
+
+## 按关卡已铺草皮的行算出哪些行要放小推车；草坪满铺时每一行都放。
+func update_lawn_mover_lane_enabled() -> void:
+	var sod_rows: Array[int] = game_item_manager.game_para.sod_rows
+	lawn_mover_lane_enabled.clear()
+	for lane in range(all_lawn_movers_type.size()):
+		lawn_mover_lane_enabled.append(sod_rows.is_empty() or sod_rows.has(lane + 1))
+
 
 ## 补充小推车
 func replenish_lawn_mover():
@@ -69,6 +92,9 @@ func replenish_lawn_mover():
 	else:
 		# 按行检查原位可用小推车；被碾压但尚未释放的车也需要补充。
 		for i in range(all_lawn_movers.size()):
+			# 本来就不该有车的行（没有草皮）不补
+			if i < lawn_mover_lane_enabled.size() and not lawn_mover_lane_enabled[i]:
+				continue
 			if is_instance_valid(all_lawn_movers[i]) and not all_lawn_movers[i].is_queued_for_deletion() \
 				and not all_lawn_movers[i].is_destroyed and not all_lawn_movers[i].is_moving:
 				continue

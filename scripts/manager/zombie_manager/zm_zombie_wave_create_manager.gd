@@ -20,19 +20,45 @@ var zombie_weights: Dictionary[CharacterRegistry.ZombieType, int] = CharacterReg
 ## 僵尸随机选择池
 var zombie_choose_random_pool:RandomPicker
 
+## 关卡允许出怪的行权重，下标即行号。空数组表示所有行都可以出怪（默认）。[br]
+## 草坪只铺了一部分时，没草皮的行同样不能出僵尸，否则僵尸会走在荒土上白吃一条车道。
+var lane_weights: Array[float] = []
+
 ## 每波最大僵尸数量
 @export var max_zombies_per_wave = 50
+
+## 单帧生成预算（毫秒）。一个僵尸从实例化到入树约 2ms，
+## 大波一次铺 40~50 只放在同一帧会冻结 100~200ms（实测 80 只 207ms）。
+## 超过预算就让出一帧再继续，场上僵尸总数和出场顺序完全不变，只是把开销摊到几十帧里。
+const SPAWN_FRAME_BUDGET_MSEC := 3
 ## 刷新类型最小战力
 var min_power:=100
 ## 当前波次生成的僵尸
 var wave_all_zombies:Array[Zombie000Base]
+
+## 上一次波次生成里「单帧花在实例化上的最长时间（毫秒）」，用于验证分帧预算是否生效。[br]
+## 分帧前大波一次性生成 80 只约 207ms，分帧后应稳定在 3~6ms。
+var spawn_max_frame_msec: int = 0
 
 ## 使用 [param game_para] 初始化波次生成配置、选行系统和随机池，保留本实例已有的运行时权重。
 func init_zombie_wave_create_manager(game_para:ResourceLevelData):
 	zombie_multy = game_para.zombie_multy
 	range_num_bungi = game_para.range_num_bungi
 	zombie_choose_row_system.init_zombie_choose_row_system(zombie_manager.all_zombie_rows)
+	update_lane_weights(game_para.sod_rows)
 	update_zombie_refresh_types()
+
+
+## 按已铺草皮的行生成出怪行权重；[param sod_rows] 为空时保持「所有行都可以出怪」。
+func update_lane_weights(sod_rows: Array[int]) -> void:
+	lane_weights.clear()
+	if sod_rows.is_empty():
+		return
+	# 与 all_zombie_rows 等长，行号从 0 开始，sod_rows 用的是从 1 开始的行号
+	for i: int in zombie_manager.all_zombie_rows.size():
+		lane_weights.append(1.0 if sod_rows.has(i + 1) else 0.0)
+	print("出怪行权重：", lane_weights, "（空表示所有行都出怪）")
+
 
 ## 更新可以刷新的僵尸列表
 func update_zombie_refresh_types():
@@ -48,15 +74,20 @@ func update_zombie_refresh_types():
 
 
 #region 创建当前波次僵尸
-## 创建当前波僵尸
+## 创建当前波僵尸。[br]
+## 返回前会把整波僵尸都生成好；若单帧预算用尽会 [code]await[/code] 让出一帧，
+## 因此调用方要写成 [code]await create_curr_wave_all_zombies(...)[/code]。
 func create_curr_wave_all_zombies(wave:int, is_big_wave:bool):
 	## 获取当前波僵尸生成列表
 	var wave_spawn :Array[CharacterRegistry.ZombieType] = create_curr_wave_zombie_list(wave, is_big_wave)
 	## 特殊基础权重,若有雪橇车僵尸,更新该权重
 	var special_base_weight:Array[float] = []
 	wave_all_zombies.clear()
+	spawn_max_frame_msec = 0
 	## 当前波次僵尸数据
 	var curr_wave_zombie_date:Array[Dictionary]
+	## 本帧开始生成的时间戳，用于分帧预算
+	var frame_spawn_start: int = Time.get_ticks_msec()
 
 	for i in range(wave_spawn.size()):
 		var zombie_type : CharacterRegistry.ZombieType = wave_spawn[i]
@@ -74,11 +105,11 @@ func create_curr_wave_all_zombies(wave:int, is_big_wave:bool):
 			## 如果没有冰道
 			if GlobalUtils.sum_arr(special_base_weight) == 0:
 				zombie_type = CharacterRegistry.ZombieType.Z013Zamboni
-				lane = zombie_choose_row_system.select_spawn_row(Global.character_registry.ZombieInfo[zombie_type][CharacterRegistry.ZombieInfoAttribute.ZombieRowType])
+				lane = zombie_choose_row_system.select_spawn_row(Global.character_registry.ZombieInfo[zombie_type][CharacterRegistry.ZombieInfoAttribute.ZombieRowType], lane_weights)
 			else:
 				lane = zombie_choose_row_system.select_spawn_row(Global.character_registry.ZombieInfo[zombie_type][CharacterRegistry.ZombieInfoAttribute.ZombieRowType], special_base_weight)
 		else:
-			lane = zombie_choose_row_system.select_spawn_row(Global.character_registry.ZombieInfo[zombie_type][CharacterRegistry.ZombieInfoAttribute.ZombieRowType])
+			lane = zombie_choose_row_system.select_spawn_row(Global.character_registry.ZombieInfo[zombie_type][CharacterRegistry.ZombieInfoAttribute.ZombieRowType], lane_weights)
 		# 选行失败时跳过该项，不能把 -1 作为最后一行索引使用。
 		if lane < 0:
 			continue
@@ -96,6 +127,16 @@ func create_curr_wave_all_zombies(wave:int, is_big_wave:bool):
 		)
 		if is_instance_valid(zombie):
 			wave_all_zombies.append(zombie)
+		# 单帧预算用尽：让出一帧再继续，避免大波同一帧实例化造成掉帧卡顿。
+		var frame_spend: int = Time.get_ticks_msec() - frame_spawn_start
+		if frame_spend >= SPAWN_FRAME_BUDGET_MSEC:
+			spawn_max_frame_msec = maxi(spawn_max_frame_msec, frame_spend)
+			await get_tree().process_frame
+			# 等待期间可能已经切关或结束战斗，先退出，由调用方按刷新版本决定是否继续。
+			if not is_inside_tree():
+				return wave_all_zombies
+			frame_spawn_start = Time.get_ticks_msec()
+	spawn_max_frame_msec = maxi(spawn_max_frame_msec, Time.get_ticks_msec() - frame_spawn_start)
 
 	return wave_all_zombies
 
@@ -155,8 +196,14 @@ func _update_weights(wave: int) -> void:
 	var decay_steps: int = clampi(wave - 5, 0, 20)
 	zombie_weights[CharacterRegistry.ZombieType.Z001Norm] -= decay_steps * 180
 	zombie_weights[CharacterRegistry.ZombieType.Z003Cone] -= decay_steps * 150
-	# 只有这两种类型随进度衰减，其余随机池条目保持基础权重。
-	for zombie_type: CharacterRegistry.ZombieType in [CharacterRegistry.ZombieType.Z001Norm, CharacterRegistry.ZombieType.Z003Cone]:
+	## 魔术师按「权重与路障一致」配平，所以跟着路障同步衰减，否则后期它会比路障更常出现。
+	zombie_weights[CharacterRegistry.ZombieType.Z026Magician] -= decay_steps * 150
+	# 只让这几类随进度衰减，其余随机池条目保持基础权重。
+	for zombie_type: CharacterRegistry.ZombieType in [
+		CharacterRegistry.ZombieType.Z001Norm,
+		CharacterRegistry.ZombieType.Z003Cone,
+		CharacterRegistry.ZombieType.Z026Magician,
+	]:
 		if zombie_type in zombie_manager.zombie_refresh_types:
 			zombie_choose_random_pool.update_item_weight(zombie_type, zombie_weights[zombie_type], false)
 	zombie_choose_random_pool.rebuild_alias_table()

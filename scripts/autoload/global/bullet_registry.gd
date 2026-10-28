@@ -31,6 +31,10 @@ enum BulletType{
 	Bullet1002BowlingBomb,	## 爆炸保龄球
 	Bullet1003BowlingBig,	## 大保龄球
 
+	Bullet101Dart = 101,		## 豆蔻飞镖（仙侠，袖中暗器）
+	Bullet102DartFire = 102,	## 豆蔻火焰飞镖（飞镖穿过火炬树桩后升级）
+	Bullet103IceFire = 103,		## 雪清仙子冰火球（冰球穿过火炬树桩后升级，伤害翻倍且保留减速）
+
 }
 
 
@@ -67,6 +71,9 @@ enum AttackMode {
 	BulletType.Bullet015WinterMelon :preload("res://scenes/bullet/bullet_015_winter_melon.tscn"),
 
 	BulletType.Bullet016CobCannon :preload("res://scenes/bullet/bullet_016_cob_cannon.tscn"),
+	BulletType.Bullet101Dart : preload("res://scenes/bullet/bullet_101_dart.tscn"),
+	BulletType.Bullet102DartFire : preload("res://scenes/bullet/bullet_102_dart_fire.tscn"),
+	BulletType.Bullet103IceFire : preload("res://scenes/bullet/bullet_103_ice_fire.tscn"),
 }
 
 ## 获取子弹场景方法

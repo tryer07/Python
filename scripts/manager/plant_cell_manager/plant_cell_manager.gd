@@ -65,6 +65,7 @@ func update_plant_info_free(_plant_cell:PlantCell, plant_type:CharacterRegistry.
 #endregion
 
 func init_manager() -> void:
+	lock_rows_without_sod()
 	signal_connect_plant_cell_with_hand_manager(main_game.hand_manager)
 	tomb_stone_manager.init_tomb_stone_manager(game_para)
 	## 没有存档直接创建植物和创建罐子
@@ -81,6 +82,22 @@ func init_manager() -> void:
 		init_pot()
 		if game_para.is_zombie_mode:
 			init_plant_on_zombie_mode()
+
+## 关卡只铺了部分草坪时，没有草皮的行不能种植物。[br]
+## 做法是把这些格子的地形条件清零：植物原本就按「格子地形 & 植物所需地形」判定能否种植，
+## 清零后判定自然不通过，不需要新增特殊状态位，也不会影响墓碑、坑洞、冰道等已有状态。
+func lock_rows_without_sod() -> void:
+	var sod_rows: Array[int] = game_para.sod_rows
+	if sod_rows.is_empty():
+		return
+	for row: int in all_plant_cells.size():
+		# sod_rows 用从 1 开始的行号，这里换算成从 0 开始
+		if sod_rows.has(row + 1):
+			continue
+		for plant_cell: PlantCell in all_plant_cells[row]:
+			plant_cell.ori_condition = 0
+			plant_cell.curr_condition = 0
+
 
 ## plant_cell与hand_manager信号连接
 func signal_connect_plant_cell_with_hand_manager(hand_manager:HandManager):
@@ -448,6 +465,52 @@ func jalapeno_bomb_effect(lane:int):
 		plant_cell.add_child(fire_new)
 		fire_new.global_position = plant_cell.global_position + Vector2(plant_cell.size.x / 2, plant_cell.size.y)
 		fire_new.activate_bomb_effect()
+
+## 并蒂樱童的「火海」：以 [param row_col] 为中心铺 [param row_count] 行 × [param col_count] 列火焰。
+## [br]只负责画面，伤害在 BombComponent.bomb_once 里已经一次性结算完毕 ——
+## 所以火海烧 [param exist_time] 秒只是余烬，不会重复打伤害。
+## [br]超出草坪边界的方向直接跳过（贴边的樱童只烧得到内侧格子），不会越界报错。
+func cherry_fire_sea(row_col: Vector2i, row_count: int, col_count: int, exist_time: float) -> void:
+	# 3 行 3 列时 half 取 1，正好是「自身所在格 ± 1」
+	var half_row: int = (row_count - 1) / 2
+	var half_col: int = (col_count - 1) / 2
+	for row: int in range(row_col.x - half_row, row_col.x + half_row + 1):
+		if row < 0 or row >= all_plant_cells.size():
+			continue
+		for col: int in range(row_col.y - half_col, row_col.y + half_col + 1):
+			if col < 0 or col >= all_plant_cells[row].size():
+				continue
+			_spawn_cell_fire(all_plant_cells[row][col], row, exist_time)
+
+## 在单个格子上放一簇火。
+## [br]fire.tscn 是给「火爆辣椒沿整行铺」调的：火焰贴图真正可见的图层是 Body/Layer 1
+## （Anim_done 只在收尾的 fire_done 段露脸），它是 centered=false，锚点在贴图左上角，
+## 叠上 Body(-1,-101) + Layer1(-45,30.2) + 可见区中心(52*0.8) 之后，
+## 火焰的视觉中心相对 fire 原点其实是 y=-29.2 —— 不是 -101。
+## 按 -101 摆会把整片火海往下推一行，所以这里用实测值。
+## [br]另外格子行距是 100px、火焰可见高度只有 56*scale_y，等比放大行与行之间会露草皮，
+## 因此横向纵向分开缩放，让九簇火互相压住，连成一片而不是九个火盆。
+func _spawn_cell_fire(plant_cell: PlantCell, row: int, exist_time: float) -> void:
+	## 横向 1.28：可见宽 113*0.8*1.28≈116，压住 78 的列距
+	## 纵向 2.05：可见高 56*2.05≈115，压住 100 的行距
+	const FIRE_SEA_SCALE := Vector2(1.28, 2.05)
+	## 火焰可见区的中心相对 fire 原点的 y 偏移（未缩放）：-101 + 30.2 + 52*0.8 = -29.2
+	const FIRE_ART_CENTER_Y: float = -29.2
+	## 原始火焰是奶油白，火海需要更暖，否则压在草地上像黄油
+	const FIRE_SEA_TINT := Color(1.0, 0.87, 0.63)
+	var fire_new: BombEffectFire = SceneRegistry.FIRE.instantiate()
+	# 同一套图层规则：越靠下（行号大）越压在上面，火海才不会有缝隙
+	fire_new.z_index = row * 50 + 40
+	fire_new.z_as_relative = false
+	plant_cell.add_child(fire_new)
+	fire_new.scale = FIRE_SEA_SCALE
+	fire_new.modulate = FIRE_SEA_TINT
+	# 视觉中心在 fire 原点上方 29.2*scale_y 处，所以原点要落到「格心 + 29.2*scale_y」
+	fire_new.global_position = plant_cell.global_position + Vector2(
+		plant_cell.size.x * 0.5,
+		plant_cell.size.y * 0.5 - FIRE_ART_CENTER_Y * FIRE_SEA_SCALE.y)
+	fire_new.set_exist_time(exist_time)
+	fire_new.activate_bomb_effect()
 
 func jalapeno_bomb_item_lane(lane:int):
 	## 梯子

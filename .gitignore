@@ -23,3 +23,6 @@ export/
 Thumbs.db
 desktop.ini
 *~
+
+# 本机改脚本前的备份（.bak_日期），不进仓库
+*.bak_*

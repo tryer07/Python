@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="ResourceLevelData" load_steps=6 format=3]
+
+[ext_resource type="Script" uid="uid://bke3sg5otco7s" path="res://scripts/resources/level/pre_plant_in_level.gd" id="1_pre"]
+[ext_resource type="Script" uid="uid://bjt3l56exxmdw" path="res://scripts/resources/level/level_data.gd" id="2_ld"]
+[ext_resource type="Script" path="res://scripts/resources/card/card_reference.gd" id="3_cardref"]
+
+[sub_resource type="Resource" id="PreCardRef_0"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 1
+
+[sub_resource type="Resource" id="PreCardRef_1"]
+script = ExtResource("3_cardref")
+card_type = 1
+content_id = 2
+
+[resource]
+script = ExtResource("2_ld")
+game_sences = 0
+game_BG = 0
+game_BGM = 0
+is_fog = false
+is_day = true
+is_day_sun = true
+is_lawn_mover = true
+is_zombie_can_home = true
+sod_rows = Array[int]([2, 3, 4])
+look_show_zombie = false
+monster_mode = 1
+max_wave = 10
+zombie_refresh_types = Array[int]([1])
+is_have_tombston = false
+init_tombstone_num = 0
+can_choosed_card = false
+card_mode = 1
+prechosen_cards = Array[ResourceCardReference]([SubResource("PreCardRef_0"), SubResource("PreCardRef_1")])
+max_choosed_card_num = 2
+start_sun = 50
+is_shovel = false
+metadata/_custom_type_script = "uid://bjt3l56exxmdw"

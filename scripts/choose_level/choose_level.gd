@@ -20,8 +20,12 @@ var bgm_choose_card: AudioStream = preload("res://assets/audio/BGM/choose_card.m
 func _ready() -> void:
 	## 如果没有开放所有关卡
 	if not Global.config_service.open_all_level:
-		if game_mode == MainSceneRegistry.MainScenes.ChooseLevelAdventure:
-			open_level_num = 1
+		## 冒险模式（含 50 关版）默认开放 1-1、1-2：
+		## 1-2 是朝阳童子（向日葵）首次进种子槽的关卡，先放出来让玩家能立刻用到第二株植物，
+		## 之后仍然靠逐关通关推进。
+		if game_mode == MainSceneRegistry.MainScenes.ChooseLevelAdventure \
+				or game_mode == MainSceneRegistry.MainScenes.ChooseLevelAdventure50:
+			open_level_num = 2
 		## 自定义关卡全开放
 		elif game_mode == MainSceneRegistry.MainScenes.ChooseLevelCustom:
 			open_level_num = -1
@@ -29,6 +33,10 @@ func _ready() -> void:
 			open_level_num = 3
 	else:
 		open_level_num = -1
+
+	# 其它模式保持引擎默认的完整植物列表，避免冒险模式的解锁进度影响小游戏等玩法
+	if game_mode != MainSceneRegistry.MainScenes.ChooseLevelAdventure50:
+		AdventurePlantUnlock.restore_full()
 
 	for page_i in all_page.get_child_count():
 		var page = all_page.get_child(page_i)

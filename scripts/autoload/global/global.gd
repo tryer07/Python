@@ -42,6 +42,12 @@ func reload_session_for_current_user() -> void:
 var main_game:MainGameManager
 var game_para:ResourceLevelData
 
+## 调试跳关时顺带要跑的自检子模式（`-- autoplay1 8 chomper` 里的 `chomper`）。
+## [br]选关脚本解析完关卡号后写进来，进关后由 main_game_manager 的
+## `_debug_auto_plant_from_args()` 消费并清空。正常游玩永远是空串。
+var autoplay_sub_mode: String = ""
+var autoplay_sub_args: PackedStringArray = PackedStringArray()
+
 ## 游戏倍速
 var time_scale := 1.0
 

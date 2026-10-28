@@ -314,6 +314,7 @@ parameters/TimeScale/scale = 1.2
 
 [node name="CreateSunComponent" type="Node2D" parent="." index="10" node_paths=PackedStringArray("marker_2d_create_sun")]
 script = ExtResource("34_1op7k")
+create_time_range_other = Vector2(14, 15)
 marker_2d_create_sun = NodePath("../Body/BodyCorrect/Marker2DCreateSun")
 
 [node name="CreateSunTimer" type="Timer" parent="CreateSunComponent" index="0"]

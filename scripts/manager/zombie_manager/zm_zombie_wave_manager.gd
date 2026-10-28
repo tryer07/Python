@@ -122,7 +122,7 @@ func start_next_wave() -> void:
 	# 旗前波
 	if curr_wave % 10 == 8:
 		curr_wave_type = E_WaveType.FlagFront
-		curr_wave_all_zombies = zombie_wave_create_manager.create_curr_wave_all_zombies(curr_wave, false)
+		curr_wave_all_zombies = await zombie_wave_create_manager.create_curr_wave_all_zombies(curr_wave, false)
 	# 旗帜波
 	elif curr_wave % 10 == 9 :
 		# 最后一波
@@ -131,7 +131,7 @@ func start_next_wave() -> void:
 			await ui_remind_word.zombie_approach(true)
 			if not _is_wave_refresh_current(refresh_generation):
 				return
-			curr_wave_all_zombies = zombie_wave_create_manager.create_curr_wave_all_zombies(curr_wave, true)
+			curr_wave_all_zombies = await zombie_wave_create_manager.create_curr_wave_all_zombies(curr_wave, true)
 			set_progress_bar(int(curr_wave%max_wave_one_round/10.0))
 			# 额外生成大波特殊僵尸,珊瑚僵尸,蹦极僵尸
 			zombie_wave_create_manager.spawn_special_zombie_in_big_wave(true)
@@ -141,7 +141,7 @@ func start_next_wave() -> void:
 			await ui_remind_word.zombie_approach(false)
 			if not _is_wave_refresh_current(refresh_generation):
 				return
-			curr_wave_all_zombies = zombie_wave_create_manager.create_curr_wave_all_zombies(curr_wave, true)
+			curr_wave_all_zombies = await zombie_wave_create_manager.create_curr_wave_all_zombies(curr_wave, true)
 			set_progress_bar(int(curr_wave%max_wave_one_round/10.0))
 			# 额外生成大波特殊僵尸,珊瑚僵尸,蹦极僵尸
 			zombie_wave_create_manager.spawn_special_zombie_in_big_wave(false)
@@ -153,7 +153,7 @@ func start_next_wave() -> void:
 	# 普通波
 	else:
 		curr_wave_type = E_WaveType.Norm
-		curr_wave_all_zombies = zombie_wave_create_manager.create_curr_wave_all_zombies(curr_wave, false)
+		curr_wave_all_zombies = await zombie_wave_create_manager.create_curr_wave_all_zombies(curr_wave, false)
 		set_progress_bar()
 
 	# 生成回调可能结束本轮，不能再重启刷新计时或发出旧波信号。

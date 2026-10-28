@@ -22,6 +22,19 @@ class_name CreateSunComponent
 var create_interval :float
 ## 创建阳光时的发光颜色
 var create_sun_color: Color = Color(1, 1, 1)
+## 发光峰值倍率：1 = 不发光，2 = 原来的强度（白色 ×2，浅色立绘会被冲成白纸）。
+## [br]深色/低饱和的立绘用默认 2 就够；偏浅黄、本就接近白色的立绘（如朝阳童子）
+## 应调到 1.5 左右，否则"睁眼、抬手"这些细节在发光期间根本看不见。
+@export var create_sun_flash_peak: float = 2.0
+
+#region 产阳光动作信号
+## 一次产阳光流程开始时发出（身体刚开始发亮），供植物播放「蓄力 / 抬手」动作。
+## [br]此时阳光还没出生，出生点在 [member marker_2d_create_sun] 当前指的位置。
+signal create_sun_started
+## 阳光真正出生的那一刻发出（发光明灭交界处）。
+## [br]若植物要「在手上生成阳光」，必须在此信号之前把 marker 挪到手上。
+signal create_sun_spawned
+#endregion
 
 
 #region 我是僵尸模式
@@ -85,6 +98,8 @@ func change_production_interval():
 
 ## 创建阳光
 func _spawn_sun():
+	## 先通知外观：阳光即将从当前 marker 位置出生
+	create_sun_spawned.emit()
 	## 播放音效
 	SoundManager.play_character_SFX(&"Throw1")
 	for i in range(num_create_sun):
@@ -111,10 +126,12 @@ func _spawn_sun():
 func create_sun():
 	# 创建新的 tween
 	var tween = create_tween()
-	tween.tween_method(func(val): body.set_other_color(BodyCharacter.E_ChangeColors.CreateSunColor, val), Color(1, 1, 1), Color(2, 2, 2), 0.5)
+	create_sun_started.emit()
+	var peak: Color = Color(create_sun_flash_peak, create_sun_flash_peak, create_sun_flash_peak)
+	tween.tween_method(func(val): body.set_other_color(BodyCharacter.E_ChangeColors.CreateSunColor, val), Color(1, 1, 1), peak, 0.5)
 	# 在第一个 tween 完成后、第二个 tween 开始前调用函数
 	tween.tween_callback(Callable(self, "_spawn_sun"))
-	tween.tween_method(func(val): body.set_other_color(BodyCharacter.E_ChangeColors.CreateSunColor, val), Color(2, 2, 2), Color(1, 1, 1), 0.5)
+	tween.tween_method(func(val): body.set_other_color(BodyCharacter.E_ChangeColors.CreateSunColor, val), peak, Color(1, 1, 1), 0.5)
 
 
 func _on_create_sun_timer_timeout() -> void:

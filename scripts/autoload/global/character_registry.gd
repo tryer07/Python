@@ -130,6 +130,7 @@ enum ZombieType {
 	Z023Catapult,
 	Z024Gargantuar,
 	Z025Imp,
+	Z026Magician,	## 魔术师僵尸：法杖远程打植物
 
 	Z1001BobsledSingle=1001,	## 单个雪橇车僵尸
 	}
@@ -757,6 +758,13 @@ const ZombieInfo = {
 		ZombieInfoAttribute.ZombieScenes:preload("res://scenes/character/zombie/zombie_025_imp.tscn"),
 		ZombieInfoAttribute.ZombieRowType:CharacterRegistry.ZombieRowType.Land
 	},
+	ZombieType.Z026Magician:{
+		ZombieInfoAttribute.ZombieName: "ZombieMagician",
+		ZombieInfoAttribute.CoolTime: 0.0,
+		ZombieInfoAttribute.SunCost: 75,
+		ZombieInfoAttribute.ZombieScenes:preload("res://scenes/character/zombie/zombie_026_magician.tscn"),
+		ZombieInfoAttribute.ZombieRowType:CharacterRegistry.ZombieRowType.Land
+	},
 
 	## 单独雪橇僵尸
 	ZombieType.Z1001BobsledSingle:{
@@ -798,6 +806,7 @@ const ZombieSpawnPower: Dictionary[ZombieType, int] = {
 	ZombieType.Z023Catapult: 5,		# 投篮
 	ZombieType.Z024Gargantuar: 10,	# 伽刚特尔
 	ZombieType.Z025Imp: 1,			# 小鬼
+	ZombieType.Z026Magician: 2,		# 魔术师，与路障同为 2
 }
 
 ## 僵尸初始出怪权重；各出怪系统复制后独立调整，不修改公共基础数据。[br]
@@ -828,6 +837,7 @@ const ZombieSpawnWeights: Dictionary[ZombieType, int] = {
 	ZombieType.Z022Ladder: 1000,		# 扶梯
 	ZombieType.Z023Catapult: 1500,	# 投篮
 	ZombieType.Z024Gargantuar: 1500,	# 伽刚特尔
+	ZombieType.Z026Magician: 4000,	# 魔术师权重，与路障同为 4000
 }
 
 

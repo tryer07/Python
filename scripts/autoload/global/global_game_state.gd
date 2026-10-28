@@ -94,6 +94,8 @@ var curr_zombie :Array[CharacterRegistry.ZombieType]= [
 	CharacterRegistry.ZombieType.Z001Norm,
 	CharacterRegistry.ZombieType.Z002Flag,
 	CharacterRegistry.ZombieType.Z003Cone,
+	## 魔术师僵尸：按需求排在路障僵尸与铁桶僵尸之间
+	CharacterRegistry.ZombieType.Z026Magician,
 	CharacterRegistry.ZombieType.Z004PoleVaulter,
 	CharacterRegistry.ZombieType.Z005Bucket,
 	CharacterRegistry.ZombieType.Z006Paper,

@@ -67,6 +67,8 @@ enum TypeBulletSFX{
 	Corn,		## 玉米粒
 	Butter,		## 黄油
 	Melon,		## 西瓜
+	Dart = 6,	## 豆蔻飞镖
+	DartFire = 7,	## 豆蔻火焰镖
 	Bowling = 1001,		## 保龄球
 }
 
@@ -92,6 +94,16 @@ const SFXBulletMap := {
 		preload("res://assets/audio/SFX/bullet/melonimpact.ogg"),
 		preload("res://assets/audio/SFX/bullet/melonimpact2.ogg")
 	],
+	## 飞镖扎进木头/皮肉：短促的「啪」，带木杆共振和铁头的那一下
+	TypeBulletSFX.Dart: [
+		preload("res://assets/audio/SFX/bullet/darthit1.wav"),
+		preload("res://assets/audio/SFX/bullet/darthit2.wav")
+	],
+	## 火焰镖：低频「轰」+ 拖尾噼啪
+	TypeBulletSFX.DartFire: [
+		preload("res://assets/audio/SFX/bullet/dartfirehit1.wav"),
+		preload("res://assets/audio/SFX/bullet/dartfirehit2.wav")
+	],
 
 	TypeBulletSFX.Bowling: [
 		preload("res://assets/audio/SFX/bullet/bowlingimpact.ogg"),
@@ -116,6 +128,14 @@ const SFXCharacterMap := {
 	&"PotatoMine": preload("res://assets/audio/SFX/plant/potato_mine.ogg"),
 	## 大嘴花
 	&"BigChomp": preload("res://assets/audio/SFX/plant/bigchomp.ogg"),
+	## 醉仙客（大嘴花换皮）：**不要**用原版 BigChomp。
+	## [br]原版是一声闷「啵 + 嘎吱」，和「拔木塞再吞」的动作对不上，而且换皮之后
+	## 玩家会立刻听出「这还是大嘴花」，把整段的角色感冲掉。
+	## 这两条是按动作逐帧对位合成的：拔塞的木质摩擦 + 真空释放的「啵」；
+	## 吸入的双段气流 + 喉咙里的两记「咕咚」+ 葫芦底撞手的闷响。
+	## [br]合成脚本留在工程的 docs 之外，改参数就重跑，不依赖任何外部素材。
+	&"ZuixiankeUncork": preload("res://assets/audio/SFX/plant/zuixianke_uncork.wav"),
+	&"ZuixiankeGulp": preload("res://assets/audio/SFX/plant/zuixianke_gulp.wav"),
 	## 小喷菇发射子弹
 	&"Puff": preload("res://assets/audio/SFX/plant/puff.ogg"),
 	## 阳光菇长大
@@ -265,7 +285,16 @@ const SFXCarzyDaveMap := {
 ## 音效对象池实现
 var sfx_bullet_pool = []
 
-func play_sfx_with_pool(sfx_resource: AudioStream) -> AudioStreamPlayer:
+## 每类子弹音效的增益补偿（dB）。种一排豆蔻时打击声会叠成一片，
+## 飞镖单独压低 6dB（振幅减半），和豌豆/西瓜的听感量级拉齐。
+## 注意：播完的播放器是复用的，所以每次播放都必须显式写 volume_db，
+## 否则上一次的增益会残留到下一个不相干音效上。
+const SFXBulletVolume := {
+	TypeBulletSFX.Dart: -6.0,
+	TypeBulletSFX.DartFire: -6.0,
+}
+
+func play_sfx_with_pool(sfx_resource: AudioStream, volume_db: float = 0.0) -> AudioStreamPlayer:
 	if sfx_resource in curr_frame_sfx:
 		return
 	curr_frame_sfx.append(sfx_resource)
@@ -287,6 +316,7 @@ func play_sfx_with_pool(sfx_resource: AudioStream) -> AudioStreamPlayer:
 
 	## 配置播放器
 	player.stream = sfx_resource
+	player.volume_db = volume_db
 	player.play()
 	return player
 
@@ -307,9 +337,12 @@ func play_be_attack_SFX(type_bullet_zombie_sfx:TypeBeAttackSFX):
 ## 播放子弹攻击音效
 func play_bullet_attack_SFX(type_bullet_sfx:TypeBulletSFX):
 	var sfx_array: Array = SFXBulletMap[type_bullet_sfx]
+	## TypeBulletSFX.Null / Bowling 这类可能是 null 或空表，别直接 pick_random
+	if sfx_array == null or sfx_array.is_empty():
+		return
 
 	var sfx_selected = sfx_array.pick_random()
-	play_sfx_with_pool(sfx_selected)
+	play_sfx_with_pool(sfx_selected, SFXBulletVolume.get(type_bullet_sfx, 0.0))
 
 ## 播放植物\僵尸相关音效
 func play_character_SFX(option:StringName):

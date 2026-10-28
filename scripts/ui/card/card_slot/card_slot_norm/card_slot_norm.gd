@@ -44,6 +44,10 @@ func _on_cancal_card_button_pressed() -> void:
 
 ## 开始游戏并保存独立的选卡引用，由 SaveService 统一序列化。
 func _on_texture_button_pressed() -> void:
+	# 一张卡都没选就开打等于空手上场，进去只能看僵尸推车 —— 直接挡掉，别让玩家白进一关
+	if card_slot_battle.curr_cards.is_empty():
+		SoundManager.play_other_SFX("buzzer")
+		return
 	EventBus.push_event("card_slot_norm_start_game")
 	Global.global_game_state.selected_cards.clear()
 	# 保存引用副本，避免运行中的卡片修改影响持久化身份。
