@@ -1,5 +1,5 @@
-// 云荒录 · 文字冒险RPG 前端逻辑
-// 负责：拉取职业、建卡开局、发送行动、渲染剧情、同步状态面板
+// 废土余生 · 末世文字冒险RPG 前端逻辑
+// 负责：拉取职业、建卡开局、发送行动、渲染剧情、同步状态、死亡拦截、读取存档续玩
 
 const API = ""; // 同源，无需写死地址
 
@@ -14,10 +14,13 @@ const createScreen = $("create-screen");
 const gameScreen = $("game-screen");
 const classList = $("class-list");
 const btnStart = $("btn-start");
+const btnLoad = $("btn-load");
+const saveList = $("save-list");
 const storyLog = $("story-log");
 const actionInput = $("action-input");
 const btnSend = $("btn-send");
 const loadingHint = $("loading-hint");
+const deathPanel = $("death-panel");
 
 // ---------- 工具：清洗 AI 回复里可能残留的 Markdown 符号 ----------
 function cleanMarkdown(text) {
@@ -42,6 +45,13 @@ function appendBubble(role, text, whoLabel) {
     storyLog.appendChild(bubble);
     storyLog.scrollTop = storyLog.scrollHeight;
     return bubble;
+}
+
+// ---------- 死亡态 UI：显示死亡面板并锁住输入 ----------
+function setDead(dead) {
+    deathPanel.classList.toggle("hidden", !dead);
+    actionInput.disabled = dead;
+    btnSend.disabled = dead;
 }
 
 // ---------- 渲染状态面板 ----------
@@ -71,6 +81,16 @@ function renderStatus(character) {
     }
 }
 
+// ---------- 进入对局界面并复位状态 ----------
+function enterGame(character) {
+    createScreen.classList.add("hidden");
+    gameScreen.classList.remove("hidden");
+    storyLog.innerHTML = "";
+    charName = character.name;
+    renderStatus(character);
+    setDead(false);
+}
+
 // ---------- 初始化：加载职业列表 ----------
 async function loadClasses() {
     try {
@@ -81,7 +101,6 @@ async function loadClasses() {
         result.data.forEach((cls) => {
             const card = document.createElement("div");
             card.className = "class-card";
-            card.dataset.name = cls.name;
             const name = document.createElement("div");
             name.className = "class-name";
             name.textContent = cls.name;
@@ -125,29 +144,26 @@ async function startGame() {
         if (result.code !== 200) {
             $("create-error").textContent = result.message || "开局失败";
             btnStart.disabled = false;
-            btnStart.textContent = "踏入云荒";
+            btnStart.textContent = "踏入废土";
             return;
         }
         sessionId = result.data.session_id;
-        createScreen.classList.add("hidden");
-        gameScreen.classList.remove("hidden");
-        storyLog.innerHTML = "";
-        renderStatus(result.data.character);
+        enterGame(result.data.character);
         appendBubble("gm", cleanMarkdown(result.data.story), "主持人");
         actionInput.focus();
     } catch (e) {
         $("create-error").textContent = "请求失败：" + e.message;
         btnStart.disabled = false;
-        btnStart.textContent = "踏入云荒";
-    } finally {
-        loadingHint.classList.add("hidden");
+        btnStart.textContent = "踏入废土";
     }
+    btnStart.disabled = false;
+    btnStart.textContent = "踏入废土";
 }
 
 // ---------- 发送行动 ----------
 async function sendAction() {
     const text = actionInput.value.trim();
-    if (!text || !sessionId) return;
+    if (!text || !sessionId || actionInput.disabled) return;
 
     actionInput.value = "";
     btnSend.disabled = true;
@@ -164,10 +180,13 @@ async function sendAction() {
         if (result.code === 200) {
             appendBubble("gm", cleanMarkdown(result.data.story), "主持人");
             renderStatus(result.data.character);
-            // 角色阵亡提示（HP 归零）
-            if (result.data.character.status.hp <= 0) {
-                appendBubble("gm", "你的冒险到此为止。点击左下角「放弃冒险」可重新开局。", "命运");
+            if (result.data.dead) {
+                appendBubble("gm", "你倒下了，视野渐渐暗下去……这一局到此为止。", "命运");
+                setDead(true);
             }
+        } else if (result.code === 409) {
+            // 后端死亡拦截：本存档角色已阵亡
+            setDead(true);
         } else {
             appendBubble("gm", "（出了点问题：" + result.message + "）", "系统");
         }
@@ -175,29 +194,112 @@ async function sendAction() {
         appendBubble("gm", "（与主持人的连接中断了：" + e.message + "）", "系统");
     } finally {
         loadingHint.classList.add("hidden");
-        btnSend.disabled = false;
-        actionInput.focus();
+        if (!actionInput.disabled) {
+            btnSend.disabled = false;
+            actionInput.focus();
+        }
     }
 }
 
-// ---------- 放弃冒险：回到建卡界面 ----------
-function quitGame() {
-    if (!confirm("确定要放弃当前冒险、回到建卡界面吗？")) return;
+// ---------- 读取存档列表（在建卡界面展开/收起）----------
+async function toggleSaveList() {
+    if (!saveList.classList.contains("hidden")) {
+        saveList.classList.add("hidden");
+        return;
+    }
+    saveList.classList.remove("hidden");
+    saveList.textContent = "加载存档中…";
+    try {
+        const resp = await fetch(API + "/api/saves");
+        const result = await resp.json();
+        saveList.innerHTML = "";
+        if (result.code !== 200 || !result.data.length) {
+            const empty = document.createElement("div");
+            empty.className = "save-empty";
+            empty.textContent = "暂无存档";
+            saveList.appendChild(empty);
+            return;
+        }
+        result.data.forEach((s) => {
+            const item = document.createElement("div");
+            item.className = "save-item";
+            const dead = Number(String(s.hp).split("/")[0]) <= 0;
+            const nameEl = document.createElement("span");
+            nameEl.className = "save-name";
+            nameEl.textContent = `${s.name} · ${s.class}${dead ? " ☠" : ""}`;
+            const metaEl = document.createElement("span");
+            metaEl.className = "save-meta";
+            metaEl.textContent = `HP ${s.hp} · ${s.turns} 回合`;
+            item.appendChild(nameEl);
+            item.appendChild(metaEl);
+            item.addEventListener("click", () => resumeSave(s.session_id));
+            saveList.appendChild(item);
+        });
+    } catch (e) {
+        saveList.textContent = "读取失败：" + e.message;
+    }
+}
+
+// ---------- 续玩某个存档 ----------
+async function resumeSave(sid) {
+    try {
+        const resp = await fetch(API + "/api/game/" + sid);
+        const result = await resp.json();
+        if (result.code !== 200) {
+            $("create-error").textContent = result.message || "存档读取失败";
+            return;
+        }
+        sessionId = sid;
+        selectedClass = "";
+        saveList.classList.add("hidden");
+        enterGame(result.data.character);
+        result.data.messages.forEach((m) => {
+            appendBubble(
+                m.role === "user" ? "user" : "gm",
+                cleanMarkdown(m.content),
+                m.role === "user" ? charName : "主持人"
+            );
+        });
+        if (result.data.dead) {
+            appendBubble("gm", "这段记录里，你已经死去了。要重新开始，或换一份存档。", "命运");
+            setDead(true);
+        } else {
+            actionInput.focus();
+        }
+    } catch (e) {
+        $("create-error").textContent = "读取存档失败：" + e.message;
+    }
+}
+
+// ---------- 回到建卡界面 ----------
+function quitToCreate(openSaves) {
     sessionId = "";
     selectedClass = "";
     gameScreen.classList.add("hidden");
     createScreen.classList.remove("hidden");
+    setDead(false);
     document.querySelectorAll(".class-card").forEach((c) => c.classList.remove("selected"));
     $("char-name").value = "";
     btnStart.disabled = true;
-    btnStart.textContent = "踏入云荒";
+    btnStart.textContent = "踏入废土";
+    saveList.classList.add("hidden");
+    if (openSaves) toggleSaveList();
+}
+
+// ---------- 放弃冒险：确认后回到建卡界面 ----------
+function quitGame() {
+    if (!confirm("确定要放弃当前冒险、回到建卡界面吗？")) return;
+    quitToCreate(false);
 }
 
 // ---------- 事件绑定 ----------
 $("char-name").addEventListener("input", checkStartReady);
 btnStart.addEventListener("click", startGame);
 btnSend.addEventListener("click", sendAction);
+btnLoad.addEventListener("click", toggleSaveList);
 $("btn-quit").addEventListener("click", quitGame);
+$("btn-death-new").addEventListener("click", () => quitToCreate(false));
+$("btn-death-load").addEventListener("click", () => quitToCreate(true));
 actionInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();

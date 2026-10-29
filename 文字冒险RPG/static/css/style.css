@@ -153,3 +153,40 @@ html, body {
     .input-bar { padding: 12px 18px 18px; }
     .bubble { max-width: 90%; }
 }
+
+/* ============ 读取存档 & 死亡面板 ============ */
+.btn-secondary {
+    width: 100%; margin-top: 10px; padding: 11px;
+    background: transparent; color: var(--text-dim);
+    border: 1px solid #2e3763; border-radius: 10px;
+    font-size: 14px; cursor: pointer; letter-spacing: 1px;
+}
+.btn-secondary:hover { color: var(--gold); border-color: var(--gold); }
+
+.save-list {
+    margin-top: 12px; max-height: 220px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px;
+    color: var(--text-dim); font-size: 14px;
+}
+.save-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 12px; border-radius: 8px;
+    background: var(--bg-card); border: 1px solid #2e3763; cursor: pointer;
+    transition: border-color .15s;
+}
+.save-item:hover { border-color: var(--gold); }
+.save-name { font-size: 14px; color: var(--text); }
+.save-meta { font-size: 12px; color: var(--text-dim); }
+.save-empty { padding: 8px; text-align: center; color: var(--text-dim); font-size: 13px; }
+
+.death-panel {
+    margin: 0 40px 12px; padding: 20px;
+    background: rgba(60, 20, 24, 0.55);
+    border: 1px solid #6a2b30; border-radius: 12px; text-align: center;
+}
+.death-title { color: var(--hp-bad); font-size: 20px; font-weight: 700; margin-bottom: 16px; }
+.death-actions { display: flex; gap: 12px; justify-content: center; }
+.death-actions .btn-main, .death-actions .btn-secondary {
+    width: auto; min-width: 150px; margin-top: 0; padding: 11px 22px;
+}
+.input-bar input:disabled { opacity: .5; }
