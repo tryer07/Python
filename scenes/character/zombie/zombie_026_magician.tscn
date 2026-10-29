@@ -16,7 +16,7 @@ metadata/_custom_type_script = "uid://jl0nl4a234bc"
 
 [sub_resource type="Resource" id="Resource_hat_drop"]
 script = ExtResource("4_tdg5j")
-sprite_disappear = Array[NodePath]([NodePath("../Body/BodyCorrect/Anim_head/Anim_head1/MagicianHat")])
+sprite_disappear = Array[NodePath]([NodePath("../Body/BodyCorrect/Zombie_body/MagicianHat")])
 node_drop = NodePath("../Body/NodeDrop/Node2D_HatDrop")
 metadata/_custom_type_script = "uid://jl0nl4a234bc"
 

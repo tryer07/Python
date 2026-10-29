@@ -29,12 +29,17 @@ const CARD_SIZE := Vector2(50.0, 70.0)
 const ITEM_ICON_HEIGHT := 150.0
 ## 简介每行放几个字。17 号宋体下 26 字约 442px，面板内宽 560，留得住边。
 const DESCRIPTION_CHARS_PER_LINE := 26
+## 植物立绘的可用画框（宽、高），以及它的纵向中心。
+## [br]卡面区在面板里占 y≈100..310，立绘画框就对齐在同一块地方，名字与说明的位置不用为它让路。
+const FIGURE_BOX := Vector2(360.0, 200.0)
+const FIGURE_CENTER_Y := 200.0
 
 ## 这一屏要展示的掉落，结构见 [method AdventureReward.get_reward]；空字典表示没东西可演。
 var _reward: Dictionary = {}
-## 是否画中间那张大图。
-## [br]冒险关卡现在掉的是草坪上**能捡的卡**（[RewardPickup]），玩家刚把那张卡捡起来看过，
-## 这里再画一遍同一张只是重复；此时只补名字与说明。
+## 是否画那张**种子卡**。
+## [br]第一次发放时画卡（玩家要「拿到手」的那张）；如果卡已经在草坪上被捡起来了
+## （[RewardPickup]），这里改成画植物本身的立绘 —— 同一张卡连着看两遍没有意义，
+## 换成「卡 + 立绘」才是原版那种「恭喜，这株归你了」的完整信息。
 var _with_art: bool = true
 ## 防止「按钮」等重复触发 closed。
 var _is_closing: bool = false
@@ -74,17 +79,15 @@ func _ready() -> void:
 
 	var panel := _build_panel(root)
 	_build_title(panel)
-	var art: Control = null
-	if _with_art:
-		art = _build_card(panel) if _is_plant() else _build_item_icon(panel)
+	var art: Control = _build_art(panel)
 	_build_name(panel)
 	_build_description(panel)
 	_build_confirm(panel)
 
 	# 淡入 + 掉落物从「手里甩出来」的那一下
-	# [br]⚠️ 缩放的**终点**两种形态不一样：卡面要停在 3 倍，道具停在 1 倍（图标 rect 已经算好尺寸了）。
-	# 直接把目标设成 Vector2.ONE 会把卡面从 3 倍缩回 1 倍，一瞬间变成一张 50x70 的小纸片。
-	var target_scale: Vector2 = Vector2(CARD_SCALE, CARD_SCALE) if _is_plant() else Vector2.ONE
+	# [br]⚠️ 缩放的**终点**不是统一的：卡面要停在 3 倍，立绘与道具停在 1 倍
+	# （它们的 rect / 缩放已经算好了）。把卡面也设成 1 倍会瞬间缩成一张 50x70 的小纸片。
+	var target_scale: Vector2 = Vector2(CARD_SCALE, CARD_SCALE) if _is_card() else Vector2.ONE
 	var tween := create_tween()
 	tween.tween_property(scrim, "color:a", 0.72, 0.25)
 	if art != null:
@@ -96,21 +99,6 @@ func _ready() -> void:
 
 
 #region UI 搭建
-## 名字的纵向位置：有图时落在卡面下方（322），无图时上移到标题下面（150），中间不留空洞。
-func _name_y() -> float:
-	return 322.0 if _with_art else 150.0
-
-
-## 说明文字的纵向位置：跟着名字走，两者间距固定 42。
-func _description_y() -> float:
-	return _name_y() + 42.0
-
-
-## 说明文字的高度：无图时面板更空，允许放到 4 行。
-func _description_height() -> float:
-	return 68.0 if _with_art else 110.0
-
-
 ## 居中的弹窗面板，样式沿用游戏里对话框那套 PanelDialogBG。
 func _build_panel(root: Control) -> Panel:
 	var panel := Panel.new()
@@ -136,19 +124,93 @@ func _build_title(panel: Panel) -> void:
 	title.size = Vector2(PANEL_SIZE.x, 44.0)
 
 
+## 决定这一屏中间画什么：
+## [br]· 第一次发放（[member _with_art]）→ 那张可收藏的种子卡；
+## [br]· 卡已经在草坪上被捡过 → 改画**植物本身**（静态预览立绘），不再重复同一张卡；
+## [br]· 道具 → 一律画图标（道具没有第二套美术）。
+func _build_art(panel: Panel) -> Control:
+	if not _is_plant():
+		return _build_item_icon(panel)
+	if _with_art:
+		return _build_card(panel)
+	return _build_plant_figure(panel)
+
+
+## 植物立绘：向 [AllCards] 要一份静态预览（图鉴头像用的同一份美术），
+## 量出它的实际像素范围后等比装进 [constant FIGURE_BOX]，水平垂直都居中。
+## [br]为什么先量再缩：各株的模板尺寸差得很远（豆蔻 37x41、玉米加农炮 69x73），
+## 按固定倍数放大就会有的顶到标题、有的缩成一小团。
+func _build_plant_figure(panel: Panel) -> Control:
+	var reference := _plant_reference()
+	if reference == null:
+		return null
+	var figure: Node2D = AllCards.create_static_preview(reference)
+	if figure == null:
+		push_warning("掉落演出：植物静态预览缺失（植物编号 %d）" % _plant_id())
+		return null
+
+	var holder := Control.new()
+	holder.name = "RewardFigure"
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = FIGURE_BOX
+	holder.position = Vector2((PANEL_SIZE.x - FIGURE_BOX.x) * 0.5, FIGURE_CENTER_Y - FIGURE_BOX.y * 0.5)
+	# 绕盒心缩放，弹出动画才从中间长出来
+	holder.pivot_offset = FIGURE_BOX * 0.5
+	panel.add_child(holder)
+	holder.add_child(figure)
+
+	var bounds: Rect2 = _art_bounds(figure, holder)
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		push_warning("掉落演出：植物立绘量不出尺寸（植物编号 %d）" % _plant_id())
+		holder.queue_free()
+		return null
+
+	# 立绘是卡面模板里那块 CharacterStatic 的复制品，自带 position/scale 与一堆子 Sprite2D。
+	# [br]bounds 是在面框（holder）空间量到的、**已经含 figure 原有缩放**的外框，
+	# 所以倍数 k 直接乘到原 scale 上；包围盒中心相对立绘原点的偏移也同步乘 k，
+	# 视觉中心才会正好落在画框正中（否则会把模板原有的 (24,30) 之类偏移一起放大，立绘歪到一边）。
+	var offset: Vector2 = bounds.get_center() - figure.position
+	var k: float = minf(FIGURE_BOX.x / bounds.size.x, FIGURE_BOX.y / bounds.size.y)
+	figure.scale = figure.scale * k
+	figure.position = FIGURE_BOX * 0.5 - offset * k
+	return holder
+
+
+## 一个节点树里所有 Sprite2D 在 [param relative_to] 空间下的并集矩形。
+## [br][param relative_to] 用 [CanvasItem] 而不是 [Node2D]：立绘的容器是个 [Control]。
+func _art_bounds(root: Node2D, relative_to: CanvasItem) -> Rect2:
+	var out := Rect2()
+	var first := true
+	var to_relative: Transform2D = relative_to.get_global_transform().affine_inverse()
+	var pending: Array[Node] = [root]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		for child: Node in node.get_children():
+			pending.append(child)
+		var sprite := node as Sprite2D
+		# 隐藏件不参与测量：植物模板里常有一两个备用的隐藏贴图，位置往往远在一边，
+		# 算进去会把包围盒撑大，结果立绘缩成一小团。
+		if sprite == null or sprite.texture == null or not sprite.visible or sprite.modulate.a <= 0.0:
+			continue
+		var tex_size: Vector2 = sprite.texture.get_size()
+		var local := Rect2(-tex_size * 0.5 + sprite.offset, tex_size)
+		var xf: Transform2D = to_relative * sprite.get_global_transform()
+		var rect: Rect2 = xf * local
+		out = rect if first else out.merge(rect)
+		first = false
+	return out
+
+
 ## 卡面：直接向 AllCards 要一份真实卡牌实例，保证和卡槽/图鉴里长得一样。
 ## [br]取不到模板时返回 null，整个演出退化成「只有文字」，不会因为一张图缺失就卡住流程。
 ## [br]注意这里的 scale 最终是 [constant CARD_SCALE]（卡面本身要放大 3 倍才够看）。
 func _build_card(panel: Panel) -> Control:
-	var plant_id: int = int(_reward.get("plant_id", 0))
-	if plant_id <= 0:
-		return null
-	var reference := ResourceCardReference.create(ResourceCardReference.CardType.Plant, plant_id)
+	var reference := _plant_reference()
 	if reference == null:
 		return null
 	var card: Card = AllCards.create_card(reference, Card.CardContext.Catalog)
 	if card == null:
-		push_warning("掉落演出：卡牌模板缺失，改为纯文字展示（植物编号 %d）" % plant_id)
+		push_warning("掉落演出：卡牌模板缺失，改为纯文字展示（植物编号 %d）" % _plant_id())
 		return null
 	card.name = "RewardCard"
 	# 卡面只负责好看，不参与点击
@@ -204,7 +266,7 @@ func _build_name(panel: Panel) -> void:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	panel.add_child(label)
-	label.position = Vector2(0.0, _name_y())
+	label.position = Vector2(0.0, 322.0)
 	label.size = Vector2(PANEL_SIZE.x, 36.0)
 
 
@@ -212,13 +274,13 @@ func _build_description(panel: Panel) -> void:
 	var description := _description()
 	if description.is_empty():
 		return
-	var label := _make_label(_wrap_text(description, DESCRIPTION_CHARS_PER_LINE,
-		4 if not _with_art else 3), 17, Color(0.92, 0.96, 0.86))
+	var label := _make_label(_wrap_text(description, DESCRIPTION_CHARS_PER_LINE, 3), 17,
+		Color(0.92, 0.96, 0.86))
 	label.name = "RewardDescription"
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(label)
-	label.position = Vector2(40.0, _description_y())
-	label.size = Vector2(PANEL_SIZE.x - 80.0, _description_height())
+	label.position = Vector2(40.0, 364.0)
+	label.size = Vector2(PANEL_SIZE.x - 80.0, 68.0)
 
 
 ## 按字数硬折行，不用 Label 自带的 autowrap。
@@ -297,6 +359,12 @@ func _is_plant() -> bool:
 	return int(_reward.get("kind", -1)) == AdventureReward.Kind.Plant
 
 
+## 这一屏画的是不是那张种子卡（只有植物 + 第一次发放才是）。
+## [br]卡面要放大 3 倍，立绘/道具则是已经算好的 1 倍 —— 弹出动画的缩放终点靠这个区分。
+func _is_card() -> bool:
+	return _is_plant() and _with_art
+
+
 ## 掉落物的显示名：植物走图鉴里的「名字」，道具走 [constant AdventureReward.ITEMS]。
 func _display_name() -> String:
 	if _is_plant():
@@ -323,6 +391,14 @@ func _plant_key() -> String:
 
 func _plant_id() -> int:
 	return int(_reward.get("plant_id", 0))
+
+
+## 这株植物的卡牌引用；编号非法时返回 null。
+func _plant_reference() -> ResourceCardReference:
+	var plant_id: int = _plant_id()
+	if plant_id <= 0:
+		return null
+	return ResourceCardReference.create(ResourceCardReference.CardType.Plant, plant_id)
 
 
 ## 图鉴里这条植物的完整条目；未加载或没写条目时返回空字典。

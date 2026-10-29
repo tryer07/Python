@@ -23,8 +23,8 @@ class_name Zombie026Magician
 ##      自动同相、同幅、同节奏 —— 因为用的就是同一份数据，不用自己算相位。
 ##
 ## 帽子：二类防具（[constant MAGICIAN_HAT_HP]），打光时走 `body_change_armor2`
-## 的资源驱动飞出去。**头顶不用另补** —— 原素材帽口那块是一片抹出来的平灰，
-## 已经在切图阶段按真实肤色重画进头部件里了，帽子只是压在它上面的一层。
+## 的资源驱动飞出去。飞走之后露出来的是 [constant TEX_HEAD] 里重画的那半个圆顶颅骨
+## —— **原素材那顶帽子底下压的是一块帽檐形状的平涂，不是头**，所以必须重画，见 TEX_HEAD。
 ##
 ## 机制（2026-10-27 按路障僵尸对齐，数值结构不变）：
 ##   * 本体 [constant MAGICIAN_MAX_HP] = 270，死亡临界值走路障那套（2/3-1、1/3-1）
@@ -52,9 +52,13 @@ const ART_WAND_PIXEL := Vector2(41.5, 1097.5)
 const TEX_TORSO: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_torso.png")
 ## 画面右侧那条臂（远的，藏在披风前）
 const TEX_ARM_FAR: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_arm_far.png")
-## 头（脸、下巴、舌、头发）。**颅顶是画在这一块里的** —— 素材里帽口那块是一片
-## 抹出来的平灰，`_build_magician_rig.py` 已经按真实肤色整块重画过了，
-## 所以帽子掉下去时不用再切一层「补出来的头顶」。
+## 头（脸、下巴、舌、头发）＋**重画出来的圆顶颅顶**。
+## [br]⚠️ 素材里的「无帽版」其实不是秃头：被帽子压住的那一块是一块颜色和皮肤相同、
+## 却没有体积也没有纹理的**帽檐形状平涂**（源头是把帽冠切走了、帽檐留在了身体层上）。
+## 帽子一飞走，露出来的就是这块东西 —— 玩家看到的就是「半个头」。
+## [br]所以这块贴图不是直接裁的：裁出 (27,130)-(445,642) 之后，把帽檐带以上整片抹掉，
+## 按额线处的头宽重画了一个椭球圆顶（左右与脸同宽、顶点高出额线 150px，
+## 颜色逐列取自额线下方的真实像素再横向平滑，所以和脸没有色阶断层）。
 const TEX_HEAD: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_head.png")
 ## 魔术帽。节点名必须是 MagicianHat —— 场景里的 `sprite_disappear` 按名字引用了它
 const TEX_HAT: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_hat.png")
@@ -69,15 +73,26 @@ const TEX_LEG_FAR: Texture2D = preload("res://assets/image/character/zombie_magi
 ## 骨头路径都相对僵尸根节点，且**必须是动画轨道真正写在那个节点上**的那一个 ——
 ## 比如外臂要取 `Zombie_outerarm_upper/Zombie_outerarm_upper`（里面那个 Sprite2D），
 ## 取外面那个空 Node2D 就只能拿到一个不动的父变换。
+##
+## ⚠️ 2026-10-29 第五次返工：**头与帽子挂到躯干骨（Zombie_body）上，不再挂头骨。**
+## 原版待机/行走时 Anim_head 会转 ±25°，而我们的头是从平图上切下来的一块矩形，
+## 一转头脖子处就露出背景，整个人看着像已经散架了（用户实测报的就是这个）。
+## 头和躯干挂在同一根骨头上，二者之间的相对变换恒为静止值 —— **脖子永远不会裂**，
+## 帽子跟着头一起走也不会脱位；转头那点灵动换「看不出拼接」是值得的。
+## [br]两条臂仍然各自挂在手臂骨上：臂的包围盒整个落在躯干矩形里（躯干 x14..660 / y493..1212，
+## 近臂 x14..252 / y566..1130），转动时底下垫着的始终是躯干，不会漏背景，
+## 而且咬合那一下全靠近臂，动作不能丢。
+## 两条腿照旧挂腿骨：腿的上端（y986 / y1036 起）在躯干的覆盖范围内（躯干画到 y1212），
+## 迈步时髋部被外套挡住，露不出缝。
 const PART_DEFS := [
 	["MagicianTorso", TEX_TORSO, Vector2(14, 493),
 		"Body/BodyCorrect/Zombie_body", 0],
 	["MagicianArmFar", TEX_ARM_FAR, Vector2(340, 572),
 		"Body/BodyCorrect/Zombie_outerarm_upper/Zombie_outerarm_upper", 2],
-	["MagicianHead", TEX_HEAD, Vector2(27, 201),
-		"Body/BodyCorrect/Anim_head/Anim_head1", 10],
+	["MagicianHead", TEX_HEAD, Vector2(27, 130),
+		"Body/BodyCorrect/Zombie_body", 10],
 	["MagicianHat", TEX_HAT, Vector2(21, 14),
-		"Body/BodyCorrect/Anim_head/Anim_head1", 12],
+		"Body/BodyCorrect/Zombie_body", 12],
 	["MagicianArmNear", TEX_ARM_NEAR, Vector2(14, 566),
 		"Body/BodyCorrect/Anim_innerarm/Anim_innerarm1", 20],
 	["MagicianLegNear", TEX_LEG_NEAR, Vector2(180, 1036),
