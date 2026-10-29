@@ -39,32 +39,32 @@ client = OpenAI(
 
 # ---------- 系统提示词（AI 主持人 GM 的人设与规则）----------
 # {character_block} 会在每次调用时替换成当前角色的档案与状态，让 AI 有据可依
-SYSTEM_PROMPT_TEMPLATE = """你是一名桌游主持人（GM），负责主持一场文字冒险RPG。玩家通过网页输入行动指令，你负责描写世界、扮演所有NPC、推进剧情、判定战斗结果。
+SYSTEM_PROMPT_TEMPLATE = """你是一名桌游主持人（GM），负责主持一场末世生存题材的文字冒险RPG。玩家通过网页输入行动指令，你负责描写世界、扮演所有幸存者与威胁、推进剧情、判定战斗与生存结果。
 
 【当前玩家角色】
 {character_block}
 
 【主持规则】
-1. 世界观：东方奇幻大陆「云荒」，有宗门、妖物、上古遗迹。剧情要连贯，你埋下的伏笔要记得回收。
-2. 每次回复先写剧情描写（150~300字），要有画面感，结尾自然地给玩家留下可行动的方向，但不要列选项清单。
-3. 战斗不要流水账：玩家攻击时你要判定命中与伤害，并体现在状态数值变化里。难度要公平，玩家乱来你可以让后果很严重。
+1. 世界观：大灾变后的废土文明。城市沦为废墟，物资（食物、水、药品、弹药、燃料）极度匮乏，丧尸与变异生物四处游荡，幸存者为争夺资源不择手段，也残存着临时据点与人性的微光。剧情要连贯，你埋下的伏笔要记得回收。
+2. 每次回复先写剧情描写（150~300字），基调冷硬、有画面感，结尾自然地给玩家留下可行动的方向，但不要列选项清单。
+3. 战斗与生存不要流水账：玩家行动时你要判定成败与伤害/消耗，并体现在状态数值变化里。资源要吝啬（受伤掉HP、搜刮得物资、恶战可能消耗或失去物品）。难度要公平，玩家鲁莽就可能送命。
 4. 玩家每次行动后，你必须在回复的最末尾另起一行，用如下格式输出最新状态（这一行会被程序解析，格式绝不能错）：
-[状态] HP=数值/上限 攻击=数值 金币=数值 背包=物品1,物品2
-   示例：[状态] HP=85/100 攻击=12 金币=30 背包=锈剑,伤药x2
+[状态] HP=数值/上限 攻击=数值 物资=数值 背包=物品1,物品2
+   示例：[状态] HP=60/100 攻击=13 物资=25 背包=开山刀,绷带x2
    没有变化也要原样重复当前状态。背包为空时写 背包=无。
 5. 除这一行状态标记外，禁止输出任何面向程序的说明文字、Markdown符号（# * -）、以及括号里的旁白。
-6. 全程使用简体中文，语气沉浸、有代入感，像一个真正的跑团GM。"""
+6. 全程使用简体中文，语气沉浸、有代入感，像一个真正的末日跑团GM。"""
 
 # ---------- 预设职业 ----------
 CHARACTER_CLASSES: dict[str, dict[str, Any]] = {
-    "剑客": {"hp": 100, "attack": 14, "gold": 20, "items": ["铁剑"], "desc": "身法凌厉的流浪剑客，攻高血稳，开局一把铁剑。"},
-    "术士": {"hp": 70, "attack": 18, "gold": 35, "items": ["桃木符"], "desc": "修习秘术的散修，脆皮但攻击极高，随身携带一道护身符。"},
-    "游侠": {"hp": 85, "attack": 12, "gold": 45, "items": ["短弓", "伤药x2"], "desc": "翻山越岭的老猎人，均衡务实，药品和金币比别人都多。"},
+    "退伍军人": {"hp": 110, "attack": 15, "gold": 30, "items": ["开山刀"], "desc": "灾变幸存的老兵，血厚攻高、近战凶猛，随身一把开山刀。"},
+    "急救医生": {"hp": 90, "attack": 10, "gold": 40, "items": ["手术刀", "药品x2"], "desc": "战地医生出身，攻击一般但擅长自救，开局带两份药品。"},
+    "拾荒猎人": {"hp": 85, "attack": 13, "gold": 50, "items": ["自制弩", "匕首"], "desc": "游荡废墟的独行拾荒者，敏捷务实，远程武器和物资都比别人多。"},
 }
 
-# 状态标记解析：[状态] HP=85/100 攻击=12 金币=30 背包=锈剑,伤药x2
+# 状态标记解析：[状态] HP=60/100 攻击=13 物资=25 背包=开山刀,绷带x2
 STATUS_PATTERN = re.compile(
-    r"\[状态\]\s*HP=(\d+)/(\d+)\s*攻击=(\d+)\s*金币=(\d+)\s*背包=(.+)"
+    r"\[状态\]\s*HP=(\d+)/(\d+)\s*攻击=(\d+)\s*物资=(\d+)\s*背包=(.+)"
 )
 
 # ---------- 统一响应模型 ----------
@@ -77,7 +77,7 @@ class ApiResponse(BaseModel):
 # ---------- 请求模型 ----------
 class CreateCharacterRequest(BaseModel):
     name: str = Field(title="角色名", description="玩家给角色起的名字")
-    character_class: str = Field(title="职业", description="剑客 / 术士 / 游侠")
+    character_class: str = Field(title="职业", description="退伍军人 / 急救医生 / 拾荒猎人")
 
 
 class ChatRequest(BaseModel):
@@ -114,7 +114,7 @@ def build_character_block(session_data: dict[str, Any]) -> str:
     return (
         f"姓名：{character['name']}（职业：{character['class']}）\n"
         f"当前状态：HP={status['hp']}/{status['max_hp']} 攻击={status['attack']} "
-        f"金币={status['gold']} 背包={items_text}"
+        f"物资={status['gold']} 背包={items_text}"
     )
 
 
@@ -161,8 +161,8 @@ tags_metadata = [
 ]
 
 app = FastAPI(
-    title="文字冒险RPG",
-    description="云荒大陆 —— AI 主持人（GM）实时生成剧情的文字冒险游戏",
+    title="末世文字冒险RPG",
+    description="废土余生 —— AI 主持人（GM）实时生成剧情的末世生存文字冒险游戏",
     openapi_tags=tags_metadata,
 )
 
@@ -222,8 +222,8 @@ def new_game(request: CreateCharacterRequest) -> ApiResponse:
 
     # 3. 让 GM 生成开场剧情（不带历史，只给人设和角色卡）
     opening_prompt = (
-        f"玩家「{request.name}（{request.character_class}）」刚进入云荒大陆，"
-        f"请为这局冒险写一段开场：交代他此刻身处何地和眼下的困境，并自然邀请他迈出第一步。"
+        f"幸存者「{request.name}（{request.character_class}）」在灾变后的废土上醒来，"
+        f"请为这局冒险写一段开场：交代他此刻身处何种废墟、眼下最迫切的生存威胁（如饥渴、丧尸、敌对幸存者），并自然邀请他迈出求生第一步。"
     )
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         character_block=build_character_block(session_data)
@@ -258,6 +258,14 @@ def game_action(request: ChatRequest) -> ApiResponse:
         return ApiResponse(code=404, message="存档不存在，请重新开局", data=None)
     session_data = load_session(request.session_id)
 
+    # 1.5 死亡拦截：HP 归零后不再推演，必须读取存档或重新开始
+    if session_data["character"]["status"]["hp"] <= 0:
+        return ApiResponse(
+            code=409,
+            message="角色已死亡，无法继续本局，请读取存档或重新开始",
+            data={"dead": True, "character": session_data["character"]},
+        )
+
     # 2. 组装 messages：系统人设(含最新状态) + 历史 + 本次行动
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         character_block=build_character_block(session_data)
@@ -283,7 +291,11 @@ def game_action(request: ChatRequest) -> ApiResponse:
     return ApiResponse(
         code=200,
         message="ok",
-        data={"story": clean_story, "character": session_data["character"]},
+        data={
+            "story": clean_story,
+            "character": session_data["character"],
+            "dead": session_data["character"]["status"]["hp"] <= 0,
+        },
     )
 
 
@@ -300,6 +312,7 @@ def get_game(session_id: str) -> ApiResponse:
             "session_id": session_id,
             "character": session_data["character"],
             "messages": session_data["messages"],
+            "dead": session_data["character"]["status"]["hp"] <= 0,
         },
     )
 

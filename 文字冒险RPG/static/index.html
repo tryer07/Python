@@ -11,16 +11,18 @@
     <!-- ============ 建卡界面 ============ -->
     <div id="create-screen" class="screen">
         <div class="create-card">
-            <h1 class="game-title">云 荒 录</h1>
-            <p class="game-subtitle">AI 主持人实时推演 · 你的每个选择都算数</p>
+            <h1 class="game-title">废 土 余 生</h1>
+            <p class="game-subtitle">末世文字冒险 · AI 主持人实时推演 · 你的每个选择都关乎生死</p>
             <div class="form-row">
                 <label for="char-name">角色名</label>
-                <input type="text" id="char-name" maxlength="8" placeholder="少侠请留名">
+                <input type="text" id="char-name" maxlength="8" placeholder="输入幸存者代号">
             </div>
             <div class="class-list" id="class-list">
                 <!-- 职业卡片由脚本动态渲染 -->
             </div>
-            <button id="btn-start" class="btn-main" disabled>踏入云荒</button>
+            <button id="btn-start" class="btn-main" disabled>踏入废土</button>
+            <button id="btn-load" class="btn-secondary">读取存档 · 继续旧冒险</button>
+            <div id="save-list" class="save-list hidden"></div>
             <p id="create-error" class="create-error"></p>
         </div>
     </div>
@@ -38,7 +40,7 @@
                 <span class="status-label">攻击</span><span id="attack-text" class="status-value">--</span>
             </div>
             <div class="status-item">
-                <span class="status-label">金币</span><span id="gold-text" class="status-value">--</span>
+                <span class="status-label">物资</span><span id="gold-text" class="status-value">--</span>
             </div>
             <div class="status-item items-item">
                 <span class="status-label">背包</span>
@@ -52,6 +54,13 @@
                 <!-- 剧情气泡由 js 动态渲染 -->
             </div>
             <div id="loading-hint" class="loading-hint hidden">主持人正在推演剧情…</div>
+            <div id="death-panel" class="death-panel hidden">
+                <p class="death-title">☠ 你死在了这片废土上</p>
+                <div class="death-actions">
+                    <button id="btn-death-new" class="btn-main">重新开始</button>
+                    <button id="btn-death-load" class="btn-secondary">读取其他存档</button>
+                </div>
+            </div>
             <div class="input-bar">
                 <input type="text" id="action-input" placeholder="输入你的行动，例如：环顾四周，寻找出路" maxlength="200">
                 <button id="btn-send" class="btn-send">行动</button>
