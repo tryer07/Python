@@ -165,11 +165,12 @@ static func get_unlocked_plant_ids() -> Array[int]:
 
 
 ## 按冒险进度收窄 [member Global.global_game_state.curr_plant]。
-## 打开「解锁全部内容」开关时不收窄，直接还原全量。
+## 开发档（见 [DevAccess]，「开放所有关卡」也走这条）不收窄，直接还原全量 ——
+## 用户 2026-10-29 明确：Wow 存档全权限，只有新建存档才需要按进度给卡。
 ## [param extra_plant_ids] 额外强制保留的植物编号，用于「本关预选卡里出现的植物」这类硬需求 ——
 ## 预选关（1-1~1-3、1-5）不走选卡界面，卡槽里的植物一旦不在可用池里就种不下去。
 static func apply_to_game_state(extra_plant_ids: Array[int] = []) -> void:
-	if Global.config_service.open_all_level:
+	if DevAccess.is_dev_save():
 		restore_full()
 		return
 	_capture_full_snapshot()

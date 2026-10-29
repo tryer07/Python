@@ -23,8 +23,9 @@ var all_pages_array : Array[GridContainer]
 var bgm_choose_card: AudioStream = preload("res://assets/audio/BGM/choose_card.mp3")
 
 func _ready() -> void:
-	## 如果没有开放所有关卡
-	if not Global.config_service.open_all_level:
+	## 开发档（Wow / 控制台开了开放所有关卡）不走任何闸门，全部关卡直接可点。
+	## 判定统一走 [DevAccess]，避免这里和主菜单、卡池三处各判一套。
+	if not DevAccess.is_dev_save():
 		## 冒险模式（含 50 关版）**只开放 1-1**，照原版从第一关开始逐关推进：
 		## 打过 1-1 才有 1-2，打过 1-2 才有 1-3 …（名额由 update_lock_level 每关消耗一个）。
 		## [br]⚠️ 2026-10-29 从 2 改成 1：原先为了让玩家开局就能用到朝阳童子（向日葵）

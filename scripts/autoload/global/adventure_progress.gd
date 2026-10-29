@@ -65,10 +65,10 @@ static func get_feature_label(feature: Feature) -> String:
 
 
 ## 该功能当前是否已开放。
-## [br]打开控制台的「开放所有关卡」（[member ConfigService.open_all_level]）时全部放开，
-## 方便调试与非正式存档的连续性 —— 正式存档该开关是关的，走原版流程。
+## [br]开发档（见 [DevAccess]）与「开放所有关卡」开关打开时全部放开 ——
+## 这是用户 2026-10-29 明确的口径：**Wow 存档不设闸门，新建存档才走原版流程**。
 static func is_unlocked(feature: Feature) -> bool:
-	if Global.config_service != null and Global.config_service.open_all_level:
+	if DevAccess.is_dev_save():
 		return true
 	var need: int = get_required_cleared_level(feature)
 	if need <= 0:
@@ -118,9 +118,9 @@ static func is_week_cleared() -> bool:
 
 ## 迷你游戏 / 解谜是否已经整块开放（不再受「先开 3 关」限制）。
 ## [br]原版是打完一週目（拿到银向日葵奖杯）才把剩下的关卡全放出来；
-## 打开控制台的「开放所有关卡」时视作已通关。
+## 开发档视作已通关。
 static func is_side_mode_fully_unlocked() -> bool:
-	if Global.config_service != null and Global.config_service.open_all_level:
+	if DevAccess.is_dev_save():
 		return true
 	return is_week_cleared()
 
