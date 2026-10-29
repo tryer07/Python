@@ -31,11 +31,22 @@ from ursina import (
     held_keys,
     destroy,
     application,
-    time as ursina_time,   # 帧间隔 dt 在 ursina 的 time 模块里，不是标准库 time！
 )
+
+from panda3d.core import ClockObject  # ursina 底层的 Panda3D 全局时钟
 
 from maze_generator import WALL, farthest_cell, floor_cells, generate_maze
 from footstep_sfx import ensure_footstep_sfx
+
+
+def frame_dt() -> float:
+    """帧间隔。ursina 的 time.dt 是运行时才猴补丁挂进标准库 time 模块的，
+    IDE 静态解析报「在 time 中找不到 dt」；其源头就是 globalClock.getDt()。
+    ursina 另有 time_scale 缩放（本游戏从未改过，恒为 1），故直接读全局时钟完全等价"""
+    return _global_clock.getDt()
+
+
+_global_clock = ClockObject.getGlobalClock()
 
 # 警告规避说明：ursina 的 visible/x/y/z/rotation_x/y/z 等属性是运行时动态生成的，
 # IDE 静态解析不到会报"未解析引用"；本文件一律改用可静态解析的等价写法：
@@ -62,9 +73,38 @@ MINIMAP_CELL = 0.010
 MINIMAP_POS = (0.76, 0.36)
 
 
+def _setup_font() -> None:
+    # ursina 默认字体不含中文；fonts/simhei.ttf 存在时切换为黑体，否则原样运行
+    font_file = Path(__file__).resolve().parent / "fonts" / "simhei.ttf"
+    if font_file.exists():
+        Text.default_font = "simhei.ttf"
+        Text.default_monospace_font = "simhei.ttf"
+
+
+def cell_to_world(c: int, r: int) -> tuple[float, float]:
+    x = (c - COLS / 2) * CELL
+    z = (r - ROWS / 2) * CELL
+    return x, z
+
+
+def world_to_cell(x: float, z: float) -> tuple[int, int]:
+    # 一个世界点落在哪个格子：格 (c) 占据 [X_c-CELL/2, X_c+CELL/2]
+    c = int(x / CELL + COLS / 2 + 0.5)
+    r = int(z / CELL + ROWS / 2 + 0.5)
+    return c, r
+
+
+def _cell_to_map(gx: float, gz: float) -> tuple[float, float]:
+    # 连续网格坐标 -> 小地图局部 UI 坐标（+z 向下）
+    return (gx - COLS / 2) * MINIMAP_CELL, -(gz - ROWS / 2) * MINIMAP_CELL
+
+
 class MazeGame:
     def __init__(self) -> None:
-        self._setup_font()
+        self._coach_timer = None
+        self._coach_queue = None
+        self._msg_timer = None
+        _setup_font()
         self.grid: list[list[int]] = []
         self.nodes: list[Entity] = []       # 本局生成的场景实体，换局时销毁
         self.keys: list[Entity] = []        # 尚未被收集的钥匙
@@ -101,12 +141,6 @@ class MazeGame:
         self._refresh_start_overlay()   # 开场必须把新手引导面板亮出来
 
     # ---------------- 中文字体 ----------------
-    def _setup_font(self) -> None:
-        # ursina 默认字体不含中文；fonts/simhei.ttf 存在时切换为黑体，否则原样运行
-        font_file = Path(__file__).resolve().parent / "fonts" / "simhei.ttf"
-        if font_file.exists():
-            Text.default_font = "simhei.ttf"
-            Text.default_monospace_font = "simhei.ttf"
 
     # ---------------- 脚步声 ----------------
     def _setup_audio(self) -> None:
@@ -124,16 +158,6 @@ class MazeGame:
             self.sfx = {}
 
     # ---------------- 网格 <-> 世界坐标 ----------------
-    def cell_to_world(self, c: int, r: int) -> tuple[float, float]:
-        x = (c - COLS / 2) * CELL
-        z = (r - ROWS / 2) * CELL
-        return x, z
-
-    def world_to_cell(self, x: float, z: float) -> tuple[int, int]:
-        # 一个世界点落在哪个格子：格 (c) 占据 [X_c-CELL/2, X_c+CELL/2]
-        c = int(x / CELL + COLS / 2 + 0.5)
-        r = int(z / CELL + ROWS / 2 + 0.5)
-        return c, r
 
     def is_blocked(self, x: float, z: float) -> bool:
         """把玩家当成小方块，采样其周围 8 个点；任一点落在墙上即视为阻挡"""
@@ -144,7 +168,7 @@ class MazeGame:
             (PLAYER_RADIUS, -PLAYER_RADIUS), (-PLAYER_RADIUS, PLAYER_RADIUS),
         ]
         for ox, oz in offsets:
-            c, r = self.world_to_cell(x + ox, z + oz)
+            c, r = world_to_cell(x + ox, z + oz)
             if c < 0 or c >= COLS or r < 0 or r >= ROWS:
                 return True
             if self.grid[r][c] == WALL:
@@ -277,7 +301,7 @@ class MazeGame:
             for c, val in enumerate(row):
                 if val != WALL:
                     continue
-                x, z = self.cell_to_world(c, r)
+                x, z = cell_to_world(c, r)
                 block = Entity(
                     model="cube", color=wall_tints[(r + c) % 2], texture="brick",
                     texture_scale=(2, 2),
@@ -291,12 +315,12 @@ class MazeGame:
         start_cell = (1, 1)
         self.exit_cell = farthest_cell(self.grid, start_cell)
 
-        sx, sz = self.cell_to_world(*start_cell)
+        sx, sz = cell_to_world(*start_cell)
         self.px, self.pz = sx, sz
         self.yaw, self.pitch = self._pick_spawn_yaw(), 0.0
 
         # 出口：发光的绿色门柱
-        ex, ez = self.cell_to_world(*self.exit_cell)
+        ex, ez = cell_to_world(*self.exit_cell)
         pillar = Entity(
             model="cube", color=color.rgb32(60, 235, 140),
             position=(ex, WALL_HEIGHT / 2, ez), scale=(CELL * 0.5, WALL_HEIGHT, CELL * 0.5),
@@ -317,7 +341,7 @@ class MazeGame:
         ]
         random.shuffle(candidates)
         for c, r in candidates[: self.total_keys]:
-            x, z = self.cell_to_world(c, r)
+            x, z = cell_to_world(c, r)
             key = Entity(
                 model="cube", color=color.rgb32(255, 205, 60),
                 position=(x, 1.4, z), scale=(0.9, 0.9, 0.9),
@@ -346,9 +370,6 @@ class MazeGame:
         return best_yaw
 
     # ---------------- 小地图（屏幕右上角 UI 层）----------------
-    def _cell_to_map(self, gx: float, gz: float) -> tuple[float, float]:
-        # 连续网格坐标 -> 小地图局部 UI 坐标（+z 向下）
-        return (gx - COLS / 2) * MINIMAP_CELL, -(gz - ROWS / 2) * MINIMAP_CELL
 
     def _build_minimap(self) -> None:
         cs = MINIMAP_CELL
@@ -367,35 +388,38 @@ class MazeGame:
             for c, val in enumerate(row):
                 if val != WALL:
                     continue
-                lx, ly = self._cell_to_map(c, r)
+                lx, ly = _cell_to_map(c, r)
                 dot = Entity(parent=self.minimap, model="quad", color=color.rgb32(150, 158, 190), scale=cs, position=(lx, ly))
                 self.map_nodes.append(dot)
 
         # 出口：绿色标记
-        ex, ey = self._cell_to_map(*self.exit_cell)
+        ex, ey = _cell_to_map(*self.exit_cell)
         exit_dot = Entity(parent=self.minimap, model="quad", color=color.rgb32(40, 220, 120), scale=cs * 1.6, position=(ex, ey))
         self.map_nodes.append(exit_dot)
 
         # 钥匙：金色标记（与 self.keys 同序，便于拾取时同步移除）
         self.map_keys = []
         for key in self.keys:
-            kc = self.world_to_cell(key.position.x, key.position.z)
-            kx, ky = self._cell_to_map(*kc)
+            kc = world_to_cell(key.position.x, key.position.z)
+            kx, ky = _cell_to_map(*kc)
             kd = Entity(parent=self.minimap, model="quad", color=color.gold, scale=cs * 1.3, position=(kx, ky))
             self.map_keys.append(kd)
             self.map_nodes.append(kd)
 
         # 玩家：白点 + 朝向短红线（最后创建，序在最顶）
-        self.map_player = Entity(parent=self.minimap, model="quad", color=color.white, scale=cs * 1.4, position=(0, 0))
-        self.map_facing = Entity(parent=self.minimap, model="quad", color=color.red, scale=(cs * 3.0, cs * 0.5), origin=(-0.5, 0), position=(0, 0))
-        self.map_nodes.extend([self.map_player, self.map_facing])
+        # 先存局部变量再入列表：避免把 Entity | None 成员塞进 list[Entity] 的类型告警
+        player_dot = Entity(parent=self.minimap, model="quad", color=color.white, scale=cs * 1.4, position=(0, 0))
+        facing_line = Entity(parent=self.minimap, model="quad", color=color.red, scale=(cs * 3.0, cs * 0.5), origin=(-0.5, 0), position=(0, 0))
+        self.map_player = player_dot
+        self.map_facing = facing_line
+        self.map_nodes.extend([player_dot, facing_line])
         self._update_minimap()
 
     # ---------------- 每帧更新（由全局 update 调用）----------------
     def update(self) -> None:
         # 出口门柱自转，保持一点生气
         if hasattr(self, "exit_glow"):
-            self.exit_glow.rotation += Vec3(0, 40 * ursina_time.dt, 0)
+            self.exit_glow.rotation += Vec3(0, 40 * frame_dt(), 0)
 
         if self.state != "playing":
             self.message.text = ""
@@ -408,13 +432,13 @@ class MazeGame:
 
         # 底部临时消息：计时到点自动清除
         if self._msg_timer > 0:
-            self._msg_timer -= ursina_time.dt
+            self._msg_timer -= frame_dt()
             if self._msg_timer <= 0:
                 self.message.text = ""
 
         # 新手引导：按时间逐条弹出提示
         if self._coach_queue:
-            self._coach_timer -= ursina_time.dt
+            self._coach_timer -= frame_dt()
             if self._coach_timer <= 0:
                 dur, tip = self._coach_queue.pop(0)
                 self.coach.text = tip
@@ -451,8 +475,8 @@ class MazeGame:
         if length > 0:
             running = bool(held_keys["left shift"] or held_keys["right shift"])
             speed = RUN_SPEED if running else WALK_SPEED
-            step_x = move.x / length * speed * ursina_time.dt
-            step_z = move.z / length * speed * ursina_time.dt
+            step_x = move.x / length * speed * frame_dt()
+            step_z = move.z / length * speed * frame_dt()
             old_x, old_z = self.px, self.pz
             # 分轴推进 → 贴墙时能顺着墙滑行，不会被卡死
             if not self.is_blocked(self.px + step_x, self.pz):
@@ -473,7 +497,7 @@ class MazeGame:
 
         # 钥匙自转 + 上下浮动 + 拾取判定
         for i, key in enumerate(list(self.keys)):
-            key.rotation += Vec3(0, 120 * ursina_time.dt, 0)
+            key.rotation += Vec3(0, 120 * frame_dt(), 0)
             pos = key.position
             key.position = Vec3(pos.x, 1.4 + 0.15 * math.sin(time.time() * 2.5 + i * 1.7), pos.z)
             if math.dist((key.position.x, key.position.z), (self.px, self.pz)) < CELL * 0.45:
@@ -501,10 +525,10 @@ class MazeGame:
             self.message.text = ""
 
     def exit_pos_x(self) -> float:
-        return self.cell_to_world(*self.exit_cell)[0]
+        return cell_to_world(*self.exit_cell)[0]
 
     def exit_pos_z(self) -> float:
-        return self.cell_to_world(*self.exit_cell)[1]
+        return cell_to_world(*self.exit_cell)[1]
 
     def _update_hud(self) -> None:
         if self.collected >= self.total_keys:
@@ -519,7 +543,7 @@ class MazeGame:
             return
         gx = self.px / CELL + COLS / 2
         gz = self.pz / CELL + ROWS / 2
-        lx, ly = self._cell_to_map(gx, gz)
+        lx, ly = _cell_to_map(gx, gz)
         self.map_player.position = Vec3(lx, ly, 0)
         if self.map_facing is not None:
             # 视线 (sin yaw, cos yaw) 映射到小地图：地图 +x 右、+y 上（对应世界 -z）
