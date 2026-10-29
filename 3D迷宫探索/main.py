@@ -30,6 +30,7 @@ from ursina import (
     held_keys,
     destroy,
     application,
+    time as ursina_time,   # 帧间隔 dt 在 ursina 的 time 模块里，不是标准库 time！
 )
 
 from maze_generator import FLOOR, WALL, farthest_cell, floor_cells, generate_maze
@@ -359,7 +360,7 @@ class MazeGame:
     def update(self) -> None:
         # 出口门柱自转，保持一点生气
         if hasattr(self, "exit_glow"):
-            self.exit_glow.rotation_y += 40 * time.dt
+            self.exit_glow.rotation_y += 40 * ursina_time.dt
 
         if self.state != "playing":
             self.message.text = ""
@@ -372,13 +373,13 @@ class MazeGame:
 
         # 底部临时消息：计时到点自动清除
         if self._msg_timer > 0:
-            self._msg_timer -= time.dt
+            self._msg_timer -= ursina_time.dt
             if self._msg_timer <= 0:
                 self.message.text = ""
 
         # 新手引导：按时间逐条弹出提示
         if self._coach_queue:
-            self._coach_timer -= time.dt
+            self._coach_timer -= ursina_time.dt
             if self._coach_timer <= 0:
                 dur, tip = self._coach_queue.pop(0)
                 self.coach.text = tip
@@ -415,8 +416,8 @@ class MazeGame:
         if length > 0:
             running = bool(held_keys["left shift"] or held_keys["right shift"])
             speed = RUN_SPEED if running else WALK_SPEED
-            step_x = move.x / length * speed * time.dt
-            step_z = move.z / length * speed * time.dt
+            step_x = move.x / length * speed * ursina_time.dt
+            step_z = move.z / length * speed * ursina_time.dt
             old_x, old_z = self.px, self.pz
             # 分轴推进 → 贴墙时能顺着墙滑行，不会被卡死
             if not self.is_blocked(self.px + step_x, self.pz):
@@ -437,7 +438,7 @@ class MazeGame:
 
         # 钥匙自转 + 上下浮动 + 拾取判定
         for i, key in enumerate(list(self.keys)):
-            key.rotation_y += 120 * time.dt
+            key.rotation_y += 120 * ursina_time.dt
             key.y = 1.4 + 0.15 * math.sin(time.time() * 2.5 + i * 1.7)
             if math.dist((key.x, key.z), (self.px, self.pz)) < CELL * 0.45:
                 idx = self.keys.index(key)
