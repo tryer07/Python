@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>云荒录 · 文字冒险RPG</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <!-- ============ 建卡界面 ============ -->
+    <div id="create-screen" class="screen">
+        <div class="create-card">
+            <h1 class="game-title">云 荒 录</h1>
+            <p class="game-subtitle">AI 主持人实时推演 · 你的每个选择都算数</p>
+            <div class="form-row">
+                <label for="char-name">角色名</label>
+                <input type="text" id="char-name" maxlength="8" placeholder="少侠请留名">
+            </div>
+            <div class="class-list" id="class-list">
+                <!-- 职业卡片由脚本动态渲染 -->
+            </div>
+            <button id="btn-start" class="btn-main" disabled>踏入云荒</button>
+            <p id="create-error" class="create-error"></p>
+        </div>
+    </div>
+
+    <!-- ============ 游戏界面 ============ -->
+    <div id="game-screen" class="screen hidden">
+        <aside class="status-panel">
+            <h2 id="char-title">--</h2>
+            <div class="status-item">
+                <span class="status-label">生命</span>
+                <div class="hp-bar"><div id="hp-fill" class="hp-fill"></div></div>
+                <span id="hp-text" class="hp-text">--</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">攻击</span><span id="attack-text" class="status-value">--</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">金币</span><span id="gold-text" class="status-value">--</span>
+            </div>
+            <div class="status-item items-item">
+                <span class="status-label">背包</span>
+                <ul id="items-list" class="items-list"></ul>
+            </div>
+            <button id="btn-quit" class="btn-quit">放弃冒险</button>
+        </aside>
+
+        <main class="story-area">
+            <div id="story-log" class="story-log">
+                <!-- 剧情气泡由 js 动态渲染 -->
+            </div>
+            <div id="loading-hint" class="loading-hint hidden">主持人正在推演剧情…</div>
+            <div class="input-bar">
+                <input type="text" id="action-input" placeholder="输入你的行动，例如：环顾四周，寻找出路" maxlength="200">
+                <button id="btn-send" class="btn-send">行动</button>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/game.js"></script>
+</body>
+</html>
