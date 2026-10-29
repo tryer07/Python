@@ -38,6 +38,20 @@ func reload_session_for_current_user() -> void:
 		return
 	save_service.load_global_game_data()
 	config_service.load_and_apply_config()
+	## 换存档时把跳关调试开关清零。
+	## [br]这两个是 static，不跟着存档走：上一条命开着「放开到第 N 关」，
+	## 换到新存档后它还在，新存档就会顶着别人的放开范围跑。
+	AdventurePlantUnlock.debug_unlock_by_highest_level = false
+	AdventurePlantUnlock.debug_unlock_through_level = 0
+
+
+## 换存档 / 给当前存档改名之后，让主菜单重算闸门与卡池。
+## [br]主菜单是同一份场景实例，闸门只在 `_ready` 里算一次；不重算就会保留上一个存档的外观
+## （实测：新建 test 存档后菜单仍是 Wow 的全解锁样子）。当前场景不是主菜单时什么也不做。
+func refresh_start_menu_gate() -> void:
+	var scene: Node = get_tree().current_scene
+	if scene != null and scene.has_method("refresh_unlock_gate"):
+		scene.call("refresh_unlock_gate")
 
 var main_game:MainGameManager
 var game_para:ResourceLevelData

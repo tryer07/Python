@@ -95,6 +95,8 @@ func _on_button_ok_pressed():
 	Global.save_service.save_now()
 	Global.user_manager.set_current_user(curr_user_button.user_name_on_curr_button)
 	Global.reload_session_for_current_user()
+	# 主菜单不重建，闸门/卡池不会自己更新 —— 不重算就会保留上一个存档的全解锁外观
+	Global.refresh_start_menu_gate()
 	visible = false
 
 ## 点击 删除 按钮

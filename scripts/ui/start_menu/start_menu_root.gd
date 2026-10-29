@@ -59,8 +59,7 @@ func _ready() -> void:
 	## 才会被 apply_to_game_state 收窄。玩家开机直接点「图鉴」时没经过选关界面，
 	## 不收就会把还没解锁的植物全摆出来（图鉴页就是按 curr_plant 铺的）。
 	## [br]开发档（Wow）在这个函数里会走「还原全量」分支，不受影响。
-	AdventurePlantUnlock.apply_to_game_state()
-	_apply_unlock_gate()
+	refresh_unlock_gate()
 
 ## 花园需要浇水
 var garden_need_water:=true
@@ -71,6 +70,16 @@ func _unrealized():
 
 
 #region 主菜单闸门
+## 按**当前存档**重算闸门与卡池。
+## [br]⚠️ 切换存档后必须重算：主菜单是同一份场景实例，闸门只在 [method _ready] 里算过一次，
+## 换存档后场景既不重建、`_ready` 也不会再跑，界面会保留上一个存档的外观 ——
+## 实测就在这儿踩过：新建 test 存档后菜单还是 Wow 的全解锁样子，看起来像「新存档也全开了」。
+## [br]调用方见 [method Global.refresh_start_menu_gate]（换存档、给当前存档改名之后）。
+func refresh_unlock_gate() -> void:
+	AdventurePlantUnlock.apply_to_game_state()
+	_apply_unlock_gate()
+
+
 ## 按冒险进度决定哪些入口能玩、哪些压暗、哪些还不该出现。
 ## [br]开发档（Wow）走 [DevAccess] 的短路，这里全部按「已解锁」处理。
 func _apply_unlock_gate() -> void:
@@ -90,7 +99,11 @@ func _apply_unlock_gate() -> void:
 			continue
 		var feature: AdventureProgress.Feature = HIDDEN_ENTRIES[node_path]
 		entry.visible = AdventureProgress.is_unlocked(feature)
-	print("主菜单闸门：", AdventureProgress.describe())
+	print("主菜单闸门：当前存档 %s（%s）｜%s" % [
+		DevAccess.current_user_name(),
+		"全权限" if DevAccess.is_dev_save() else "逐关解锁",
+		AdventureProgress.describe(),
+	])
 
 
 ## 把墓碑设成「未解锁」外观：只压暗，不加任何覆盖物。

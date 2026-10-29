@@ -25,7 +25,7 @@ const DEV_USER_NAMES: PackedStringArray = ["Wow"]
 static func is_dev_save() -> bool:
 	if Global.config_service != null and Global.config_service.open_all_level:
 		return true
-	return is_dev_user_name(_current_user_name())
+	return is_dev_user_name(current_user_name())
 
 
 ## 指定用户名是否属于开发档。
@@ -38,8 +38,8 @@ static func is_dev_user_name(user_name: String) -> bool:
 	return false
 
 
-## 当前登录的用户名；未选用户时返回空串。
-static func _current_user_name() -> String:
+## 当前登录的用户名（即存档名）；未选用户时返回空串。
+static func current_user_name() -> String:
 	if Global.user_manager == null:
 		return ""
 	return String(Global.user_manager.curr_user_name)
