@@ -1,9 +1,9 @@
 # 3D迷宫探索 —— ursina 第一人称迷宫逃脱
 #
 # 运行方式：直接 Run 本文件（main.py），会弹出一个 3D 窗口。
-# 操作：按【空格】开始并锁定鼠标 → WASD 移动 / Shift 奔跑 / 移动鼠标转视角
+# 操作：点击画面或按【空格】开始（自动锁定鼠标）→ WASD 移动 / Shift 奔跑 / 移动鼠标转视角
 #       找到全部 5 把金色钥匙，走到绿色出口即可逃脱；
-#       R 随机换一局新迷宫，Esc 在未开始时退出、游戏中释放鼠标。
+#       R 随机换一局新迷宫，游戏中按 Esc 暂停并释放鼠标，Esc 在未开始时退出。
 #
 # 依赖：pip install ursina （本项目已安装，兼容 Python 3.14）
 #
@@ -153,9 +153,9 @@ class MazeGame:
         self.overlay.text = (
             "【 3D 迷宫逃脱 】\n\n"
             "找到 5 把金色钥匙，再冲向绿色出口即可逃脱\n\n"
-            "空格 开始        WASD 移动\n"
+            "点击画面或按空格开始   WASD 移动\n"
             "Shift 奔跑       鼠标 转视角\n"
-            "R 换一局迷宫     Esc 释放鼠标 / 退出"
+            "R 换一局迷宫     Esc 暂停 / 退出"
         )
 
     # ---------------- 生成新的一局 ----------------
@@ -303,8 +303,13 @@ class MazeGame:
             self.message.text = ""
             return
 
+        # 未锁定鼠标视为暂停：冻结视角与移动，避免光标飞出后拖拽视角、误以为失控
+        if not mouse.locked:
+            self.message.text = "已暂停 —— 点击画面或按空格继续"
+            return
+
         # 视角：鼠标速度是每帧归一化位移，乘以灵敏度
-        vel = getattr(mouse, "velocity", Vec3(0, 0, 0))
+        vel = mouse.velocity
         self.yaw += vel[0] * MOUSE_SENS
         self.pitch -= vel[1] * MOUSE_SENS
         self.pitch = max(-80.0, min(80.0, self.pitch))
@@ -316,19 +321,21 @@ class MazeGame:
         forward = Vec3(f.x, 0, f.z)
         right = Vec3(r.x, 0, r.z)
 
+        # 注意：held_keys 是 defaultdict，按键松开后条目仍在字典里（值为 0），
+        # 必须按键取值判真值，绝不能用 `"w" in held_keys`（按过一次就永远为 True）
         move = Vec3(0, 0, 0)
-        if "w" in held_keys:
+        if held_keys["w"]:
             move += forward
-        if "s" in held_keys:
+        if held_keys["s"]:
             move -= forward
-        if "d" in held_keys:
+        if held_keys["d"]:
             move += right
-        if "a" in held_keys:
+        if held_keys["a"]:
             move -= right
 
         length = math.hypot(move.x, move.z)
         if length > 0:
-            running = "shift" in held_keys
+            running = bool(held_keys["left shift"] or held_keys["right shift"])
             speed = RUN_SPEED if running else WALK_SPEED
             step_x = move.x / length * speed * time.dt
             step_z = move.z / length * speed * time.dt
@@ -414,10 +421,11 @@ class MazeGame:
 
     # ---------------- 键盘输入（由全局 input 调用）----------------
     def input(self, key: str) -> None:
-        if key == "space" and self.state == "start":
-            self.state = "playing"
-            self.overlay.enabled = False
-            mouse.locked = True
+        if key in ("space", "left mouse down") and self.state != "won":
+            if self.state == "start":
+                self.state = "playing"
+                self.overlay.enabled = False
+            mouse.locked = True           # 开始游戏 / 从暂停中继续
         elif key == "r":
             self.state = "start"
             self.new_maze()
@@ -425,7 +433,7 @@ class MazeGame:
             mouse.locked = False
         elif key == "escape":
             if self.state == "playing":
-                mouse.locked = False        # 释放鼠标好退出/调试
+                mouse.locked = False        # 暂停并释放鼠标
             else:
                 application.quit()
 

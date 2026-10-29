@@ -1,4 +1,4 @@
-/* 云荒录 · 文字冒险RPG 样式 */
+/* 废土余生 · 末世文字冒险RPG 样式 */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
@@ -25,26 +25,43 @@ html, body {
 .hidden { display: none !important; }
 .screen { height: 100vh; width: 100%; }
 
-/* ============ 建卡界面 ============ */
+/* ============ 建卡界面（全屏双栏：左侧世界观，右侧建卡） ============ */
 #create-screen {
     display: flex; align-items: center; justify-content: center;
+    padding: 4vh 5vw;
+}
+.create-layout {
+    display: flex; align-items: center; gap: 56px;
+    width: min(1280px, 100%);
+}
+.create-hero { flex: 1; min-width: 0; }
+.game-title {
+    font-size: clamp(44px, 4.6vw, 68px); letter-spacing: 10px;
+    color: var(--gold); font-weight: 700;
+    text-shadow: 0 0 24px rgba(230,193,90,.3);
+}
+.game-subtitle {
+    color: var(--text-dim); font-size: 15px; margin: 14px 0 30px;
+    letter-spacing: 1px;
+}
+.hero-points { list-style: none; display: flex; flex-direction: column; gap: 16px; }
+.hero-points li {
+    position: relative; padding-left: 20px;
+    color: var(--text); font-size: 14.5px; line-height: 1.9;
+    border-left: 2px solid #38406b; padding: 2px 0 2px 18px;
+}
+.hero-points li::before {
+    content: ""; position: absolute; left: -6px; top: 12px;
+    width: 10px; height: 10px; border-radius: 2px;
+    background: var(--accent); transform: rotate(45deg);
 }
 .create-card {
-    width: 460px; max-width: 92vw;
+    width: 520px; flex-shrink: 0;
     background: var(--bg-panel);
     border: 1px solid #2e3763;
     border-radius: 16px;
     padding: 36px 32px;
     box-shadow: 0 20px 60px rgba(0,0,0,.5);
-}
-.game-title {
-    text-align: center; font-size: 40px; letter-spacing: 8px;
-    color: var(--gold); font-weight: 700;
-    text-shadow: 0 0 24px rgba(230,193,90,.3);
-}
-.game-subtitle {
-    text-align: center; color: var(--text-dim); font-size: 13px;
-    margin: 10px 0 28px;
 }
 .form-row { margin-bottom: 20px; }
 .form-row label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
@@ -146,7 +163,15 @@ html, body {
 .story-log::-webkit-scrollbar { width: 8px; }
 .story-log::-webkit-scrollbar-thumb { background: #2e3763; border-radius: 4px; }
 
-/* 响应式：窄屏隐藏侧边栏数值改用顶部条 */
+/* 响应式：窄屏建卡改为上下堆叠；隐藏侧栏数值改用顶部条 */
+@media (max-width: 980px) {
+    .create-layout { flex-direction: column; gap: 32px; }
+    .create-hero { text-align: center; }
+    .game-title { text-align: center; }
+    .hero-points li { border-left: none; padding-left: 0; }
+    .hero-points li::before { display: none; }
+    .create-card { width: min(520px, 100%); }
+}
 @media (max-width: 640px) {
     .status-panel { width: 180px; padding: 16px 12px; }
     .story-log { padding: 18px; }

@@ -3,27 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>云荒录 · 文字冒险RPG</title>
+    <title>废土余生 · 末世文字冒险RPG</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
 
     <!-- ============ 建卡界面 ============ -->
     <div id="create-screen" class="screen">
-        <div class="create-card">
-            <h1 class="game-title">废 土 余 生</h1>
-            <p class="game-subtitle">末世文字冒险 · AI 主持人实时推演 · 你的每个选择都关乎生死</p>
-            <div class="form-row">
-                <label for="char-name">角色名</label>
-                <input type="text" id="char-name" maxlength="8" placeholder="输入幸存者代号">
-            </div>
-            <div class="class-list" id="class-list">
-                <!-- 职业卡片由脚本动态渲染 -->
-            </div>
-            <button id="btn-start" class="btn-main" disabled>踏入废土</button>
-            <button id="btn-load" class="btn-secondary">读取存档 · 继续旧冒险</button>
-            <div id="save-list" class="save-list hidden"></div>
-            <p id="create-error" class="create-error"></p>
+        <div class="create-layout">
+            <section class="create-hero">
+                <h1 class="game-title">废 土 余 生</h1>
+                <p class="game-subtitle">末世文字冒险 · AI 主持人实时推演 · 你的每个选择都关乎生死</p>
+                <ul class="hero-points">
+                    <li>大灾变后文明沦为废墟：食物、水、药品、弹药极度匮乏，丧尸与变异生物四处游荡，绝望的幸存者比它们更危险。</li>
+                    <li>AI 主持人替你扮演废土上的所有角色，剧情随你的行动实时展开，一切皆有可能。</li>
+                    <li>生命、攻击、物资、背包都会因你的选择而变动，一次误判就可能命丧废土。</li>
+                    <li>每一步操作自动存档，随时关掉页面，下次读取存档继续求生。</li>
+                </ul>
+            </section>
+            <section class="create-card">
+                <div class="form-row">
+                    <label for="char-name">角色名</label>
+                    <input type="text" id="char-name" maxlength="8" placeholder="输入幸存者代号">
+                </div>
+                <div class="class-list" id="class-list">
+                    <!-- 职业卡片由脚本动态渲染 -->
+                </div>
+                <button id="btn-start" class="btn-main" disabled>踏入废土</button>
+                <button id="btn-load" class="btn-secondary">读取存档 · 继续旧冒险</button>
+                <div id="save-list" class="save-list hidden"></div>
+                <p id="create-error" class="create-error"></p>
+            </section>
         </div>
     </div>
 

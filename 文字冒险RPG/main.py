@@ -206,7 +206,7 @@ def new_game(request: CreateCharacterRequest) -> ApiResponse:
     session_id = generate_session_id()
     session_data: dict[str, Any] = {
         "current_session": session_id,
-        "name": f"{request.name}的冒险",
+        "name": f"{request.name}的废土求生",
         "character": {
             "name": request.name,
             "class": request.character_class,
