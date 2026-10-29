@@ -51,9 +51,9 @@ KEY_COUNT = 5         # 需要收集的钥匙数量
 # 脚步声：每走过这么多个世界单位踩一步
 STEP_LEN_WALK = 2.2
 STEP_LEN_RUN = 1.5
-# 小地图：每格在屏幕 UI 空间的尺寸与右上角位置
+# 小地图：每格在屏幕 UI 空间的尺寸与右上角位置（UI：屏幕高=1，x 范围±0.889）
 MINIMAP_CELL = 0.010
-MINIMAP_POS = (0.38, 0.38)
+MINIMAP_POS = (0.76, 0.36)
 
 
 class MazeGame:
@@ -78,7 +78,9 @@ class MazeGame:
         self.yaw = 0.0
         self.pitch = 0.0
 
-        scene.clear_color = color.rgb(12, 14, 22)
+        # 注意：ursina 的 color.rgb() 不做 0-255 换算（超 1 会被钳成纯白），
+        # 0-255 色值必须用 rgb32/rgba32
+        scene.clear_color = color.rgb32(12, 14, 22)
         camera.clip_plane_far = 200
         mouse.locked = False
 
@@ -102,8 +104,10 @@ class MazeGame:
         try:
             assets_dir = str(Path(__file__).resolve().parent / "assets")
             paths = ensure_footstep_sfx(assets_dir)
-            self.sfx["walk"] = Audio(paths["walk"], volume=0.5, autoplay=False, auto_destroy=False)
-            self.sfx["run"] = Audio(paths["run"], volume=0.55, autoplay=False, auto_destroy=False)
+            # 必须传 Path 对象：ursina 的 Audio 对 str 会拿它当 glob 模式去搜文件，
+            # 绝对路径永远搜不到（只有 Path 才走直接加载分支）
+            self.sfx["walk"] = Audio(Path(paths["walk"]), volume=0.5, autoplay=False, auto_destroy=False)
+            self.sfx["run"] = Audio(Path(paths["run"]), volume=0.55, autoplay=False, auto_destroy=False)
         except Exception as e:  # noqa: BLE001  （音频失败不应阻断游戏启动）
             print("脚步声初始化失败，已禁用音效:", e)
             self.sfx = {}
@@ -138,39 +142,42 @@ class MazeGame:
 
     # ---------------- UI ----------------
     def _build_ui(self) -> None:
+        # 注意：ursina 的 Text.size 是 UI 世界单位（屏幕高=1），默认 0.025；
+        # 传像素值（如 20）会把文字/背景板放大几十倍盖住整屏
         self.hud = Text(
-            text="", position=(-0.48, 0.46), origin=(-0.5, 0.5),
-            color=color.white, size=20, background=True,
+            text="", position=(-0.85, 0.47), origin=(-0.5, 0.5),
+            color=color.white, size=0.03,
         )
         self.help_bar = Text(
             text="W/A/S/D 移动     鼠标 转视角     Shift 跑     Esc 暂停",
-            position=(0, 0.465), origin=(0, 0.5),
-            color=color.rgb(205, 210, 230), size=15, background=True,
+            position=(0, 0.47), origin=(0, 0.5),
+            color=color.rgb32(205, 210, 230), size=0.024, background=True,
         )
         self.message = Text(
             text="", position=(0, -0.42), origin=(0, 0.5),
-            color=color.gold, size=22,
+            color=color.gold, size=0.035,
         )
         # 开场/胜利弹窗：全屏遮罩 + 说明文字 + 大大的开始按钮
         self.overlay_bg = Entity(
             parent=camera.ui, model="quad",
-            color=color.rgba(6, 9, 16, 246), scale=(3, 3),
+            color=color.rgba32(6, 9, 16, 246), scale=(3, 3),
         )
         self.overlay = Text(
             text="", position=(0, 0.16), origin=(0, 0.5),
-            color=color.white, size=26,
+            color=color.white, size=0.035,
         )
         self.start_button = Button(
             text="点 我 开 始", position=(0, -0.30), origin=(0, 0),
-            scale=(1.7, 0.13), color=color.rgb(72, 96, 176),
-            highlight_color=color.rgb(96, 124, 210), text_size=26,
+            scale=(0.4, 0.09), color=color.rgb32(72, 96, 176),
+            highlight_color=color.rgb32(96, 124, 210), text_size=1.4,
             on_press=self._begin,
         )
         self.overlay_parts = [self.overlay_bg, self.overlay, self.start_button]
-        # 新手引导字幕：进入游戏后按节奏逐条弹出
+        # 新手引导字幕：进入游戏后按节奏逐条弹出（不用 background：
+        # 背景板在空文本时创建，后续不会随文字变宽，会残留错位黑块）
         self.coach = Text(
             text="", position=(0, -0.30), origin=(0, 0),
-            color=color.rgb(255, 214, 100), size=26, background=True,
+            color=color.rgb32(255, 214, 100), size=0.032,
         )
         self.coach.visible = False
         self._msg_timer = 0.0
@@ -239,17 +246,17 @@ class MazeGame:
     def _build_maze_geometry(self) -> None:
         # 地板 + 天花板（把整个迷宫封闭起来，无需天空盒）
         floor = Entity(
-            model="quad", color=color.rgb(64, 68, 92),
+            model="quad", color=color.rgb32(64, 68, 92),
             rotation_x=90, scale=(COLS * CELL, ROWS * CELL), position=(0, 0, 0),
         )
         ceiling = Entity(
-            model="quad", color=color.rgb(38, 42, 60),
+            model="quad", color=color.rgb32(38, 42, 60),
             rotation_x=-90, scale=(COLS * CELL, ROWS * CELL), position=(0, WALL_HEIGHT, 0),
         )
         self.nodes.extend([floor, ceiling])
 
         # 墙体：每个 WALL 格放一个立方体（纯视觉，碰撞走网格逻辑）
-        wall_color = color.rgb(136, 124, 162)
+        wall_color = color.rgb32(136, 124, 162)
         for r, row in enumerate(self.grid):
             for c, val in enumerate(row):
                 if val != WALL:
@@ -270,16 +277,17 @@ class MazeGame:
         sx, sz = self.cell_to_world(*start_cell)
         self.px, self.pz = sx, sz
         # 出生朝向对准开口方向，避免一进场就面对墙不知所措
+        # （yaw=0 看 +Z 即 grid[2][1] 格；yaw=90 看 +X 即 grid[1][2] 格）
         self.yaw, self.pitch = (90.0 if self.grid[1][2] != WALL else 0.0), 0.0
 
         # 出口：发光的绿色门柱
         ex, ez = self.cell_to_world(*self.exit_cell)
         pillar = Entity(
-            model="cube", color=color.rgb(60, 235, 140),
+            model="cube", color=color.rgb32(60, 235, 140),
             position=(ex, WALL_HEIGHT / 2, ez), scale=(CELL * 0.5, WALL_HEIGHT, CELL * 0.5),
         )
         glow = Entity(
-            model="cube", color=color.rgb(140, 255, 190),
+            model="cube", color=color.rgb32(140, 255, 190),
             position=(ex, WALL_HEIGHT / 2, ez), scale=(CELL * 0.85, WALL_HEIGHT, CELL * 0.85),
         )
         self.nodes.extend([pillar, glow])
@@ -296,12 +304,12 @@ class MazeGame:
         for c, r in candidates[: self.total_keys]:
             x, z = self.cell_to_world(c, r)
             key = Entity(
-                model="cube", color=color.rgb(255, 205, 60),
+                model="cube", color=color.rgb32(255, 205, 60),
                 position=(x, 1.4, z), scale=(0.9, 0.9, 0.9),
             )
             # 钥匙顶天光柱：让玩家在长廊远处就能瞄到
             Entity(
-                parent=key, model="cube", color=color.rgba(255, 215, 90, 80),
+                parent=key, model="cube", color=color.rgba32(255, 215, 90, 80),
                 position=(0, 1.0, 0), scale=(0.3, 3.2, 0.3),
             )
             key.rotation_y = random.uniform(0, 360)
@@ -322,7 +330,7 @@ class MazeGame:
         # 背景遮板（先创建，序在最底）
         bg = Entity(
             parent=self.minimap, model="quad",
-            color=color.rgba(8, 10, 18, 200),
+            color=color.rgba32(8, 10, 18, 200),
             scale=(COLS * cs + 0.01, ROWS * cs + 0.01), position=(0, 0, 1),
         )
         self.map_nodes.append(bg)
@@ -333,12 +341,12 @@ class MazeGame:
                 if val != WALL:
                     continue
                 lx, ly = self._cell_to_map(c, r)
-                dot = Entity(parent=self.minimap, model="quad", color=color.rgb(150, 158, 190), scale=cs, position=(lx, ly))
+                dot = Entity(parent=self.minimap, model="quad", color=color.rgb32(150, 158, 190), scale=cs, position=(lx, ly))
                 self.map_nodes.append(dot)
 
         # 出口：绿色标记
         ex, ey = self._cell_to_map(*self.exit_cell)
-        exit_dot = Entity(parent=self.minimap, model="quad", color=color.rgb(40, 220, 120), scale=cs * 1.6, position=(ex, ey))
+        exit_dot = Entity(parent=self.minimap, model="quad", color=color.rgb32(40, 220, 120), scale=cs * 1.6, position=(ex, ey))
         self.map_nodes.append(exit_dot)
 
         # 钥匙：金色标记（与 self.keys 同序，便于拾取时同步移除）
@@ -388,17 +396,17 @@ class MazeGame:
             self.coach.visible = False
 
         # 视角：鼠标速度是每帧归一化位移，乘以灵敏度
+        # 实测确认（截图验证）：ursina 相机 rotation=(pitch, yaw, 0)，
+        #   rotation.x 正值朝下看；pitch 定义为鼠标上移为正，直接传入即可
         vel = mouse.velocity
         self.yaw += vel[0] * MOUSE_SENS
         self.pitch -= vel[1] * MOUSE_SENS
         self.pitch = max(-80.0, min(80.0, self.pitch))
         camera.rotation = Vec3(self.pitch, self.yaw, 0)
 
-        # 朝向：直接用 camera 的世界前/右向量拍平到水平面，规避朝向约定问题
-        f = camera.forward
-        r = camera.right
-        forward = Vec3(f.x, 0, f.z)
-        right = Vec3(r.x, 0, r.z)
+        yaw_rad = math.radians(self.yaw)
+        forward = Vec3(math.sin(yaw_rad), 0, math.cos(yaw_rad))
+        right = Vec3(math.cos(yaw_rad), 0, -math.sin(yaw_rad))
 
         # 注意：held_keys 是 defaultdict，按键松开后条目仍在字典里（值为 0），
         # 必须按键取值判真值，绝不能用 `"w" in held_keys`（按过一次就永远为 True）
@@ -486,8 +494,9 @@ class MazeGame:
         lx, ly = self._cell_to_map(gx, gz)
         self.map_player.position = (lx, ly)
         if self.map_facing is not None:
-            fwd = camera.forward
-            angle = math.degrees(math.atan2(-fwd.z, fwd.x))
+            # 视线 (sin yaw, cos yaw) 映射到小地图：地图 +x 右、+y 上（对应世界 -z）
+            yaw_rad = math.radians(self.yaw)
+            angle = math.degrees(math.atan2(-math.cos(yaw_rad), math.sin(yaw_rad)))
             self.map_facing.position = (lx, ly)
             self.map_facing.rotation_z = angle
 
@@ -537,7 +546,9 @@ def input(key: str) -> None:  # noqa: A001  （ursina 约定：主脚本里定�
 
 
 if __name__ == "__main__":
-    app = Ursina(title="3D 迷宫逃脱", borderless=False, fullscreen=False)
+    # development_mode=False：关掉右上角红X/fps/实体计数等开发调试件，正式游玩界面不需要
+    app = Ursina(title="3D 迷宫逃脱", borderless=False, fullscreen=False,
+                 development_mode=False)
     window.size = (1280, 720)
     game = MazeGame()
     app.run()

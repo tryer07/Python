@@ -48,12 +48,20 @@ SYSTEM_PROMPT_TEMPLATE = """你是一名桌游主持人（GM），负责主持�
 1. 世界观：大灾变后的废土文明。城市沦为废墟，物资（食物、水、药品、弹药、燃料）极度匮乏，丧尸与变异生物四处游荡，幸存者为争夺资源不择手段，也残存着临时据点与人性的微光。剧情要连贯，你埋下的伏笔要记得回收。
 2. 每次回复先写剧情描写（150~300字），基调冷硬、有画面感，结尾自然地给玩家留下可行动的方向，但不要列选项清单。
 3. 战斗与生存不要流水账：玩家行动时你要判定成败与伤害/消耗，并体现在状态数值变化里。资源要吝啬（受伤掉HP、搜刮得物资、恶战可能消耗或失去物品）。难度要公平，玩家鲁莽就可能送命。
+3.1 战斗伤害参照（按玩家攻击力与敌人强度判断，必须有明确数值变化，不许含糊带过）：
+    - 玩家被普通丧尸抓伤：掉 5~12 HP；被精英或成群丧尸围攻：掉 15~25 HP；被变异体正面击中：掉 25~40 HP。
+    - 玩家出手收益与攻击值挂钩：攻击力越高越容易一击重创敌人，但敌人力量明显强于玩家时，正面硬拼要吃亏。
+    - 逃跑、攀爬、翻窗等动作：成功则不掉血，失败掉 5~10 HP 或被围住。
+    - 搜刮一处废墟：物资 +5~15；搜刮高风险区域（医院、军械库）可得更多，但必伴随一次遭遇判定。
+    - 进食、饮水、治疗要消耗对应物品，消耗后必须从背包里移除，不能白得好处。
+3.2 状态数值只增不减是不允许的：每次行动后对照上文，稍微盘点玩家还剩多少代价没付。
 4. 玩家每次行动后，你必须在回复的最末尾另起一行，用如下格式输出最新状态（这一行会被程序解析，格式绝不能错）：
 [状态] HP=数值/上限 攻击=数值 物资=数值 背包=物品1,物品2
    示例：[状态] HP=60/100 攻击=13 物资=25 背包=开山刀,绷带x2
    没有变化也要原样重复当前状态。背包为空时写 背包=无。
 5. 除这一行状态标记外，禁止输出任何面向程序的说明文字、Markdown符号（# * -）、以及括号里的旁白。
-6. 全程使用简体中文，语气沉浸、有代入感，像一个真正的末日跑团GM。"""
+6. 全程使用简体中文，语气沉浸、有代入感，像一个真正的末日跑团GM。
+7. 基调克制：写具体的动作、气味、声音和身体的感受，不写空洞的抒情和比喻堆砌。宁可短，不要飘。"""
 
 # ---------- 预设职业 ----------
 CHARACTER_CLASSES: dict[str, dict[str, Any]] = {
@@ -126,10 +134,29 @@ def call_gm(messages: list[Any]) -> str:
         model="deepseek-chat",
         messages=messages,
         stream=False,
-        temperature=1.2,
+        temperature=0.85,  # 末世基调要冷，温度太高会写出飘乎乎的句子
+        max_tokens=800,  # 150~300 字剧情 + 状态行足够，防止 AI 越写越长
     )
     ai_reply: str = response.choices[0].message.content or ""
     return ai_reply
+
+
+# ---------- 会话摘要 ----------
+SUMMARY_MARK = "【前情摘要】"
+
+
+def build_summary_prompt(messages: list[Any]) -> list[Any]:
+    """让 GM 把即将被丢掉的老剧情压成一段摘要，保住伏笔"""
+    history_text = "\n".join(
+        f"{'玩家' if m['role'] == 'user' else 'GM'}：{m['content']}" for m in messages
+    )
+    return [
+        {
+            "role": "system",
+            "content": "你是跑团记录员。把下面这段游戏经历压缩成 120 字以内的前情摘要，只保留：玩家去过哪、遇到过谁、结下什么仇或恩、埋下但还没收回的线索、失去或得到的要紧物品。不加评论，不写状态数值，直接给摘要正文。",
+        },
+        {"role": "user", "content": history_text},
+    ]
 
 
 def apply_status_to_session(session_data: dict[str, Any], reply_text: str) -> str:
@@ -267,10 +294,17 @@ def game_action(request: ChatRequest) -> ApiResponse:
             data={"dead": True, "character": session_data["character"]},
         )
 
-    # 2. 组装 messages：系统人设(含最新状态) + 历史 + 本次行动
+    # 2. 组装 messages：系统人设(含最新状态) + 前情摘要 + 历史 + 本次行动
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         character_block=build_character_block(session_data)
     )
+    # 摘要跟历史之间用一条 user 记录放进去，不让它混进 GM 的规则里
+    summary = session_data.get("summary")
+    if summary:
+        system_prompt += (
+            f"\n\n【前情摘要】这局早些时候发生过：{summary}\n"
+            f"续写时请保持与摘要一致，别再重复已经结束的段落。"
+        )
     messages: list[Any] = [{"role": "system", "content": system_prompt}]
     messages.extend(session_data["messages"])
     messages.append({"role": "user", "content": request.message})
@@ -284,8 +318,21 @@ def game_action(request: ChatRequest) -> ApiResponse:
     # 5. 历史只存干净剧情（状态行每次由系统提示词现给，不必落盘）
     session_data["messages"].append({"role": "user", "content": request.message})
     session_data["messages"].append({"role": "assistant", "content": clean_story})
-    # 控制存档体积：过长时丢弃最早的消息，保留最近 40 条
-    if len(session_data["messages"]) > 40:
+
+    # 5.5 历史过长时，先把最早的一段压成摘要顶到最前面，再裁掉原消息
+    #     纯粹截断会让 GM 忘掉伏笔，摘要能把这根线续上
+    if len(session_data["messages"]) > 60:
+        old_messages = session_data["messages"][:-40]
+        try:
+            summary_reply = call_gm(build_summary_prompt(old_messages))
+            summary_text = summary_reply.strip()
+            if summary_text:
+                # 摘要作为一条 system 性质的记录挂在最前，玩家看不到
+                session_data["summary"] = summary_text
+                logging.info(f"[摘要] 会话 {request.session_id} 已压缩 {len(old_messages)} 条历史")
+        except Exception as exc:
+            # 摘要失败不影响本局继续玩，直接退回截断
+            logging.warning(f"[摘要] 生成失败，本回合改为直接截断: {exc}")
         session_data["messages"] = session_data["messages"][-40:]
     save_session(session_data)
 
@@ -322,10 +369,15 @@ def get_game(session_id: str) -> ApiResponse:
 def list_saves() -> ApiResponse:
     saves: list[dict[str, Any]] = []
     for save_file in sorted(SAVES_DIR.glob("*.json"), reverse=True):
-        with open(save_file, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
-        character = data["character"]
-        status = character["status"]
+        try:
+            with open(save_file, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+            character = data["character"]
+            status = character["status"]
+        except (json.JSONDecodeError, KeyError) as exc:
+            # 单个存档损坏不能让整张列表打不开，跳过并留个记录
+            logging.warning(f"[存档] {save_file.name} 读取失败，已跳过: {exc}")
+            continue
         saves.append(
             {
                 "session_id": save_file.stem,
@@ -336,6 +388,23 @@ def list_saves() -> ApiResponse:
             }
         )
     return ApiResponse(code=200, message="ok", data=saves)
+
+
+@app.delete("/api/game/{session_id}", response_model=ApiResponse, summary="删除指定存档", tags=["存档"])
+def delete_save(session_id: str) -> ApiResponse:
+    # 只允许删 saves 目录下的普通文件，防止传 ../ 之类的路径乱删东西
+    save_file = get_save_file(session_id)
+    if save_file.parent.resolve() != SAVES_DIR.resolve() or save_file.suffix != ".json":
+        return ApiResponse(code=400, message="存档名不合法", data=None)
+    if not save_file.exists():
+        return ApiResponse(code=404, message="存档不存在或已删除", data=None)
+    try:
+        save_file.unlink()
+    except OSError as exc:
+        logging.error(f"[删除] {save_file.name} 删除失败: {exc}")
+        return ApiResponse(code=500, message="删除失败，文件可能正被占用", data=None)
+    logging.info(f"[删除] 存档 {session_id} 已删除")
+    return ApiResponse(code=200, message="已删除", data={"session_id": session_id})
 
 
 if __name__ == "__main__":

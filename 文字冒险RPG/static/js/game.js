@@ -224,19 +224,63 @@ async function toggleSaveList() {
             const item = document.createElement("div");
             item.className = "save-item";
             const dead = Number(String(s.hp).split("/")[0]) <= 0;
+            const info = document.createElement("div");
+            info.className = "save-info";
             const nameEl = document.createElement("span");
             nameEl.className = "save-name";
             nameEl.textContent = `${s.name} · ${s.class}${dead ? " ☠" : ""}`;
             const metaEl = document.createElement("span");
             metaEl.className = "save-meta";
             metaEl.textContent = `HP ${s.hp} · ${s.turns} 回合`;
-            item.appendChild(nameEl);
-            item.appendChild(metaEl);
+            info.appendChild(nameEl);
+            info.appendChild(metaEl);
+            item.appendChild(info);
+
+            const delBtn = document.createElement("button");
+            delBtn.className = "save-del";
+            delBtn.type = "button";
+            delBtn.title = "删除这份存档";
+            delBtn.textContent = "删除";
+            // 阻止冒泡，否则点删除会顺带进入这局游戏
+            delBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                deleteSave(s.session_id, s.name, item);
+            });
+            item.appendChild(delBtn);
+
             item.addEventListener("click", () => resumeSave(s.session_id));
             saveList.appendChild(item);
         });
     } catch (e) {
         saveList.textContent = "读取失败：" + e.message;
+    }
+}
+
+// ---------- 删除某份存档 ----------
+async function deleteSave(sid, name, itemEl) {
+    if (!confirm(`确定删除「${name}」这份存档吗？删了就找不回来了。`)) return;
+    try {
+        const resp = await fetch(API + "/api/game/" + encodeURIComponent(sid), { method: "DELETE" });
+        const result = await resp.json();
+        if (result.code !== 200) {
+            alert(result.message || "删除失败");
+            return;
+        }
+        if (itemEl) itemEl.remove();
+        // 如果删的是当前正在玩的这局，直接退回建卡界面
+        if (sessionId === sid) {
+            appendBubble("gm", "这份存档被删掉了，这一局到此结束。", "系统");
+            quitToCreate(false);
+        }
+        if (!saveList.querySelector(".save-item")) {
+            saveList.innerHTML = "";
+            const empty = document.createElement("div");
+            empty.className = "save-empty";
+            empty.textContent = "暂无存档";
+            saveList.appendChild(empty);
+        }
+    } catch (e) {
+        alert("删除失败：" + e.message);
     }
 }
 
@@ -292,12 +336,20 @@ function quitGame() {
     quitToCreate(false);
 }
 
+// ---------- 删除当前这一局的存档 ----------
+async function deleteCurrentSave() {
+    if (!sessionId) return;
+    if (!confirm("确定删除当前这一局的存档吗？删了就找不回来了。")) return;
+    await deleteSave(sessionId, charName || "当前存档", null);
+}
+
 // ---------- 事件绑定 ----------
 $("char-name").addEventListener("input", checkStartReady);
 btnStart.addEventListener("click", startGame);
 btnSend.addEventListener("click", sendAction);
 btnLoad.addEventListener("click", toggleSaveList);
 $("btn-quit").addEventListener("click", quitGame);
+$("btn-delete-save").addEventListener("click", deleteCurrentSave);
 $("btn-death-new").addEventListener("click", () => quitToCreate(false));
 $("btn-death-load").addEventListener("click", () => quitToCreate(true));
 actionInput.addEventListener("keydown", (e) => {
