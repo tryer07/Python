@@ -2,7 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://b72u5kwdpw4te" path="res://scenes/character/zombie/zombie_001_norm.tscn" id="1_norm"]
 [ext_resource type="Script" path="res://scripts/character/zombie/zombie_026_magician.gd" id="2_magician"]
-[ext_resource type="Texture2D" path="res://assets/image/character/zombie_magician/magician_hat.png" id="3_hat"]
+[ext_resource type="Texture2D" path="res://assets/image/character/zombie_magician/magician_p_hat.png" id="3_hat"]
 [ext_resource type="Script" uid="uid://jl0nl4a234bc" path="res://scripts/resources/resource_body_change.gd" id="4_tdg5j"]
 [ext_resource type="Script" uid="uid://cj4hccewpwgyv" path="res://scripts/character/components/drop_body/ZombieArm1Drop.gd" id="5_drop"]
 
@@ -16,7 +16,7 @@ metadata/_custom_type_script = "uid://jl0nl4a234bc"
 
 [sub_resource type="Resource" id="Resource_hat_drop"]
 script = ExtResource("4_tdg5j")
-sprite_disappear = Array[NodePath]([NodePath("../Body/MagicianCastPivot/MagicianBob/MagicianHat")])
+sprite_disappear = Array[NodePath]([NodePath("../Body/BodyCorrect/Anim_head/Anim_head1/MagicianHat")])
 node_drop = NodePath("../Body/NodeDrop/Node2D_HatDrop")
 metadata/_custom_type_script = "uid://jl0nl4a234bc"
 
