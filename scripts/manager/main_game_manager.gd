@@ -884,9 +884,9 @@ func complete_boss_victory(glo_pos: Vector2) -> void:
 	_finish_round_victory(glo_pos)
 
 
-## 完成已接受的胜利，非末轮直接过渡，末轮生成奖杯；[param glo_pos] 为世界坐标。
+## 完成已接受的胜利，非末轮直接过渡，末轮生成奖杯或直接结算掉落；[param glo_pos] 为世界坐标。
 func _finish_round_victory(glo_pos: Vector2) -> void:
-	print("胜利条件达成，创建奖杯")
+	print("胜利条件达成，结算通关")
 	## 如果不是最后一轮游戏，触发下一轮
 	if curr_game_round != game_para.game_round:
 		_advance_to_next_round()
@@ -894,6 +894,14 @@ func _finish_round_victory(glo_pos: Vector2) -> void:
 
 
 	print("=======================游戏结束，您获胜了=======================")
+	## 冒险 50 关**首次通关**：草坪上不掉奖杯，直接演「获得新植物 / 获得新道具」那一屏。
+	## [br]原版通关弹出的是解锁的那张东西（种子卡 / 铲子 / 纸条 / 奖杯），草坪上不出现可拾取物；
+	## 这里沿用同一个奖杯场景，玩家得先捡起来才看到卡面，等于一关演两遍。
+	## [br]奖杯只在「没有掉落」的情况保留 —— 重复挑战已通关的关卡、以及其它模式（没有掉落表）。
+	if not _take_level_reward().is_empty():
+		_victory_without_trophy()
+		return
+
 	# 本轮唯一奖杯，由已接受的胜利请求创建。
 	var trophy = SceneRegistry.TROPHY.instantiate()
 	canvas_layer_temp.add_child(trophy)
@@ -909,6 +917,20 @@ func _finish_round_victory(glo_pos: Vector2) -> void:
 
 	else:
 		throw_to(trophy, trophy.position - Vector2(randf_range(-50,50), 0))
+
+## 不经过奖杯、直接结算通关（冒险 50 关首次通关走这条）。
+## [br]奖杯那一套手感只保留「抛出 + 停下」的等待感：这里换上胜利音效、等一拍，
+## 再进 [method win_main_game] —— 掉落演出由它接手，玩家看到的第一眼就是那张卡。
+## [br]⚠️ [member main_game_progress] 必须手动置成 GAME_OVER：原本是 `throw_to` 顺手设的，
+## 不走奖杯就没有人设，后续「关掉了没有」的判断会全部落空。
+func _victory_without_trophy() -> void:
+	main_game_progress = E_MainGameProgress.GAME_OVER
+	SoundManager.play_other_SFX("winmusic")
+	# 留一拍再弹卡面：僵尸刚倒下就砸出一张卡，看不清是谁赢了
+	await get_tree().create_timer(0.9).timeout
+	if is_inside_tree() and not is_queued_for_deletion():
+		win_main_game()
+
 
 ## 奖杯抛出
 func throw_to(node:Node2D, target_pos: Vector2, duration: float = 1.0):
