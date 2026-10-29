@@ -69,6 +69,7 @@ enum TypeBulletSFX{
 	Melon,		## 西瓜
 	Dart = 6,	## 豆蔻飞镖
 	DartFire = 7,	## 豆蔻火焰镖
+	AdoublePellet = 8,	## 阿双竹铳弹丸
 	Bowling = 1001,		## 保龄球
 }
 
@@ -94,15 +95,27 @@ const SFXBulletMap := {
 		preload("res://assets/audio/SFX/bullet/melonimpact.ogg"),
 		preload("res://assets/audio/SFX/bullet/melonimpact2.ogg")
 	],
-	## 飞镖扎进木头/皮肉：短促的「啪」，带木杆共振和铁头的那一下
+	## 飞镖扎进木头：**2026-10-29 重做**。原版频谱重心只有 609 Hz、66% 能量压在
+	## 200 Hz 以下、-40dB 衰减 279 ms，听感发闷。现在按「清脆」重合成：
+	## 重心 4169 Hz、200 Hz 以下 0.0%、-40dB 衰减 25 ms。
+	## 构成是硬瞬态 + 2.9/4.35/6.1 kHz 三根**非谐**金属泛音（「叮」的来源）+ 很薄的木芯。
 	TypeBulletSFX.Dart: [
 		preload("res://assets/audio/SFX/bullet/darthit1.wav"),
-		preload("res://assets/audio/SFX/bullet/darthit2.wav")
+		preload("res://assets/audio/SFX/bullet/darthit2.wav"),
+		preload("res://assets/audio/SFX/bullet/darthit3.wav")
 	],
 	## 火焰镖：低频「轰」+ 拖尾噼啪
 	TypeBulletSFX.DartFire: [
 		preload("res://assets/audio/SFX/bullet/dartfirehit1.wav"),
 		preload("res://assets/audio/SFX/bullet/dartfirehit2.wav")
+	],
+	## 阿双竹节弹丸撞上僵尸：一声干脆的「嗒·啪」。
+	## 和豆蔻刻意区分：重心 2317 Hz（豆蔻 4169）、1.15 kHz 单根木质正弦 + 谐波（豆蔻是非谐金属三连），
+	## 听感是「竹子弹丸打在皮肉上」而不是「铁器叮」。同样是清脆（快起振 1.5 ms、衰减 33 ms）。
+	TypeBulletSFX.AdoublePellet: [
+		preload("res://assets/audio/SFX/bullet/adouble_pellet_hit1.wav"),
+		preload("res://assets/audio/SFX/bullet/adouble_pellet_hit2.wav"),
+		preload("res://assets/audio/SFX/bullet/adouble_pellet_hit3.wav")
 	],
 
 	TypeBulletSFX.Bowling: [
@@ -292,6 +305,9 @@ var sfx_bullet_pool = []
 const SFXBulletVolume := {
 	TypeBulletSFX.Dart: -6.0,
 	TypeBulletSFX.DartFire: -6.0,
+	## 阿双弹丸比飞镖稍响一点：它是「一下一下」的节奏，两声之间有空档，
+	## 和飞镖那种连续甩的频率不同，压到 -6 会显得没劲。
+	TypeBulletSFX.AdoublePellet: -4.0,
 }
 
 func play_sfx_with_pool(sfx_resource: AudioStream, volume_db: float = 0.0) -> AudioStreamPlayer:

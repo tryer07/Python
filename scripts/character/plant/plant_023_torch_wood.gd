@@ -16,6 +16,8 @@ const bullet_upgrade_data = {
 	BulletRegistry.BulletType.Bullet002PeaSnow: BulletRegistry.BulletType.Bullet103IceFire,
 	## 豆蔻的飞镖穿过火炬树桩后淬火，变成火焰飞镖（伤害翻倍）
 	BulletRegistry.BulletType.Bullet101Dart: BulletRegistry.BulletType.Bullet102DartFire,
+	## 阿双的竹铳弹丸穿过火炬树桩后淬火，变成火焰弹丸（伤害 20 → 40）
+	BulletRegistry.BulletType.Bullet104AdoublePellet: BulletRegistry.BulletType.Bullet105AdoublePelletFire,
 }
 
 func ready_norm() -> void:

@@ -35,6 +35,9 @@ enum BulletType{
 	Bullet102DartFire = 102,	## 豆蔻火焰飞镖（飞镖穿过火炬树桩后升级）
 	Bullet103IceFire = 103,		## 雪清仙子冰火球（冰球穿过火炬树桩后升级，伤害翻倍且保留减速）
 
+	Bullet104AdoublePellet = 104,		## 阿双竹铳弹丸（竹节短柱 + 锥形弹头）
+	Bullet105AdoublePelletFire = 105,	## 阿双火焰弹丸（弹丸穿过火炬树桩后升级，伤害翻倍）
+
 }
 
 
@@ -74,6 +77,8 @@ enum AttackMode {
 	BulletType.Bullet101Dart : preload("res://scenes/bullet/bullet_101_dart.tscn"),
 	BulletType.Bullet102DartFire : preload("res://scenes/bullet/bullet_102_dart_fire.tscn"),
 	BulletType.Bullet103IceFire : preload("res://scenes/bullet/bullet_103_ice_fire.tscn"),
+	BulletType.Bullet104AdoublePellet : preload("res://scenes/bullet/bullet_104_adouble_pellet.tscn"),
+	BulletType.Bullet105AdoublePelletFire : preload("res://scenes/bullet/bullet_105_adouble_pellet_fire.tscn"),
 }
 
 ## 获取子弹场景方法
