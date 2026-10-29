@@ -14,17 +14,20 @@ class_name Zombie026Magician
 ##     跟原版完全不是一个动作 —— 这就是「啃食很离谱」的根因。
 ##
 ## 现在的做法（**这套就是后面换皮的模版**）：
-##   1. 立绘按骨架边界切成 8 块（见 [constant PART_DEFS]），每块挂到原版僵尸对应的 Sprite2D 骨头上；
+##   1. 立绘切成 7 块（见 [constant PART_DEFS]），**全部挂到同一根骨头**（`Zombie_body`）；
+##      为什么不分散挂到臂骨/腿骨，见 PART_DEFS 上面那大段说明 —— 简单说：平图里手臂压着衣服，
+##      切出来的手臂矩形自带衣服像素，只要它相对躯干转一点，就会「衣服跟着滑出去 + 原位留个手臂影子」；
 ##   2. 原版散件不隐藏节点，只把 `self_modulate.a` 清零（**不能用 visible** ——
 ##      Godot 的 visible 会连子节点一起藏，我们的部件就长在骨头下面）；
 ##   3. 每块的位置由「art_xf」反算：`rest = 骨头静止变换⁻¹ × art_xf`，
-##      所以**骨架回到静止姿势时，七块拼回去和原立绘逐像素一致**（实测漏像素 0）；
-##   4. 之后所有动作全部由原版动画数据驱动，idle / walk / eat / 死亡 / 减速
-##      自动同相、同幅、同节奏 —— 因为用的就是同一份数据，不用自己算相位。
+##      所以**七块拼回去和原立绘逐像素一致**（实测漏像素 0）；同一根骨头 ⇒ 永远拼得回去；
+##   4. 整体动作（idle / walk / 转身 / 死亡）由原版动画数据驱动；四肢不再各自摆动，
+##      走路手感由 [method _update_shuffle] 的整体起伏 + [_cast_pivot] 的施法姿态补，
+##      两者都作用在全部七块上，同样不可能撕裂。
 ##
 ## 帽子：二类防具（[constant MAGICIAN_HAT_HP]），打光时走 `body_change_armor2`
-## 的资源驱动飞出去。飞走之后露出来的是 [constant TEX_HEAD] 里重画的那半个圆顶颅骨
-## —— **原素材那顶帽子底下压的是一块帽檐形状的平涂，不是头**，所以必须重画，见 TEX_HEAD。
+## 的资源驱动飞出去。飞走之后露出来的是一颗普通的秃头 —— 但**素材里帽子底下压的
+## 是一块帽檐形状的平涂、不是头**，所以那颗头顶是补画出来的，见 TEX_HEAD。
 ##
 ## 机制（2026-10-27 按路障僵尸对齐，数值结构不变）：
 ##   * 本体 [constant MAGICIAN_MAX_HP] = 270，死亡临界值走路障那套（2/3-1、1/3-1）
@@ -52,13 +55,15 @@ const ART_WAND_PIXEL := Vector2(41.5, 1097.5)
 const TEX_TORSO: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_torso.png")
 ## 画面右侧那条臂（远的，藏在披风前）
 const TEX_ARM_FAR: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_arm_far.png")
-## 头（脸、下巴、舌、头发）＋**重画出来的圆顶颅顶**。
+## 头（脸、下巴、舌、头发）＋**重画出来的头顶**。
 ## [br]⚠️ 素材里的「无帽版」其实不是秃头：被帽子压住的那一块是一块颜色和皮肤相同、
 ## 却没有体积也没有纹理的**帽檐形状平涂**（源头是把帽冠切走了、帽檐留在了身体层上）。
 ## 帽子一飞走，露出来的就是这块东西 —— 玩家看到的就是「半个头」。
-## [br]所以这块贴图不是直接裁的：裁出 (27,130)-(445,642) 之后，把帽檐带以上整片抹掉，
-## 按额线处的头宽重画了一个椭球圆顶（左右与脸同宽、顶点高出额线 150px，
-## 颜色逐列取自额线下方的真实像素再横向平滑，所以和脸没有色阶断层）。
+## [br]所以这块贴图不是直接裁的：裁出 (27,140)-(445,642) 之后，把额线（原图 y=312）以上
+## 整片抹掉，按额线处的头宽补一颗扁圆的头顶上去（顶点高出额线 112px）。
+## 画法照抄这套美术的风格：**平涂 + 硬描边**，颜色逐列取额线下方肤色像素的中位数
+## 再横向平滑，所以跟脸没有色阶断层。（最初那版用了渐变 + 高光，被用户说「糊糊的」／
+## 像扣了个气球 —— 这套美术本来就是平的，加渐变反而出戏。）
 const TEX_HEAD: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_head.png")
 ## 魔术帽。节点名必须是 MagicianHat —— 场景里的 `sprite_disappear` 按名字引用了它
 const TEX_HAT: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_hat.png")
@@ -69,36 +74,36 @@ const TEX_LEG_NEAR: Texture2D = preload("res://assets/image/character/zombie_mag
 ## 远腿：细骨腿 + 蓝破裤脚（鞋被前景挡住）
 const TEX_LEG_FAR: Texture2D = preload("res://assets/image/character/zombie_magician/magician_p_leg_far.png")
 
+## 七块部件**统一挂到这一根骨头**上。见下面 PART_DEFS 的说明 —— 这是刻意的，不是偷懒。
+const PART_BONE := "Body/BodyCorrect/Zombie_body"
+
 ## 部件表：[节点名, 贴图, 在整张立绘里的像素包围盒左上角, 挂到哪根骨头, z_index]
-## 骨头路径都相对僵尸根节点，且**必须是动画轨道真正写在那个节点上**的那一个 ——
-## 比如外臂要取 `Zombie_outerarm_upper/Zombie_outerarm_upper`（里面那个 Sprite2D），
-## 取外面那个空 Node2D 就只能拿到一个不动的父变换。
 ##
-## ⚠️ 2026-10-29 第五次返工：**头与帽子挂到躯干骨（Zombie_body）上，不再挂头骨。**
-## 原版待机/行走时 Anim_head 会转 ±25°，而我们的头是从平图上切下来的一块矩形，
-## 一转头脖子处就露出背景，整个人看着像已经散架了（用户实测报的就是这个）。
-## 头和躯干挂在同一根骨头上，二者之间的相对变换恒为静止值 —— **脖子永远不会裂**，
-## 帽子跟着头一起走也不会脱位；转头那点灵动换「看不出拼接」是值得的。
-## [br]两条臂仍然各自挂在手臂骨上：臂的包围盒整个落在躯干矩形里（躯干 x14..660 / y493..1212，
-## 近臂 x14..252 / y566..1130），转动时底下垫着的始终是躯干，不会漏背景，
-## 而且咬合那一下全靠近臂，动作不能丢。
-## 两条腿照旧挂腿骨：腿的上端（y986 / y1036 起）在躯干的覆盖范围内（躯干画到 y1212），
-## 迈步时髋部被外套挡住，露不出缝。
+## ⚠️⚠️ 2026-10-29 第六次返工（前两次都在调「挂哪根骨头」，方向是错的）：
+## 七块现在全部挂在 [constant PART_BONE] 上，**当成一个刚体**。
+##
+## 为什么必须这样：
+## [br]这份换皮是把**一张平图**切成矩形块挂到骨架上。平图里手臂是压在衣服上面的，
+## 所以手臂那一块矩形里必然**带着它身下的衣服像素**。只要它相对躯干转一个角度，
+## 画面上就会同时出现两件事：①一块衣服跟着手臂滑出去；②手臂原来的位置在衣服上
+## 留下一只手臂的影子。两条都是硬伤，就是用户看到的「破碎、割裂」。
+## [br]实测原版动画的摆幅：待机 `Zombie_body` 就摆 -5.4~15.6°，行走 0~20.1°，
+## 而臂骨还要在躯干之外再摆 22~24°、腿骨 44°。也就是说即使站着不动，
+## 衣服也在转、胳膊和腿不跟 —— 缝必然出现。
+## [br]这不是调参数能解决的：除非把「被手臂挡住的那部分衣服」重新画出来（inpaint），
+## 否则任何相对转动都会穿帮。而七块挂同一根骨头，彼此相对变换恒为静止值，
+## **任何姿势下拼缝都不可能存在**（而且七块都裁自同一张平图，重叠区域的像素本来
+## 就完全相同，z_index 顺序都不影响外观）。
+## [br]代价是四肢不再各自摆动。走路的手感由 [method _update_shuffle] 的整体起伏补回来
+## —— 整体变换作用在全部七块上，同样不可能撕裂。
 const PART_DEFS := [
-	["MagicianTorso", TEX_TORSO, Vector2(14, 493),
-		"Body/BodyCorrect/Zombie_body", 0],
-	["MagicianArmFar", TEX_ARM_FAR, Vector2(340, 572),
-		"Body/BodyCorrect/Zombie_outerarm_upper/Zombie_outerarm_upper", 2],
-	["MagicianHead", TEX_HEAD, Vector2(27, 130),
-		"Body/BodyCorrect/Zombie_body", 10],
-	["MagicianHat", TEX_HAT, Vector2(21, 14),
-		"Body/BodyCorrect/Zombie_body", 12],
-	["MagicianArmNear", TEX_ARM_NEAR, Vector2(14, 566),
-		"Body/BodyCorrect/Anim_innerarm/Anim_innerarm1", 20],
-	["MagicianLegNear", TEX_LEG_NEAR, Vector2(180, 1036),
-		"Body/BodyCorrect/leg/Zombie_innerleg_upper", -2],
-	["MagicianLegFar", TEX_LEG_FAR, Vector2(401, 986),
-		"Body/BodyCorrect/leg/Zombie_outerleg_upper", -3],
+	["MagicianTorso", TEX_TORSO, Vector2(14, 493), PART_BONE, 0],
+	["MagicianArmFar", TEX_ARM_FAR, Vector2(340, 572), PART_BONE, 2],
+	["MagicianHead", TEX_HEAD, Vector2(27, 140), PART_BONE, 10],
+	["MagicianHat", TEX_HAT, Vector2(21, 14), PART_BONE, 12],
+	["MagicianArmNear", TEX_ARM_NEAR, Vector2(14, 566), PART_BONE, 20],
+	["MagicianLegNear", TEX_LEG_NEAR, Vector2(180, 1036), PART_BONE, -2],
+	["MagicianLegFar", TEX_LEG_FAR, Vector2(401, 986), PART_BONE, -3],
 ]
 #endregion
 
@@ -124,6 +129,14 @@ const MAGICIAN_HAT_HP := 370
 @export var windup_degrees: float = 9.0
 ## 挥出角度（度），负数=往前压
 @export var strike_degrees: float = -7.0
+
+@export_group("走路起伏")
+## 走起来时整体上下起伏的幅度（Body 空间的像素；战场立绘高 132，2.2 约等于 1.7%）
+@export var shuffle_bob: float = 2.2
+## 走起来时整体左右摇摆的幅度（度）
+@export var shuffle_rock_degrees: float = 1.4
+## 起伏相位推进速度（弧度/秒）。一步 = 半个起伏周期，8.5 约等于每秒两步
+@export var shuffle_speed: float = 8.5
 
 #region 运行时节点
 ## 施法姿态轴：**没有子节点**，只用来承载两条补间（绕脚底转，脚不离地）。
@@ -169,6 +182,13 @@ var _eat_active := false
 var _was_eating := false
 ## 蓄力光球的补间。放电/中断时要能立刻掐掉，否则它继续往 1.0 走，杖尖就一直亮着
 var _glow_tween: Tween = null
+## 走路起伏的相位（弧度）
+var _shuffle_phase := 0.0
+## 当前这一帧的起伏量：竖直位移（Body 空间像素）与摇摆角（度）
+var _shuffle_y := 0.0
+var _shuffle_rock := 0.0
+## 上一帧的世界坐标 x，用来判断「这一帧到底有没有在走」
+var _last_global_x := 0.0
 
 
 func _ready() -> void:
@@ -179,6 +199,8 @@ func _ready() -> void:
 	if hp_zombie != null:
 		hp_zombie.signal_armor2_death.connect(_sync_hat_drop)
 	_apply_magician_stats()
+	## 出生那一帧的世界坐标，不然第一帧会被算成「走了 300 像素」，起伏突然蹦一下
+	_last_global_x = global_position.x
 	## 展示/花园状态不放技能，只有正常出战才开节拍器
 	if character_init_type == E_CharacterInitType.IsNorm:
 		_setup_cast_timer()
@@ -527,16 +549,22 @@ func _fire() -> void:
 		target.body.body_light()
 
 
-## 把施法姿态乘到八块部件上。
+## 把「整体姿态」乘到七块部件上。
+## [br]姿态 = 施法补间（[_cast_pivot]）＋ 走路起伏（[_shuffle_y] / [_shuffle_rock]）。
 ## [br]为什么要手动乘：部件长在骨头下面、骨头在 BodyCorrect 里，
 ## 中间插不进一个「整体轴」节点（插了会打断动画的 NodePath 轨道）。
 ## 所以姿态只能这么合成：`部件局部 = 骨头变换⁻¹ × 姿态 × 骨头变换 × 静止值`，
 ## 等价于「先按骨头摆好，再整体绕脚底转一下」。
-## [br]姿态是单位矩阵时直接跳过（绝大多数时间），省掉每帧 8 次仿射求逆。
+## [br]七块挂在同一根骨头上（见 [constant PART_DEFS]），所以这一步对七块是同一个变换，
+## **整体怎么晃都不可能撕裂拼缝**。
+## [br]姿态是单位矩阵时直接跳过（绝大多数时间），省掉每帧 7 次仿射求逆。
 func _apply_cast_pose() -> void:
 	if _parts.is_empty() or not is_instance_valid(_body) or not is_instance_valid(_cast_pivot):
 		return
-	var pose := Transform2D(_cast_pivot.rotation, _cast_pivot.position)
+	var pose := Transform2D(
+		_cast_pivot.rotation + deg_to_rad(_shuffle_rock),
+		_cast_pivot.position + Vector2(0.0, _shuffle_y)
+	)
 	var has_pose: bool = not pose.is_equal_approx(Transform2D.IDENTITY)
 	if not has_pose and not _pose_written:
 		return
@@ -547,6 +575,28 @@ func _apply_cast_pose() -> void:
 		(rec["sprite"] as Sprite2D).transform = \
 			bx.affine_inverse() * pose * bx * (rec["rest"] as Transform2D)
 	_pose_written = has_pose
+
+
+## 走路时的整体起伏（上下颠 + 左右摇）。
+## [br]四肢已经和躯干焊死成刚体（见 [constant PART_DEFS]），本来会「整块板子平移」，
+## 这里补一点点整体起伏，读起来才像在挪而不是在滑。
+## [br]「有没有在走」靠**世界坐标这一帧变了没有**判断：移动组件没有现成的布尔量，
+## 而位移是最不容易和别的状态打架的信号（被冻住/被挡住时自然为 0）。
+func _update_shuffle(delta: float) -> void:
+	var dx: float = global_position.x - _last_global_x
+	_last_global_x = global_position.x
+	var walking: bool = absf(dx) > 0.02 and not is_death and not is_show and is_inside_tree()
+	if walking:
+		_shuffle_phase = wrapf(_shuffle_phase + delta * shuffle_speed, 0.0, TAU)
+		# 一步一个峰：-|sin| 让身体在两次落脚之间往下沉，比 ±sin 更像走路
+		_shuffle_y = -absf(sin(_shuffle_phase)) * shuffle_bob
+		# 摇摆是起伏的两倍频（左右各一次 = 一个完整步幅）
+		_shuffle_rock = sin(_shuffle_phase * 2.0) * shuffle_rock_degrees
+		return
+	# 停下来的时候两个量一起衰减回 0，不能硬切 —— 硬切会「啪」地弹一下
+	var k: float = minf(1.0, delta * 9.0)
+	_shuffle_y = lerpf(_shuffle_y, 0.0, k)
+	_shuffle_rock = lerpf(_shuffle_rock, 0.0, k)
 
 
 ## 杖尖跟着近臂走。直接读那块部件的画布变换 ——
@@ -621,6 +671,7 @@ func _process(delta: float) -> void:
 		_abort_cast()
 
 	_update_hat_layers()
+	_update_shuffle(delta)
 	_apply_cast_pose()
 	_update_wand_tip()
 
