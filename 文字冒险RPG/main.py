@@ -91,7 +91,8 @@ def get_save_file(session_id: str) -> Path:
 
 
 def load_session(session_id: str) -> dict[str, Any]:
-    with open(get_save_file(session_id), "r", encoding="utf-8") as f:
+    # utf-8-sig：兼容带 BOM 的存档文件，正常写出的无 BOM 文件也不受影响
+    with open(get_save_file(session_id), "r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 
@@ -321,7 +322,7 @@ def get_game(session_id: str) -> ApiResponse:
 def list_saves() -> ApiResponse:
     saves: list[dict[str, Any]] = []
     for save_file in sorted(SAVES_DIR.glob("*.json"), reverse=True):
-        with open(save_file, "r", encoding="utf-8") as f:
+        with open(save_file, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         character = data["character"]
         status = character["status"]
