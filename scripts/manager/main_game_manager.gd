@@ -1000,11 +1000,23 @@ func _show_level_reward(reward: Dictionary) -> void:
 	if host == null:
 		back_to_mode_scene()
 		return
+	# 掉什么打进日志：这一屏是纯手搭 UI，出问题时除了日志没有别的痕迹可查
+	print("掉落演出：%s" % _reward_text(reward))
 	var layer := LevelReward.show_for(host, reward)
 	if layer == null:
 		back_to_mode_scene()
 		return
 	layer.closed.connect(back_to_mode_scene)
+
+
+## 掉落物的一行文字，只用于日志（植物写编号 + 图鉴名，道具写名字）。
+func _reward_text(reward: Dictionary) -> String:
+	if int(reward.get("kind", -1)) == AdventureReward.Kind.Plant:
+		var plant_id: int = int(reward.get("plant_id", 0))
+		var raw: Variant = Global.character_registry.get_plant_info(
+			plant_id, CharacterRegistry.PlantInfoAttribute.PlantName)
+		return "植物 P%03d %s" % [plant_id, String(raw) if raw != null else "?"]
+	return "道具 %s（%s）" % [String(reward.get("name", "")), String(reward.get("key", ""))]
 
 #endregion
 
