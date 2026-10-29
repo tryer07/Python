@@ -1,9 +1,9 @@
 # 3D迷宫探索 —— ursina 第一人称迷宫逃脱
 #
 # 运行方式：直接 Run 本文件（main.py），会弹出一个 3D 窗口。
-# 操作：点击画面或按【空格】开始（自动锁定鼠标）→ WASD 移动 / Shift 奔跑 / 移动鼠标转视角
-#       找到全部 5 把金色钥匙，走到绿色出口即可逃脱；
-#       R 随机换一局新迷宫，游戏中按 Esc 暂停并释放鼠标，Esc 在未开始时退出。
+# 操作：开场有新手引导；点【开始】按钮或按【空格】进入（自动锁定鼠标）
+#       → WASD 移动 / Shift 奔跑 / 移动鼠标转视角；
+#       集齐 5 把金色发光钥匙、碰到绿色门柱即逃脱；Esc 暂停，R 换局。
 #
 # 依赖：pip install ursina （本项目已安装，兼容 Python 3.14）
 #
@@ -21,6 +21,7 @@ from ursina import (
     Vec3,
     Text,
     Audio,
+    Button,
     color,
     camera,
     scene,
@@ -41,8 +42,8 @@ ROWS = 21             # 迷宫行数（奇数）
 WALL_HEIGHT = 4.0     # 墙高
 EYE_HEIGHT = 1.7      # 视点离地高度
 PLAYER_RADIUS = 0.7   # 玩家碰撞半径（必须小于 CELL/2，否则卡在通道里）
-WALK_SPEED = 6.0      # 步行速度（单位/秒）
-RUN_SPEED = 10.5      # 奔跑速度（单位/秒）
+WALK_SPEED = 5.0      # 步行速度（单位/秒）
+RUN_SPEED = 8.5       # 奔跑速度（单位/秒）
 MOUSE_SENS = 35.0     # 鼠标灵敏度（对齐 ursina FirstPersonController 量级）
 KEY_COUNT = 5         # 需要收集的钥匙数量
 
@@ -50,8 +51,8 @@ KEY_COUNT = 5         # 需要收集的钥匙数量
 STEP_LEN_WALK = 2.2
 STEP_LEN_RUN = 1.5
 # 小地图：每格在屏幕 UI 空间的尺寸与右上角位置
-MINIMAP_CELL = 0.0085
-MINIMAP_POS = (0.40, 0.40)
+MINIMAP_CELL = 0.010
+MINIMAP_POS = (0.38, 0.38)
 
 
 class MazeGame:
@@ -83,6 +84,7 @@ class MazeGame:
         self._setup_audio()
         self._build_ui()
         self.new_maze()
+        self._refresh_start_overlay()   # 开场必须把新手引导面板亮出来
 
     # ---------------- 中文字体 ----------------
     def _setup_font(self) -> None:
@@ -139,24 +141,74 @@ class MazeGame:
             text="", position=(-0.48, 0.46), origin=(-0.5, 0.5),
             color=color.white, size=20, background=True,
         )
+        self.help_bar = Text(
+            text="W/A/S/D 移动     鼠标 转视角     Shift 跑     Esc 暂停",
+            position=(0, 0.465), origin=(0, 0.5),
+            color=color.rgb(205, 210, 230), size=15, background=True,
+        )
         self.message = Text(
             text="", position=(0, -0.42), origin=(0, 0.5),
             color=color.gold, size=22,
         )
-        self.overlay = Text(
-            text="", position=(0, 0), origin=(0, 0),
-            color=color.white, size=30, background=True,
+        # 开场/胜利弹窗：全屏遮罩 + 说明文字 + 大大的开始按钮
+        self.overlay_bg = Entity(
+            parent=camera.ui, model="quad",
+            color=color.rgba(6, 9, 16, 246), scale=(3, 3),
         )
+        self.overlay = Text(
+            text="", position=(0, 0.16), origin=(0, 0.5),
+            color=color.white, size=26,
+        )
+        self.start_button = Button(
+            text="点 我 开 始", position=(0, -0.30), origin=(0, 0),
+            scale=(1.7, 0.13), color=color.rgb(72, 96, 176),
+            highlight_color=color.rgb(96, 124, 210), text_size=26,
+            on_press=self._begin,
+        )
+        self.overlay_parts = [self.overlay_bg, self.overlay, self.start_button]
+        # 新手引导字幕：进入游戏后按节奏逐条弹出
+        self.coach = Text(
+            text="", position=(0, -0.30), origin=(0, 0),
+            color=color.rgb(255, 214, 100), size=26, background=True,
+        )
+        self.coach.visible = False
+        self._msg_timer = 0.0
+        self._coach_queue: list[tuple[float, str]] = []
+        self._coach_timer = 0.0
+
+    def _set_overlay(self, show: bool, with_button: bool = True) -> None:
+        self.overlay_bg.visible = show
+        self.overlay.visible = show
+        self.start_button.visible = show and with_button
+
+    def _flash(self, text: str, ttl: float = 2.0) -> None:
+        """在屏幕下方闪一条提示，ttl 秒后自动消失"""
+        self.message.text = text
+        self._msg_timer = ttl
 
     def _refresh_start_overlay(self) -> None:
-        self.overlay.enabled = True
         self.overlay.text = (
-            "【 3D 迷宫逃脱 】\n\n"
-            "找到 5 把金色钥匙，再冲向绿色出口即可逃脱\n\n"
-            "点击画面或按空格开始   WASD 移动\n"
-            "Shift 奔跑       鼠标 转视角\n"
-            "R 换一局迷宫     Esc 暂停 / 退出"
+            "【 3D 迷宫逃脱 · 新手指南 】\n\n"
+            "■ 目标：迷宫里藏着 5 个漂浮的金色发光方块(钥匙)，全部拿到，\n"
+            "    再碰到绿色发光门柱，就逃脱成功！\n"
+            "■ 操作：W 前进　S 后退　A/D 横移；移动鼠标转视角；按住 Shift 奔跑\n"
+            "■ 右上角小地图：白点是你，红线是朝向，金点=钥匙，绿点=出口\n\n"
+            "按空格键，或点下方按钮开始游戏"
         )
+        self._set_overlay(True)
+
+    def _begin(self) -> None:
+        self.state = "playing"
+        self._set_overlay(False)
+        # 三段式新手引导：(停留秒数, 文案)，按顺序逐条弹出
+        self._coach_queue = [
+            (4.0, "先试试按 W 向前走，A/D 调整方向，拖动鼠标看看四周"),
+            (5.0, "找到漂浮的金色发光方块，走过去就能捡到钥匙（看小地图金点）"),
+            (5.0, "集齐 5 把后，去小地图绿点处的门柱 = 逃脱成功，加油！"),
+        ]
+        self._coach_timer = 0.6
+        self.coach.visible = True
+        mouse.locked = True
 
     # ---------------- 生成新的一局 ----------------
     def new_maze(self) -> None:
@@ -172,6 +224,10 @@ class MazeGame:
         self.map_facing = None
         self.collected = 0
         self._step_dist = 0.0
+        self.message.text = ""
+        self._msg_timer = 0.0
+        self.coach.visible = False
+        self._coach_queue = []
 
         seed = random.randint(0, 10 ** 9)
         self.grid = generate_maze(COLS, ROWS, seed=seed)
@@ -182,17 +238,17 @@ class MazeGame:
     def _build_maze_geometry(self) -> None:
         # 地板 + 天花板（把整个迷宫封闭起来，无需天空盒）
         floor = Entity(
-            model="quad", color=color.rgb(45, 48, 66),
+            model="quad", color=color.rgb(64, 68, 92),
             rotation_x=90, scale=(COLS * CELL, ROWS * CELL), position=(0, 0, 0),
         )
         ceiling = Entity(
-            model="quad", color=color.rgb(22, 24, 34),
+            model="quad", color=color.rgb(38, 42, 60),
             rotation_x=-90, scale=(COLS * CELL, ROWS * CELL), position=(0, WALL_HEIGHT, 0),
         )
         self.nodes.extend([floor, ceiling])
 
         # 墙体：每个 WALL 格放一个立方体（纯视觉，碰撞走网格逻辑）
-        wall_color = color.rgb(96, 84, 118)
+        wall_color = color.rgb(136, 124, 162)
         for r, row in enumerate(self.grid):
             for c, val in enumerate(row):
                 if val != WALL:
@@ -212,16 +268,17 @@ class MazeGame:
 
         sx, sz = self.cell_to_world(*start_cell)
         self.px, self.pz = sx, sz
-        self.yaw, self.pitch = 0.0, 0.0
+        # 出生朝向对准开口方向，避免一进场就面对墙不知所措
+        self.yaw, self.pitch = (90.0 if self.grid[1][2] != WALL else 0.0), 0.0
 
         # 出口：发光的绿色门柱
         ex, ez = self.cell_to_world(*self.exit_cell)
         pillar = Entity(
-            model="cube", color=color.rgb(40, 220, 120),
+            model="cube", color=color.rgb(60, 235, 140),
             position=(ex, WALL_HEIGHT / 2, ez), scale=(CELL * 0.5, WALL_HEIGHT, CELL * 0.5),
         )
         glow = Entity(
-            model="cube", color=color.rgb(80, 255, 150),
+            model="cube", color=color.rgb(140, 255, 190),
             position=(ex, WALL_HEIGHT / 2, ez), scale=(CELL * 0.85, WALL_HEIGHT, CELL * 0.85),
         )
         self.nodes.extend([pillar, glow])
@@ -238,8 +295,13 @@ class MazeGame:
         for c, r in candidates[: self.total_keys]:
             x, z = self.cell_to_world(c, r)
             key = Entity(
-                model="cube", color=color.gold,
-                position=(x, 1.2, z), scale=(0.7, 0.7, 0.7),
+                model="cube", color=color.rgb(255, 205, 60),
+                position=(x, 1.4, z), scale=(0.9, 0.9, 0.9),
+            )
+            # 钥匙顶天光柱：让玩家在长廊远处就能瞄到
+            Entity(
+                parent=key, model="cube", color=color.rgba(255, 215, 90, 80),
+                position=(0, 1.0, 0), scale=(0.3, 3.2, 0.3),
             )
             key.rotation_y = random.uniform(0, 360)
             self.keys.append(key)
@@ -270,7 +332,7 @@ class MazeGame:
                 if val != WALL:
                     continue
                 lx, ly = self._cell_to_map(c, r)
-                dot = Entity(parent=self.minimap, model="quad", color=color.rgb(120, 128, 160), scale=cs, position=(lx, ly))
+                dot = Entity(parent=self.minimap, model="quad", color=color.rgb(150, 158, 190), scale=cs, position=(lx, ly))
                 self.map_nodes.append(dot)
 
         # 出口：绿色标记
@@ -307,6 +369,22 @@ class MazeGame:
         if not mouse.locked:
             self.message.text = "已暂停 —— 点击画面或按空格继续"
             return
+
+        # 底部临时消息：计时到点自动清除
+        if self._msg_timer > 0:
+            self._msg_timer -= time.dt
+            if self._msg_timer <= 0:
+                self.message.text = ""
+
+        # 新手引导：按时间逐条弹出提示
+        if self._coach_queue:
+            self._coach_timer -= time.dt
+            if self._coach_timer <= 0:
+                dur, tip = self._coach_queue.pop(0)
+                self.coach.text = tip
+                self._coach_timer = dur
+        elif self.coach.visible:
+            self.coach.visible = False
 
         # 视角：鼠标速度是每帧归一化位移，乘以灵敏度
         vel = mouse.velocity
@@ -357,10 +435,10 @@ class MazeGame:
         camera.position = Vec3(self.px, EYE_HEIGHT, self.pz)
         self._update_minimap()
 
-        # 钥匙自转 + 拾取判定
-        for key in list(self.keys):
+        # 钥匙自转 + 上下浮动 + 拾取判定
+        for i, key in enumerate(list(self.keys)):
             key.rotation_y += 120 * time.dt
-            key.rotation_x += 60 * time.dt
+            key.y = 1.4 + 0.15 * math.sin(time.time() * 2.5 + i * 1.7)
             if math.dist((key.x, key.z), (self.px, self.pz)) < CELL * 0.45:
                 idx = self.keys.index(key)
                 self.keys.remove(key)
@@ -373,6 +451,7 @@ class MazeGame:
                     destroy(marker)
                 self.collected += 1
                 self._update_hud()
+                self._flash(f"捡到钥匙！  {self.collected} / {self.total_keys}", 2.0)
 
         # 到达出口：集齐钥匙则通关，否则提示还差多少
         if math.dist((self.exit_pos_x(), self.exit_pos_z()), (self.px, self.pz)) < CELL * 0.6:
@@ -380,8 +459,8 @@ class MazeGame:
                 self._win()
             else:
                 remain = self.total_keys - self.collected
-                self.message.text = f"出口还锁着 —— 还差 {remain} 把钥匙"
-        else:
+                self._flash(f"出口还锁着 —— 还差 {remain} 把钥匙", 0.5)
+        elif self._msg_timer <= 0:
             self.message.text = ""
 
     def exit_pos_x(self) -> float:
@@ -391,7 +470,11 @@ class MazeGame:
         return self.cell_to_world(*self.exit_cell)[1]
 
     def _update_hud(self) -> None:
-        self.hud.text = f"钥匙  {self.collected} / {self.total_keys}"
+        if self.collected >= self.total_keys:
+            goal = "钥匙齐了！去碰绿色门柱就逃脱"
+        else:
+            goal = "找漂浮的金色发光方块（小地图金点）"
+        self.hud.text = f"钥匙 {self.collected} / {self.total_keys}\n{goal}"
 
     def _update_minimap(self) -> None:
         # 把玩家连续坐标映到小地图，并旋转朝向短线
@@ -412,20 +495,20 @@ class MazeGame:
         mouse.locked = False
         self.hud.text = ""
         self.message.text = ""
-        self.overlay.enabled = True
+        self.coach.visible = False
         self.overlay.text = (
             "★  你逃出了迷宫！  ★\n\n"
             f"共收集 {self.collected} 把钥匙\n\n"
-            "R 再来一局        Esc 退出"
+            "R  再来一局随机迷宫        Esc  退出游戏"
         )
+        self._set_overlay(True, with_button=False)
 
     # ---------------- 键盘输入（由全局 input 调用）----------------
     def input(self, key: str) -> None:
-        if key in ("space", "left mouse down") and self.state != "won":
-            if self.state == "start":
-                self.state = "playing"
-                self.overlay.enabled = False
-            mouse.locked = True           # 开始游戏 / 从暂停中继续
+        if key == "space" and self.state == "start":
+            self._begin()
+        elif key in ("space", "left mouse down") and self.state == "playing" and not mouse.locked:
+            mouse.locked = True           # 从暂停中继续
         elif key == "r":
             self.state = "start"
             self.new_maze()
