@@ -894,45 +894,32 @@ func _finish_round_victory(glo_pos: Vector2) -> void:
 
 
 	print("=======================游戏结束，您获胜了=======================")
-	## 冒险 50 关**首次通关**：草坪上不掉奖杯，直接演「获得新植物 / 获得新道具」那一屏。
-	## [br]原版通关弹出的是解锁的那张东西（种子卡 / 铲子 / 纸条 / 奖杯），草坪上不出现可拾取物；
-	## 这里沿用同一个奖杯场景，玩家得先捡起来才看到卡面，等于一关演两遍。
-	## [br]奖杯只在「没有掉落」的情况保留 —— 重复挑战已通关的关卡、以及其它模式（没有掉落表）。
-	if not _take_level_reward().is_empty():
-		_victory_without_trophy()
-		return
-
-	# 本轮唯一奖杯，由已接受的胜利请求创建。
-	var trophy = SceneRegistry.TROPHY.instantiate()
-	canvas_layer_temp.add_child(trophy)
-	trophy.global_position = glo_pos
-	if trophy.global_position.x >= 750:
-		# 右侧奖杯向场内抛出的水平偏移。
-		var x_diff = trophy.global_position.x - 700
-		throw_to(trophy, trophy.position - Vector2(x_diff + randf_range(-50,50), 0))
-	elif trophy.global_position.x <= 50:
-		# 左侧奖杯向场内抛出的水平偏移。
-		var x_diff = trophy.global_position.x - 100
-		throw_to(trophy, trophy.position - Vector2(x_diff + randf_range(-50,50), 0))
+	## 草坪上掉的是什么，分两种情况：
+	## [br]1. 冒险 50 关**首次通关** → 掉这一关解锁的那张东西（植物卡 / 铲子 / 纸条 / 奖杯），
+	## 原版掉的就是解锁物本身，不该先给一个通用奖杯让人捡；
+	## [br]2. 没有掉落可演（重复挑战已通关的关卡、其它模式没有掉落表）→ 通用奖杯。
+	## 两者的抛出、捡起、光芒、结算手感完全共用，差别只在生成的物件。
+	var pickup: RewardPickup = RewardPickup.spawn(canvas_layer_temp, _take_level_reward())
+	# 记一笔「这一关的卡是玩家在草坪上捡到的」：后面那屏就不必再把同一张卡画一遍
+	_reward_via_pickup = pickup != null
+	var drop: Node2D = pickup
+	if drop == null:
+		drop = SceneRegistry.TROPHY.instantiate()
+		canvas_layer_temp.add_child(drop)
+	drop.global_position = glo_pos
+	if drop.global_position.x >= 750:
+		# 右侧掉落物向场内抛出的水平偏移。
+		var x_diff = drop.global_position.x - 700
+		throw_to(drop, drop.position - Vector2(x_diff + randf_range(-50,50), 0))
+	elif drop.global_position.x <= 50:
+		# 左侧掉落物向场内抛出的水平偏移。
+		var x_diff = drop.global_position.x - 100
+		throw_to(drop, drop.position - Vector2(x_diff + randf_range(-50,50), 0))
 
 	else:
-		throw_to(trophy, trophy.position - Vector2(randf_range(-50,50), 0))
+		throw_to(drop, drop.position - Vector2(randf_range(-50,50), 0))
 
-## 不经过奖杯、直接结算通关（冒险 50 关首次通关走这条）。
-## [br]奖杯那一套手感只保留「抛出 + 停下」的等待感：这里换上胜利音效、等一拍，
-## 再进 [method win_main_game] —— 掉落演出由它接手，玩家看到的第一眼就是那张卡。
-## [br]⚠️ [member main_game_progress] 必须手动置成 GAME_OVER：原本是 `throw_to` 顺手设的，
-## 不走奖杯就没有人设，后续「关掉了没有」的判断会全部落空。
-func _victory_without_trophy() -> void:
-	main_game_progress = E_MainGameProgress.GAME_OVER
-	SoundManager.play_other_SFX("winmusic")
-	# 留一拍再弹卡面：僵尸刚倒下就砸出一张卡，看不清是谁赢了
-	await get_tree().create_timer(0.9).timeout
-	if is_inside_tree() and not is_queued_for_deletion():
-		win_main_game()
-
-
-## 奖杯抛出
+## 掉落物抛出
 func throw_to(node:Node2D, target_pos: Vector2, duration: float = 1.0):
 	main_game_progress = E_MainGameProgress.GAME_OVER
 	var start_pos = node.position
@@ -992,6 +979,11 @@ func _take_level_reward() -> Dictionary:
 	return AdventureReward.get_reward(AdventurePlantUnlock.level_no_from_save_name(save_name))
 
 
+## 本关的掉落是不是已经被玩家在草坪上捡到了（见 [RewardPickup]）。
+## [br]是的话，后面那屏只补名字与说明，不再画一遍同一张卡。
+var _reward_via_pickup: bool = false
+
+
 ## 弹出掉落演出，收下后才切回选关界面。
 ## [br]宿主挂 [code]get_tree().root[/code] 而不是主游戏场景：切场景会把当前场景整棵释放，
 ## 挂在场景上的演出会跟着一起没；root 只有 current_scene 会被替换，挂在 root 上的层能活到玩家点完。
@@ -1001,8 +993,11 @@ func _show_level_reward(reward: Dictionary) -> void:
 		back_to_mode_scene()
 		return
 	# 掉什么打进日志：这一屏是纯手搭 UI，出问题时除了日志没有别的痕迹可查
-	print("掉落演出：%s" % _reward_text(reward))
-	var layer := LevelReward.show_for(host, reward)
+	print("掉落演出：%s%s" % [_reward_text(reward), "（已在草坪上捡到，不再画图）" if _reward_via_pickup else ""])
+	# 取完就清：这面旗只服务「捡到卡之后的这一屏」
+	var with_art: bool = not _reward_via_pickup
+	_reward_via_pickup = false
+	var layer := LevelReward.show_for(host, reward, with_art)
 	if layer == null:
 		back_to_mode_scene()
 		return

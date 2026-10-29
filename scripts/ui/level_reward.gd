@@ -32,18 +32,24 @@ const DESCRIPTION_CHARS_PER_LINE := 26
 
 ## 这一屏要展示的掉落，结构见 [method AdventureReward.get_reward]；空字典表示没东西可演。
 var _reward: Dictionary = {}
+## 是否画中间那张大图。
+## [br]冒险关卡现在掉的是草坪上**能捡的卡**（[RewardPickup]），玩家刚把那张卡捡起来看过，
+## 这里再画一遍同一张只是重复；此时只补名字与说明。
+var _with_art: bool = true
 ## 防止「按钮」等重复触发 closed。
 var _is_closing: bool = false
 
 
 ## 在 [param host] 下创建并弹出这一屏；返回实例，调用方可连接 [signal closed]。
 ## [br]挂在 host 而不是当前场景上，是为了不让「切场景」把演出一起清掉。
-static func show_for(host: Node, reward: Dictionary) -> LevelReward:
+## [br][param with_art] 为 false 时省掉中间那张大图（各段文字整体上移，面板不留空洞）。
+static func show_for(host: Node, reward: Dictionary, with_art: bool = true) -> LevelReward:
 	if reward.is_empty():
 		return null
 	var layer := LevelReward.new()
 	layer.name = "LevelReward"
 	layer._reward = reward
+	layer._with_art = with_art
 	# 128 足够压住主游戏的所有 CanvasLayer（暂停菜单、HP 条这些都在 100 以内）
 	layer.layer = 128
 	host.add_child(layer)
@@ -68,7 +74,9 @@ func _ready() -> void:
 
 	var panel := _build_panel(root)
 	_build_title(panel)
-	var art: Control = _build_card(panel) if _is_plant() else _build_item_icon(panel)
+	var art: Control = null
+	if _with_art:
+		art = _build_card(panel) if _is_plant() else _build_item_icon(panel)
 	_build_name(panel)
 	_build_description(panel)
 	_build_confirm(panel)
@@ -88,6 +96,21 @@ func _ready() -> void:
 
 
 #region UI 搭建
+## 名字的纵向位置：有图时落在卡面下方（322），无图时上移到标题下面（150），中间不留空洞。
+func _name_y() -> float:
+	return 322.0 if _with_art else 150.0
+
+
+## 说明文字的纵向位置：跟着名字走，两者间距固定 42。
+func _description_y() -> float:
+	return _name_y() + 42.0
+
+
+## 说明文字的高度：无图时面板更空，允许放到 4 行。
+func _description_height() -> float:
+	return 68.0 if _with_art else 110.0
+
+
 ## 居中的弹窗面板，样式沿用游戏里对话框那套 PanelDialogBG。
 func _build_panel(root: Control) -> Panel:
 	var panel := Panel.new()
@@ -181,7 +204,7 @@ func _build_name(panel: Panel) -> void:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	panel.add_child(label)
-	label.position = Vector2(0.0, 322.0)
+	label.position = Vector2(0.0, _name_y())
 	label.size = Vector2(PANEL_SIZE.x, 36.0)
 
 
@@ -189,13 +212,13 @@ func _build_description(panel: Panel) -> void:
 	var description := _description()
 	if description.is_empty():
 		return
-	var label := _make_label(_wrap_text(description, DESCRIPTION_CHARS_PER_LINE, 3), 17,
-		Color(0.92, 0.96, 0.86))
+	var label := _make_label(_wrap_text(description, DESCRIPTION_CHARS_PER_LINE,
+		4 if not _with_art else 3), 17, Color(0.92, 0.96, 0.86))
 	label.name = "RewardDescription"
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(label)
-	label.position = Vector2(40.0, 364.0)
-	label.size = Vector2(PANEL_SIZE.x - 80.0, 68.0)
+	label.position = Vector2(40.0, _description_y())
+	label.size = Vector2(PANEL_SIZE.x - 80.0, _description_height())
 
 
 ## 按字数硬折行，不用 Label 自带的 autowrap。
