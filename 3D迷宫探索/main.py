@@ -20,6 +20,7 @@ from ursina import (
     Entity,
     Vec3,
     Text,
+    Audio,
     color,
     camera,
     scene,
@@ -31,6 +32,7 @@ from ursina import (
 )
 
 from maze_generator import FLOOR, WALL, farthest_cell, floor_cells, generate_maze
+from footstep_sfx import ensure_footstep_sfx
 
 # ---------------- 全局可调参数 ----------------
 CELL = 4.0            # 每个网格对应世界的单位（即通道宽度）
@@ -44,17 +46,29 @@ RUN_SPEED = 10.5      # 奔跑速度（单位/秒）
 MOUSE_SENS = 35.0     # 鼠标灵敏度（对齐 ursina FirstPersonController 量级）
 KEY_COUNT = 5         # 需要收集的钥匙数量
 
+# 脚步声：每走过这么多个世界单位踩一步
+STEP_LEN_WALK = 2.2
+STEP_LEN_RUN = 1.5
+# 小地图：每格在屏幕 UI 空间的尺寸与右上角位置
+MINIMAP_CELL = 0.0085
+MINIMAP_POS = (0.40, 0.40)
+
 
 class MazeGame:
     def __init__(self) -> None:
         self._setup_font()
         self.grid: list[list[int]] = []
-        self.nodes: list[Entity] = []       # 本局生成的所有实体，换局时销毁
+        self.nodes: list[Entity] = []       # 本局生成的场景实体，换局时销毁
         self.keys: list[Entity] = []        # 尚未被收集的钥匙
+        self.map_nodes: list[Entity] = []   # 小地图上的 UI 实体
+        self.map_keys: list[Entity] = []    # 与 self.keys 一一对应的小地图钥匙标记
+        self.map_player: Entity | None = None
+        self.map_facing: Entity | None = None
         self.exit_cell: tuple[int, int] = (0, 0)
         self.total_keys = KEY_COUNT
         self.collected = 0
         self.state = "start"                # start / playing / won
+        self._step_dist = 0.0               # 脚步声：累计行走距离
 
         # 玩家位姿（网格平面坐标 + 视角）
         self.px = 0.0
@@ -66,6 +80,7 @@ class MazeGame:
         camera.clip_plane_far = 200
         mouse.locked = False
 
+        self._setup_audio()
         self._build_ui()
         self.new_maze()
 
@@ -76,6 +91,19 @@ class MazeGame:
         if font_file.exists():
             Text.default_font = "simhei.ttf"
             Text.default_monospace_font = "simhei.ttf"
+
+    # ---------------- 脚步声 ----------------
+    def _setup_audio(self) -> None:
+        # 首次运行会把 wav 合成到 assets/；无音频设备时静默降级，不影响游戏
+        self.sfx: dict[str, Audio] = {}
+        try:
+            assets_dir = str(Path(__file__).resolve().parent / "assets")
+            paths = ensure_footstep_sfx(assets_dir)
+            self.sfx["walk"] = Audio(paths["walk"], volume=0.5, autoplay=False, auto_destroy=False)
+            self.sfx["run"] = Audio(paths["run"], volume=0.55, autoplay=False, auto_destroy=False)
+        except Exception as e:  # noqa: BLE001  （音频失败不应阻断游戏启动）
+            print("脚步声初始化失败，已禁用音效:", e)
+            self.sfx = {}
 
     # ---------------- 网格 <-> 世界坐标 ----------------
     def cell_to_world(self, c: int, r: int) -> tuple[float, float]:
@@ -136,7 +164,14 @@ class MazeGame:
             destroy(node)
         self.nodes.clear()
         self.keys.clear()
+        for node in self.map_nodes:
+            destroy(node)
+        self.map_nodes.clear()
+        self.map_keys.clear()
+        self.map_player = None
+        self.map_facing = None
         self.collected = 0
+        self._step_dist = 0.0
 
         seed = random.randint(0, 10 ** 9)
         self.grid = generate_maze(COLS, ROWS, seed=seed)
@@ -210,6 +245,54 @@ class MazeGame:
             self.keys.append(key)
             self.nodes.append(key)
 
+        self._build_minimap()
+
+    # ---------------- 小地图（屏幕右上角 UI 层）----------------
+    def _cell_to_map(self, gx: float, gz: float) -> tuple[float, float]:
+        # 连续网格坐标 -> 小地图局部 UI 坐标（+z 向下）
+        return (gx - COLS / 2) * MINIMAP_CELL, -(gz - ROWS / 2) * MINIMAP_CELL
+
+    def _build_minimap(self) -> None:
+        cs = MINIMAP_CELL
+        self.minimap = Entity(parent=camera.ui, position=MINIMAP_POS)
+        self.map_nodes.append(self.minimap)
+        # 背景遮板（先创建，序在最底）
+        bg = Entity(
+            parent=self.minimap, model="quad",
+            color=color.rgba(8, 10, 18, 200),
+            scale=(COLS * cs + 0.01, ROWS * cs + 0.01), position=(0, 0, 1),
+        )
+        self.map_nodes.append(bg)
+
+        # 墙体：每个 WALL 格一个小方块
+        for r, row in enumerate(self.grid):
+            for c, val in enumerate(row):
+                if val != WALL:
+                    continue
+                lx, ly = self._cell_to_map(c, r)
+                dot = Entity(parent=self.minimap, model="quad", color=color.rgb(120, 128, 160), scale=cs, position=(lx, ly))
+                self.map_nodes.append(dot)
+
+        # 出口：绿色标记
+        ex, ey = self._cell_to_map(*self.exit_cell)
+        exit_dot = Entity(parent=self.minimap, model="quad", color=color.rgb(40, 220, 120), scale=cs * 1.6, position=(ex, ey))
+        self.map_nodes.append(exit_dot)
+
+        # 钥匙：金色标记（与 self.keys 同序，便于拾取时同步移除）
+        self.map_keys = []
+        for key in self.keys:
+            kc = self.world_to_cell(key.x, key.z)
+            kx, ky = self._cell_to_map(*kc)
+            kd = Entity(parent=self.minimap, model="quad", color=color.gold, scale=cs * 1.3, position=(kx, ky))
+            self.map_keys.append(kd)
+            self.map_nodes.append(kd)
+
+        # 玩家：白点 + 朝向短红线（最后创建，序在最顶）
+        self.map_player = Entity(parent=self.minimap, model="quad", color=color.white, scale=cs * 1.4, position=(0, 0))
+        self.map_facing = Entity(parent=self.minimap, model="quad", color=color.red, scale=(cs * 3.0, cs * 0.5), origin=(-0.5, 0), position=(0, 0))
+        self.map_nodes.extend([self.map_player, self.map_facing])
+        self._update_minimap()
+
     # ---------------- 每帧更新（由全局 update 调用）----------------
     def update(self) -> None:
         # 出口门柱自转，保持一点生气
@@ -245,25 +328,42 @@ class MazeGame:
 
         length = math.hypot(move.x, move.z)
         if length > 0:
-            speed = RUN_SPEED if "shift" in held_keys else WALK_SPEED
+            running = "shift" in held_keys
+            speed = RUN_SPEED if running else WALK_SPEED
             step_x = move.x / length * speed * time.dt
             step_z = move.z / length * speed * time.dt
+            old_x, old_z = self.px, self.pz
             # 分轴推进 → 贴墙时能顺着墙滑行，不会被卡死
             if not self.is_blocked(self.px + step_x, self.pz):
                 self.px += step_x
             if not self.is_blocked(self.px, self.pz + step_z):
                 self.pz += step_z
+            # 脚步声：按实际移动距离累计，跨过一个步幅阈值踩一步
+            moved = math.hypot(self.px - old_x, self.pz - old_z)
+            if moved > 0 and self.sfx:
+                self._step_dist += moved
+                step_len = STEP_LEN_RUN if running else STEP_LEN_WALK
+                if self._step_dist >= step_len:
+                    self._step_dist -= step_len
+                    self.sfx["run" if running else "walk"].play()
 
         camera.position = Vec3(self.px, EYE_HEIGHT, self.pz)
+        self._update_minimap()
 
         # 钥匙自转 + 拾取判定
         for key in list(self.keys):
             key.rotation_y += 120 * time.dt
             key.rotation_x += 60 * time.dt
             if math.dist((key.x, key.z), (self.px, self.pz)) < CELL * 0.45:
+                idx = self.keys.index(key)
                 self.keys.remove(key)
                 self.nodes.remove(key)
                 destroy(key)
+                # 同步移除小地图上的金色标记
+                if 0 <= idx < len(self.map_keys):
+                    marker = self.map_keys.pop(idx)
+                    self.map_nodes.remove(marker)
+                    destroy(marker)
                 self.collected += 1
                 self._update_hud()
 
@@ -285,6 +385,20 @@ class MazeGame:
 
     def _update_hud(self) -> None:
         self.hud.text = f"钥匙  {self.collected} / {self.total_keys}"
+
+    def _update_minimap(self) -> None:
+        # 把玩家连续坐标映到小地图，并旋转朝向短线
+        if self.map_player is None:
+            return
+        gx = self.px / CELL + COLS / 2
+        gz = self.pz / CELL + ROWS / 2
+        lx, ly = self._cell_to_map(gx, gz)
+        self.map_player.position = (lx, ly)
+        if self.map_facing is not None:
+            fwd = camera.forward
+            angle = math.degrees(math.atan2(-fwd.z, fwd.x))
+            self.map_facing.position = (lx, ly)
+            self.map_facing.rotation_z = angle
 
     def _win(self) -> None:
         self.state = "won"
