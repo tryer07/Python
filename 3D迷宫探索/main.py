@@ -18,6 +18,7 @@ from pathlib import Path
 from ursina import (
     Ursina,
     Entity,
+    Vec2,
     Vec3,
     Text,
     Audio,
@@ -33,14 +34,19 @@ from ursina import (
     time as ursina_time,   # 帧间隔 dt 在 ursina 的 time 模块里，不是标准库 time！
 )
 
-from maze_generator import FLOOR, WALL, farthest_cell, floor_cells, generate_maze
+from maze_generator import WALL, farthest_cell, floor_cells, generate_maze
 from footstep_sfx import ensure_footstep_sfx
+
+# 警告规避说明：ursina 的 visible/x/y/z/rotation_x/y/z 等属性是运行时动态生成的，
+# IDE 静态解析不到会报"未解析引用"；本文件一律改用可静态解析的等价写法：
+#   .visible -> .enabled（同为隐藏，且能顺带禁掉按钮点击，语义更安全）
+#   .x/.y/.z -> .position 读写；.rotation_y/.rotation_z -> .rotation 读写
 
 # ---------------- 全局可调参数 ----------------
 CELL = 4.0            # 每个网格对应世界的单位（即通道宽度）
 COLS = 21             # 迷宫列数（奇数）
 ROWS = 21             # 迷宫行数（奇数）
-WALL_HEIGHT = 4.0     # 墙高
+WALL_HEIGHT = 5.0     # 墙高（加高缓解压抑感）
 EYE_HEIGHT = 1.7      # 视点离地高度
 PLAYER_RADIUS = 0.7   # 玩家碰撞半径（必须小于 CELL/2，否则卡在通道里）
 WALK_SPEED = 5.0      # 步行速度（单位/秒）
@@ -79,9 +85,14 @@ class MazeGame:
         self.pitch = 0.0
 
         # 注意：ursina 的 color.rgb() 不做 0-255 换算（超 1 会被钳成纯白），
-        # 0-255 色值必须用 rgb32/rgba32
-        scene.clear_color = color.rgb32(12, 14, 22)
+        # 0-255 色值必须用 rgb32/rgba32；背景色要设 window.color（Scene 没有 clear_color）
+        bg = color.rgb32(10, 12, 18)
+        window.color = bg
+        # 线性雾：近实远虚，走廊有纵深感，也遮掉大面积同色墙的单调
+        scene.fog_color = bg
+        scene.fog_density = (6, 42)
         camera.clip_plane_far = 200
+        camera.fov = 75          # ursina 默认水平视角 40 太窄，加宽后不再"顶脸"
         mouse.locked = False
 
         self._setup_audio()
@@ -179,15 +190,15 @@ class MazeGame:
             text="", position=(0, -0.30), origin=(0, 0),
             color=color.rgb32(255, 214, 100), size=0.032,
         )
-        self.coach.visible = False
+        self.coach.enabled = False
         self._msg_timer = 0.0
         self._coach_queue: list[tuple[float, str]] = []
         self._coach_timer = 0.0
 
     def _set_overlay(self, show: bool, with_button: bool = True) -> None:
-        self.overlay_bg.visible = show
-        self.overlay.visible = show
-        self.start_button.visible = show and with_button
+        self.overlay_bg.enabled = show
+        self.overlay.enabled = show
+        self.start_button.enabled = show and with_button
 
     def _flash(self, text: str, ttl: float = 2.0) -> None:
         """在屏幕下方闪一条提示，ttl 秒后自动消失"""
@@ -215,7 +226,7 @@ class MazeGame:
             (5.0, "集齐 5 把后，去小地图绿点处的门柱 = 逃脱成功，加油！"),
         ]
         self._coach_timer = 0.6
-        self.coach.visible = True
+        self.coach.enabled = True
         mouse.locked = True
 
     # ---------------- 生成新的一局 ----------------
@@ -234,7 +245,8 @@ class MazeGame:
         self._step_dist = 0.0
         self.message.text = ""
         self._msg_timer = 0.0
-        self.coach.visible = False
+        self.coach.enabled = False
+        self.coach.text = ""
         self._coach_queue = []
 
         seed = random.randint(0, 10 ** 9)
@@ -245,25 +257,30 @@ class MazeGame:
 
     def _build_maze_geometry(self) -> None:
         # 地板 + 天花板（把整个迷宫封闭起来，无需天空盒）
+        # 统一用砖纹深色底：与墙同一材质语言，地面有网格细节、不再糊成一片
         floor = Entity(
-            model="quad", color=color.rgb32(64, 68, 92),
+            model="quad", color=color.rgb32(74, 76, 102), texture="brick",
+            texture_scale=(26, 26),
             rotation_x=90, scale=(COLS * CELL, ROWS * CELL), position=(0, 0, 0),
         )
         ceiling = Entity(
-            model="quad", color=color.rgb32(38, 42, 60),
+            model="quad", color=color.rgb32(44, 42, 60), texture="brick",
+            texture_scale=(26, 26),
             rotation_x=-90, scale=(COLS * CELL, ROWS * CELL), position=(0, WALL_HEIGHT, 0),
         )
         self.nodes.extend([floor, ceiling])
 
-        # 墙体：每个 WALL 格放一个立方体（纯视觉，碰撞走网格逻辑）
-        wall_color = color.rgb32(136, 124, 162)
+        # 墙体：每个 WALL 格放一个砖纹立方体（纯视觉，碰撞走网格逻辑）
+        # 相邻墙交替两种深浅，破掉大面积同色的单调感
+        wall_tints = (color.rgb32(122, 112, 148), color.rgb32(106, 97, 131))
         for r, row in enumerate(self.grid):
             for c, val in enumerate(row):
                 if val != WALL:
                     continue
                 x, z = self.cell_to_world(c, r)
                 block = Entity(
-                    model="cube", color=wall_color,
+                    model="cube", color=wall_tints[(r + c) % 2], texture="brick",
+                    texture_scale=(2, 2),
                     position=(x, WALL_HEIGHT / 2, z),
                     scale=(CELL, WALL_HEIGHT, CELL),
                 )
@@ -276,9 +293,7 @@ class MazeGame:
 
         sx, sz = self.cell_to_world(*start_cell)
         self.px, self.pz = sx, sz
-        # 出生朝向对准开口方向，避免一进场就面对墙不知所措
-        # （yaw=0 看 +Z 即 grid[2][1] 格；yaw=90 看 +X 即 grid[1][2] 格）
-        self.yaw, self.pitch = (90.0 if self.grid[1][2] != WALL else 0.0), 0.0
+        self.yaw, self.pitch = self._pick_spawn_yaw(), 0.0
 
         # 出口：发光的绿色门柱
         ex, ez = self.cell_to_world(*self.exit_cell)
@@ -312,11 +327,23 @@ class MazeGame:
                 parent=key, model="cube", color=color.rgba32(255, 215, 90, 80),
                 position=(0, 1.0, 0), scale=(0.3, 3.2, 0.3),
             )
-            key.rotation_y = random.uniform(0, 360)
+            key.rotation = Vec3(0, random.uniform(0, 360), 0)
             self.keys.append(key)
             self.nodes.append(key)
 
         self._build_minimap()
+
+    def _pick_spawn_yaw(self) -> float:
+        """出生点四个方向里选「一眼看得最远」的朝向，
+        避免一进场就对着 2 米内的墙（yaw=0 看 +Z，90 看 +X，180 看 -Z，270 看 -X）"""
+        best_yaw, best_view = 0.0, -1
+        for yaw, (dc, dr) in ((0.0, (0, 1)), (90.0, (1, 0)), (180.0, (0, -1)), (270.0, (-1, 0))):
+            c, r, view = 1 + dc, 1 + dr, 0
+            while 0 <= c < COLS and 0 <= r < ROWS and self.grid[r][c] != WALL:
+                c, r, view = c + dc, r + dr, view + 1
+            if view > best_view:
+                best_yaw, best_view = yaw, view
+        return best_yaw
 
     # ---------------- 小地图（屏幕右上角 UI 层）----------------
     def _cell_to_map(self, gx: float, gz: float) -> tuple[float, float]:
@@ -352,7 +379,7 @@ class MazeGame:
         # 钥匙：金色标记（与 self.keys 同序，便于拾取时同步移除）
         self.map_keys = []
         for key in self.keys:
-            kc = self.world_to_cell(key.x, key.z)
+            kc = self.world_to_cell(key.position.x, key.position.z)
             kx, ky = self._cell_to_map(*kc)
             kd = Entity(parent=self.minimap, model="quad", color=color.gold, scale=cs * 1.3, position=(kx, ky))
             self.map_keys.append(kd)
@@ -368,7 +395,7 @@ class MazeGame:
     def update(self) -> None:
         # 出口门柱自转，保持一点生气
         if hasattr(self, "exit_glow"):
-            self.exit_glow.rotation_y += 40 * ursina_time.dt
+            self.exit_glow.rotation += Vec3(0, 40 * ursina_time.dt, 0)
 
         if self.state != "playing":
             self.message.text = ""
@@ -392,8 +419,8 @@ class MazeGame:
                 dur, tip = self._coach_queue.pop(0)
                 self.coach.text = tip
                 self._coach_timer = dur
-        elif self.coach.visible:
-            self.coach.visible = False
+        elif self.coach.enabled:
+            self.coach.enabled = False
 
         # 视角：鼠标速度是每帧归一化位移，乘以灵敏度
         # 实测确认（截图验证）：ursina 相机 rotation=(pitch, yaw, 0)，
@@ -446,9 +473,10 @@ class MazeGame:
 
         # 钥匙自转 + 上下浮动 + 拾取判定
         for i, key in enumerate(list(self.keys)):
-            key.rotation_y += 120 * ursina_time.dt
-            key.y = 1.4 + 0.15 * math.sin(time.time() * 2.5 + i * 1.7)
-            if math.dist((key.x, key.z), (self.px, self.pz)) < CELL * 0.45:
+            key.rotation += Vec3(0, 120 * ursina_time.dt, 0)
+            pos = key.position
+            key.position = Vec3(pos.x, 1.4 + 0.15 * math.sin(time.time() * 2.5 + i * 1.7), pos.z)
+            if math.dist((key.position.x, key.position.z), (self.px, self.pz)) < CELL * 0.45:
                 idx = self.keys.index(key)
                 self.keys.remove(key)
                 self.nodes.remove(key)
@@ -492,20 +520,20 @@ class MazeGame:
         gx = self.px / CELL + COLS / 2
         gz = self.pz / CELL + ROWS / 2
         lx, ly = self._cell_to_map(gx, gz)
-        self.map_player.position = (lx, ly)
+        self.map_player.position = Vec3(lx, ly, 0)
         if self.map_facing is not None:
             # 视线 (sin yaw, cos yaw) 映射到小地图：地图 +x 右、+y 上（对应世界 -z）
             yaw_rad = math.radians(self.yaw)
             angle = math.degrees(math.atan2(-math.cos(yaw_rad), math.sin(yaw_rad)))
-            self.map_facing.position = (lx, ly)
-            self.map_facing.rotation_z = angle
+            self.map_facing.position = Vec3(lx, ly, 0)
+            self.map_facing.rotation = Vec3(0, 0, angle)
 
     def _win(self) -> None:
         self.state = "won"
         mouse.locked = False
         self.hud.text = ""
         self.message.text = ""
-        self.coach.visible = False
+        self.coach.enabled = False
         self.overlay.text = (
             "★  你逃出了迷宫！  ★\n\n"
             f"共收集 {self.collected} 把钥匙\n\n"
@@ -549,6 +577,6 @@ if __name__ == "__main__":
     # development_mode=False：关掉右上角红X/fps/实体计数等开发调试件，正式游玩界面不需要
     app = Ursina(title="3D 迷宫逃脱", borderless=False, fullscreen=False,
                  development_mode=False)
-    window.size = (1280, 720)
+    window.size = Vec2(1280, 720)
     game = MazeGame()
     app.run()
