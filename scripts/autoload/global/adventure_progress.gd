@@ -101,3 +101,38 @@ static func describe() -> String:
 		parts.append("%s%s(需%s)" % [mark, get_feature_label(feature),
 			level_text_of_cleared_level(get_required_cleared_level(feature))])
 	return "冒险进度 %d 关｜%s" % [progress, " ".join(parts)]
+
+
+#region 二级锁：解锁后先只开前几关
+## 迷你游戏 / 解谜模式**刚解锁时**开放的前 N 关（原版两个模式都是先开 3 关）。
+const SIDE_MODE_PREVIEW_LEVELS: int = 3
+
+## 一週目总关卡数（5-10 的序号），与大关-小关换算同源。
+const MAX_ADVENTURE_LEVEL: int = 50
+
+## 一週目是否已经打穿（5-10）。
+## [br]只按通关记录算，不看调试开关 —— 需要「已经全开」请用
+## [method is_side_mode_fully_unlocked]。
+static func is_week_cleared() -> bool:
+	return AdventurePlantUnlock.get_progress_count() >= MAX_ADVENTURE_LEVEL
+
+## 迷你游戏 / 解谜是否已经整块开放（不再受「先开 3 关」限制）。
+## [br]原版是打完一週目（拿到银向日葵奖杯）才把剩下的关卡全放出来；
+## 打开控制台的「开放所有关卡」时视作已通关。
+static func is_side_mode_fully_unlocked() -> bool:
+	if Global.config_service != null and Global.config_service.open_all_level:
+		return true
+	return is_week_cleared()
+
+
+## 该侧支模式当前最多开放到第几关（1 起）。
+## [br]返回 **0** = 不设上限、整块开放；返回 **-1** = 一关都不开（功能还没解锁）；
+## [br]其余正数 = 只开前 N 关。调用方（[ChooseLevel]）拿它去锁「第 N+1 关及之后」的按钮。
+static func get_side_mode_level_limit(feature: Feature) -> int:
+	if not is_unlocked(feature):
+		return -1
+	if is_side_mode_fully_unlocked():
+		return 0
+	return SIDE_MODE_PREVIEW_LEVELS
+#endregion
+

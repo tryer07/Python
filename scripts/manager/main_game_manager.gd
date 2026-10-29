@@ -939,14 +939,14 @@ func win_main_game():
 
 	## ⚠️ 掉落判定必须在写通关记录**之前**做：记录写下去之后这一关就永远是「已通关」，
 	## 判断不出「是不是首次通关」，重复打同一关会每次都掉一张卡。
-	var reward_plant_id: int = _take_level_reward_plant_id()
+	var reward: Dictionary = _take_level_reward()
 	update_level_state_data_success()
 	## 多轮游戏，重置主游戏数据
 	if game_para.game_round != 1:
 		re_main_game()
-	## 有掉落就先演「获得新植物」，玩家点收下之后再退回选关界面
-	if reward_plant_id > 0:
-		_show_new_plant_reward(reward_plant_id)
+	## 有掉落就先演「获得新植物 / 获得新道具」，玩家点收下之后再退回选关界面
+	if not reward.is_empty():
+		_show_level_reward(reward)
 		return
 	back_to_mode_scene()
 
@@ -956,33 +956,33 @@ func back_to_mode_scene() -> void:
 	get_tree().change_scene_to_file(Global.main_scene_registry.MainScenesMap.get(game_para.game_mode, Global.main_scene_registry.MainScenesMap[MainSceneRegistry.MainScenes.StartMenu]))
 
 
-## 本关首次通关时应当掉落的植物编号；不该掉落时返回 0。
-## [br]返回 0 的四种情况：不是 50 关版冒险模式、这一关已经通关过（重复挑战）、
-## 存档键取不出关卡序号、以及这一关本来就不发植物（1-4 发铲子、1-9 发便签）。
-func _take_level_reward_plant_id() -> int:
+## 本关首次通关时应当掉落的东西；不该掉落时返回空字典。
+## [br]结构见 [method AdventureReward.get_reward]，调用方不用分辨是植物还是道具。
+## [br]返回空字典的三种情况：不是 50 关版冒险模式、这一关已经通关过（重复挑战）、
+## 存档键取不出关卡序号。
+func _take_level_reward() -> Dictionary:
 	if game_para == null or game_para.game_mode != MainSceneRegistry.MainScenes.ChooseLevelAdventure50:
-		return 0
+		return {}
 	var save_name: String = game_para.save_game_name
 	var state: Dictionary = Global.global_game_state.curr_all_level_state_data.get(save_name, {})
 	if state.get("IsSuccess", false):
-		return 0
-	return AdventurePlantUnlock.get_plant_unlocked_by_cleared_level(
-		AdventurePlantUnlock.level_no_from_save_name(save_name))
+		return {}
+	return AdventureReward.get_reward(AdventurePlantUnlock.level_no_from_save_name(save_name))
 
 
-## 弹出「获得新植物」演出，收下后才切回选关界面。
+## 弹出掉落演出，收下后才切回选关界面。
 ## [br]宿主挂 [code]get_tree().root[/code] 而不是主游戏场景：切场景会把当前场景整棵释放，
 ## 挂在场景上的演出会跟着一起没；root 只有 current_scene 会被替换，挂在 root 上的层能活到玩家点完。
-func _show_new_plant_reward(plant_id: int) -> void:
+func _show_level_reward(reward: Dictionary) -> void:
 	var host: Node = get_tree().root
 	if host == null:
 		back_to_mode_scene()
 		return
-	var reward := NewPlantReward.show_for(host, plant_id)
-	if reward == null:
+	var layer := LevelReward.show_for(host, reward)
+	if layer == null:
 		back_to_mode_scene()
 		return
-	reward.closed.connect(back_to_mode_scene)
+	layer.closed.connect(back_to_mode_scene)
 
 #endregion
 

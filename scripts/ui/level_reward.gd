@@ -1,15 +1,19 @@
-## 通关掉落植物卡的演出 —— 原版「获得新植物」那一屏。
+## 通关掉落演出 —— 原版「获得新植物 / 获得新道具」那一屏。
 ##
 ## 触发点在 [MainGameManager.win_main_game]：本关**首次**通关、且这一关在
-## [constant AdventurePlantUnlock.UNLOCK_BY_CLEARED_LEVEL] 里有对应的植物时，先弹这一屏，
-## 玩家点「收下」之后才切回选关界面。重复打同一关不再弹（原版也是只发一次）。
+## [AdventureReward] 里有掉落时，先弹这一屏，玩家点「收下」之后才切回选关界面。
+## 重复打同一关不再弹（原版也是只发一次）。
+##
+## 两种形态共用一套版式：
+## [br]· [constant AdventureReward.Kind.Plant] → 显示 3 倍大的真实种子卡（向 [AllCards] 要实例，
+## 与卡槽/图鉴里是同一份美术）；
+## [br]· [constant AdventureReward.Kind.Item] → 显示道具图标（铲子/便签/车钥匙/玉米卷/浇水壶/奖杯）。
 ##
 ## 为什么在代码里搭 UI 而不是做一个 .tscn：
-## [br]这一屏只有「压暗 + 一句话 + 一张卡 + 一个按钮」，节点少、没有动画轨道，
-## 用代码搭反而不容易在编辑器里被误改尺寸；卡面本身直接向 [AllCards] 要一份真实卡牌实例，
-## 所以「掉落的那张卡」与卡槽里、图鉴里看到的是**同一份美术**，不会出现三副面孔。
+## [br]这一屏只有「压暗 + 一句话 + 一张图 + 一个按钮」，节点少、没有动画轨道，
+## 用代码搭反而不容易在编辑器里被误改尺寸。
 extends CanvasLayer
-class_name NewPlantReward
+class_name LevelReward
 
 ## 玩家看完（点「收下」）时发一次，调用方据此继续切场景。
 signal closed
@@ -20,21 +24,26 @@ const PANEL_SIZE := Vector2(640.0, 500.0)
 ## 卡面放大倍数；卡牌原始尺寸是 50x70，放大 3 倍后是 150x210。
 const CARD_SCALE := 3.0
 const CARD_SIZE := Vector2(50.0, 70.0)
+## 道具图标的显示高度。卡面可视高度是实体约 150，道具（80~170px 见方）按等比缩到 ~150 高，
+## 两者在面板里视觉量级一致，不会出现「掉道具时突然小一圈」。
+const ITEM_ICON_HEIGHT := 150.0
 ## 简介每行放几个字。17 号宋体下 26 字约 442px，面板内宽 560，留得住边。
 const DESCRIPTION_CHARS_PER_LINE := 26
 
-## 要展示的植物编号。
-var _plant_id: int = 0
-## 防止「按钮 + 超时」两条路径各触发一次 closed。
+## 这一屏要展示的掉落，结构见 [method AdventureReward.get_reward]；空字典表示没东西可演。
+var _reward: Dictionary = {}
+## 防止「按钮」等重复触发 closed。
 var _is_closing: bool = false
 
 
 ## 在 [param host] 下创建并弹出这一屏；返回实例，调用方可连接 [signal closed]。
 ## [br]挂在 host 而不是当前场景上，是为了不让「切场景」把演出一起清掉。
-static func show_for(host: Node, plant_id: int) -> NewPlantReward:
-	var layer := NewPlantReward.new()
-	layer.name = "NewPlantReward"
-	layer._plant_id = plant_id
+static func show_for(host: Node, reward: Dictionary) -> LevelReward:
+	if reward.is_empty():
+		return null
+	var layer := LevelReward.new()
+	layer.name = "LevelReward"
+	layer._reward = reward
 	# 128 足够压住主游戏的所有 CanvasLayer（暂停菜单、HP 条这些都在 100 以内）
 	layer.layer = 128
 	host.add_child(layer)
@@ -59,19 +68,22 @@ func _ready() -> void:
 
 	var panel := _build_panel(root)
 	_build_title(panel)
-	var card: Control = _build_card(panel)
+	var art: Control = _build_card(panel) if _is_plant() else _build_item_icon(panel)
 	_build_name(panel)
 	_build_description(panel)
 	_build_confirm(panel)
 
-	# 淡入 + 卡面从「手里甩出来」的那一下
+	# 淡入 + 掉落物从「手里甩出来」的那一下
+	# [br]⚠️ 缩放的**终点**两种形态不一样：卡面要停在 3 倍，道具停在 1 倍（图标 rect 已经算好尺寸了）。
+	# 直接把目标设成 Vector2.ONE 会把卡面从 3 倍缩回 1 倍，一瞬间变成一张 50x70 的小纸片。
+	var target_scale: Vector2 = Vector2(CARD_SCALE, CARD_SCALE) if _is_plant() else Vector2.ONE
 	var tween := create_tween()
 	tween.tween_property(scrim, "color:a", 0.72, 0.25)
-	if card != null:
-		card.modulate.a = 0.0
-		card.scale = Vector2(0.55, 0.55)
-		tween.parallel().tween_property(card, "modulate:a", 1.0, 0.30)
-		tween.parallel().tween_property(card, "scale", Vector2(CARD_SCALE, CARD_SCALE), 0.42) \
+	if art != null:
+		art.modulate.a = 0.0
+		art.scale = target_scale * 0.55
+		tween.parallel().tween_property(art, "modulate:a", 1.0, 0.30)
+		tween.parallel().tween_property(art, "scale", target_scale, 0.42) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
@@ -91,7 +103,8 @@ func _build_panel(root: Control) -> Panel:
 
 
 func _build_title(panel: Panel) -> void:
-	var title := _make_label("获得新植物！", 34, Color(1.0, 0.94, 0.62))
+	var title := _make_label("获得新植物！" if _is_plant() else "获得新道具！",
+		34, Color(1.0, 0.94, 0.62))
 	title.name = "Title"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -102,36 +115,69 @@ func _build_title(panel: Panel) -> void:
 
 ## 卡面：直接向 AllCards 要一份真实卡牌实例，保证和卡槽/图鉴里长得一样。
 ## [br]取不到模板时返回 null，整个演出退化成「只有文字」，不会因为一张图缺失就卡住流程。
+## [br]注意这里的 scale 最终是 [constant CARD_SCALE]（卡面本身要放大 3 倍才够看）。
 func _build_card(panel: Panel) -> Control:
-	if _plant_id <= 0:
+	var plant_id: int = int(_reward.get("plant_id", 0))
+	if plant_id <= 0:
 		return null
-	var reference := ResourceCardReference.create(ResourceCardReference.CardType.Plant, _plant_id)
+	var reference := ResourceCardReference.create(ResourceCardReference.CardType.Plant, plant_id)
 	if reference == null:
 		return null
 	var card: Card = AllCards.create_card(reference, Card.CardContext.Catalog)
 	if card == null:
-		push_warning("新植物演出：卡牌模板缺失，改为纯文字展示（植物编号 %d）" % _plant_id)
+		push_warning("掉落演出：卡牌模板缺失，改为纯文字展示（植物编号 %d）" % plant_id)
 		return null
 	card.name = "RewardCard"
 	# 卡面只负责好看，不参与点击
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(card)
 	# 围绕中心缩放：pivot 定在卡牌正中，动画才是「从中间弹出来」而不是往右下角长
+	# [br]位置只跟 pivot 有关，与 scale 无关 —— 视觉中心固定落在面板 (320, 205)。
 	card.pivot_offset = CARD_SIZE * 0.5
-	card.scale = Vector2(CARD_SCALE, CARD_SCALE)
 	card.position = Vector2(
 		PANEL_SIZE.x * 0.5 - CARD_SIZE.x * 0.5,
-		100.0 + CARD_SIZE.y * 0.5 * (CARD_SCALE - 1.0)
+		205.0 - CARD_SIZE.y * 0.5
 	)
 	return card
 
 
+## 道具图标：等比缩到 [constant ITEM_ICON_HEIGHT] 高、水平居中，垂直中心与卡面同一行（y=205）。
+## [br]缩放不靠 Control.scale，而是直接按贴图宽高比算 rect —— 道具图尺寸各不相同
+## （便签 78x52、奖杯 166x136），用 scale 会让动画起点不一致。
+func _build_item_icon(panel: Panel) -> Control:
+	var texture: Texture2D = _reward.get("texture") as Texture2D
+	if texture == null:
+		return null
+	var texture_size: Vector2 = texture.get_size()
+	if texture_size.y <= 0.0:
+		return null
+	var icon_width: float = ITEM_ICON_HEIGHT * texture_size.x / texture_size.y
+	var holder := Control.new()
+	holder.name = "RewardItem"
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(holder)
+	# 起点定在图标正中，动画才围绕中心放大
+	holder.pivot_offset = Vector2(icon_width, ITEM_ICON_HEIGHT) * 0.5
+	holder.size = Vector2(icon_width, ITEM_ICON_HEIGHT)
+	holder.position = Vector2(PANEL_SIZE.x * 0.5 - icon_width * 0.5, 205.0 - ITEM_ICON_HEIGHT * 0.5)
+
+	var icon := TextureRect.new()
+	icon.name = "Icon"
+	icon.texture = texture
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_SCALE
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(icon)
+	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	return holder
+
+
 func _build_name(panel: Panel) -> void:
-	var plant_name := _plant_display_name()
-	if plant_name.is_empty():
+	var display_name := _display_name()
+	if display_name.is_empty():
 		return
-	var label := _make_label(plant_name, 26, Color(1.0, 1.0, 1.0))
-	label.name = "PlantName"
+	var label := _make_label(display_name, 26, Color(1.0, 1.0, 1.0))
+	label.name = "RewardName"
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	panel.add_child(label)
@@ -140,12 +186,12 @@ func _build_name(panel: Panel) -> void:
 
 
 func _build_description(panel: Panel) -> void:
-	var description := _plant_description()
+	var description := _description()
 	if description.is_empty():
 		return
 	var label := _make_label(_wrap_text(description, DESCRIPTION_CHARS_PER_LINE, 3), 17,
 		Color(0.92, 0.96, 0.86))
-	label.name = "PlantDescription"
+	label.name = "RewardDescription"
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(label)
 	label.position = Vector2(40.0, 364.0)
@@ -155,10 +201,13 @@ func _build_description(panel: Panel) -> void:
 ## 按字数硬折行，不用 Label 自带的 autowrap。
 ## [br]⚠️ 这里**必须**手动折：autowrap 的 Label 在「父节点不是容器」时会被最小尺寸钳住 ——
 ## 实测把 autowrap 打开后 Height 从 68 被撑到 564（一行一个字竖着排），直接压出面板。
-## 中文是等宽方块字，按字数折行视觉上完全够用；超出行数时末行补省略号。
+## [br]折行时**优先在中文标点处断开**：纯按字数切会把「生存模式」切成「生 / 存模式」，
+## 读起来是断的。做法是往后多看几个字，取窗口里最后一个标点当断点；
+## 找不到标点才退回按字数硬切。超出行数时末行补省略号。
 func _wrap_text(text: String, per_line: int, max_lines: int) -> String:
 	if per_line <= 0:
 		return text
+	var break_chars := "，。、；：！？」"
 	var lines: Array[String] = []
 	var rest := text
 	while not rest.is_empty() and lines.size() < max_lines:
@@ -166,11 +215,19 @@ func _wrap_text(text: String, per_line: int, max_lines: int) -> String:
 			lines.append(rest)
 			rest = ""
 			break
-		lines.append(rest.substr(0, per_line))
-		rest = rest.substr(per_line)
+		# 往 per_line 之后多看 6 个字找标点；最少也要切到六成长度，避免第一行太短
+		var window_end: int = mini(rest.length(), per_line + 6)
+		var floor_len: int = int(maxi(1, int(per_line * 0.6)))
+		var cut: int = per_line
+		for i: int in range(window_end - 1, floor_len - 1, -1):
+			if break_chars.contains(rest[i]):
+				cut = i + 1
+				break
+		lines.append(rest.substr(0, cut))
+		rest = rest.substr(cut)
 	if not rest.is_empty():
 		var last: String = lines[lines.size() - 1]
-		lines[lines.size() - 1] = last.substr(0, per_line - 1) + "…"
+		lines[lines.size() - 1] = last.substr(0, maxi(1, last.length() - 1)) + "…"
 	return "\n".join(lines)
 
 
@@ -213,28 +270,36 @@ func _make_label(text: String, font_size: int, color: Color) -> Label:
 
 
 #region 文案
-## 植物的显示名（豆蔻、朝阳童子…）；图鉴里没有条目时退回注册表里的键名。
-func _plant_display_name() -> String:
-	if _plant_id <= 0:
-		return ""
-	var key: String = _plant_key()
-	var entry := _almanac_entry()
-	return String(entry.get("名字", key))
+func _is_plant() -> bool:
+	return int(_reward.get("kind", -1)) == AdventureReward.Kind.Plant
 
 
-## 植物的一句简介（图鉴里的「描述」字段），没有条目时返回空串。
-func _plant_description() -> String:
-	var entry := _almanac_entry()
-	return String(entry.get("描述", ""))
+## 掉落物的显示名：植物走图鉴里的「名字」，道具走 [constant AdventureReward.ITEMS]。
+func _display_name() -> String:
+	if _is_plant():
+		var key: String = _plant_key()
+		return String(_almanac_entry().get("名字", key))
+	return String(_reward.get("name", ""))
+
+
+## 掉落物的一句说明。植物取图鉴的「描述」字段，道具取表里的「说明」。
+func _description() -> String:
+	if _is_plant():
+		return String(_almanac_entry().get("描述", ""))
+	return String(_reward.get("desc", ""))
 
 
 ## 注册表里该植物在图鉴 JSON 中的键，例如 P002 对应 "SunFlower" 一类。
 func _plant_key() -> String:
-	if Global.character_registry == null:
+	if _plant_id() <= 0 or Global.character_registry == null:
 		return ""
 	var raw: Variant = Global.character_registry.get_plant_info(
-		_plant_id, CharacterRegistry.PlantInfoAttribute.PlantName)
+		_plant_id(), CharacterRegistry.PlantInfoAttribute.PlantName)
 	return String(raw) if raw != null else ""
+
+
+func _plant_id() -> int:
+	return int(_reward.get("plant_id", 0))
 
 
 ## 图鉴里这条植物的完整条目；未加载或没写条目时返回空字典。

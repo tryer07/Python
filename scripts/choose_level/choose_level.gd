@@ -11,6 +11,11 @@ var next_level_number: int = 1
 @export var game_mode:MainSceneRegistry.MainScenes = MainSceneRegistry.MainScenes.Null
 ## 开放关卡数量，冒险默认为1，其余模式为3，若打开控制台开放所有关卡为-1
 var open_level_num:int = -1
+## 侧支模式（迷你游戏 / 解谜）的**硬上限**：只开放前 N 关，N 之后的关卡一律上锁。
+## [br]0 = 不设上限。它与 [member open_level_num] 的「名额」不是一回事：
+## 名额是「打一关放一关」，而原版的迷你游戏/解谜是**固定只开前 3 关**，
+## 打穿第 1 关不会把第 4 关放出来，剩下 17 关要等一週目通关才整块放开。
+var preview_level_limit:int = 0
 var all_pages_array : Array[GridContainer]
 @export var curr_page := 0
 
@@ -31,6 +36,26 @@ func _ready() -> void:
 		## 自定义关卡全开放
 		elif game_mode == MainSceneRegistry.MainScenes.ChooseLevelCustom:
 			open_level_num = -1
+		## 迷你游戏 / 解谜：解锁后**先只开前 3 关**（原版就是这样），
+		## 剩下的关卡要等一週目通关（5-10 拿到银向日葵奖杯）才整块放开。
+		## [br]⚠️ 这里不能用 open_level_num = 3 凑：名额是「打一关放一关」，
+		## 打穿第 1 关就会把第 4 关顶出来，与原版「固定 3 关」不符。
+		elif game_mode == MainSceneRegistry.MainScenes.ChooseLevelMiniGame:
+			open_level_num = -1
+			preview_level_limit = AdventureProgress.get_side_mode_level_limit(
+				AdventureProgress.Feature.MiniGame)
+		elif game_mode == MainSceneRegistry.MainScenes.ChooseLevelPuzzle:
+			open_level_num = -1
+			preview_level_limit = AdventureProgress.get_side_mode_level_limit(
+				AdventureProgress.Feature.Puzzle)
+		## 生存模式：一週目通关才出现，出现即整块开放，没有「先开几关」的说法。
+		## [br]⚠️ 仍然要走同一个上限函数：它的返回只会是 -1（未解锁，一关不开）
+		## 或 0（已解锁，全开）。不设的话 preview_level_limit 停在 0，
+		## 功能没解锁时靠 open_level_num = -1 会**直接全放出来**（实测踩过）。
+		elif game_mode == MainSceneRegistry.MainScenes.ChooseLevelSurvival:
+			open_level_num = -1
+			preview_level_limit = AdventureProgress.get_side_mode_level_limit(
+				AdventureProgress.Feature.Survival)
 		else:
 			open_level_num = 3
 	else:
@@ -63,6 +88,15 @@ func _ready() -> void:
 
 ## 更新关卡是否锁住 无尽模式默认开放，不占用开放名额
 func update_lock_level(choose_level_button:ChooseLevelButton, curr_level_state_data:Dictionary):
+	## ⚠️ 侧支模式的「固定前 N 关」必须先判，而且要排在 open_level_num == -1 的直通之前：
+	## 迷你游戏/解谜的 open_level_num 本来就是 -1（不按名额算），
+	## 若先判 -1 直接 return，preview_level_limit 就永远不会生效。
+	## [br]preview_level_limit：0 = 不限制；-1 = 一关都不开；N > 0 = 只开前 N 关。
+	if preview_level_limit != 0:
+		var side_level_no: int = _level_no_of_choose_level(choose_level_button)
+		if side_level_no > preview_level_limit:
+			choose_level_button.lock_choose_level_button()
+			return
 	## 如果开放名额为-1，即所有关卡都开发
 	if open_level_num == -1:
 		return
@@ -78,6 +112,19 @@ func update_lock_level(choose_level_button:ChooseLevelButton, curr_level_state_d
 		return
 	else:
 		choose_level_button.lock_choose_level_button()
+
+
+## 从存档键取出 1 起的关卡序号；取不到时返回 -1。
+## [br]存档键形如 `102_0_0003`（模式_页_四位序号），取末四位即可 ——
+## 这几个模式的关卡 id 都由 [method generate_level_id] 从 0001 起递增，
+## 所以末四位就是按钮在该模式里的第几关。
+func _level_no_of_choose_level(choose_level_button: ChooseLevelButton) -> int:
+	if choose_level_button == null or choose_level_button.curr_level_data_game_para == null:
+		return -1
+	var save_name: String = choose_level_button.curr_level_data_game_para.save_game_name
+	if save_name.length() < 4:
+		return -1
+	return save_name.substr(save_name.length() - 4).to_int()
 
 func _ready_update_page():
 	## 如果从游戏中退出
