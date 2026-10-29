@@ -35,7 +35,9 @@ const GRID_COLUMNS: int = 5
 ## （原表里 1-4 给的是铲子、1-9 给的是「一大波僵尸」提示，都不是植物，
 ## 所以「关卡数」与「植物数」不是简单加一，放开到第 8 关时就是 7 株。）
 ## [br]第 8 株双发射手要等 1-8 打完、进 1-9 才给，不会提前漏出来。
-@export var debug_unlock_level: int = 8
+## [br]⚠️ 2026-10-29 归零：跳关调试做完、正式存档要按原版逐关推进，这个开关必须保持 0。
+## 要从中间某关开始测，临时改成 8 即可，测完记得改回来。
+@export var debug_unlock_level: int = 0
 
 #region 关卡缩略图
 ## 预览框在按钮内的位置与尺寸，照搬原版选关按钮：按钮 104x115，预览框压在圆窗上半部。
@@ -61,6 +63,9 @@ const CHOMPER_TEXTURE: Texture2D = preload(
 ## 雪清仙子待机立绘（寒冰射手换皮，无球版，与战场／卡面／图鉴共用一张整图）
 const SNOW_PEA_TEXTURE: Texture2D = preload(
 	"res://assets/image/character/snow_pea/xueqing_idle.png")
+## 阿双待机立绘（双发射手换皮，竹铳双持，与战场／卡面／图鉴共用一张整图）
+const PEA_DOUBLE_TEXTURE: Texture2D = preload(
+	"res://assets/image/character/adouble/adouble_idle_03.png")
 ## 铲子图标。**不是**卡片图 Shovel.png 原文件：那张是 80x80 的画布，实体只占 59x63，
 ## 上下各留 9~11px 透明边，缩略图按画布高度等比缩放会既显小又悬空约 5px。
 ## Shovel_preview.png 是把实体框裁出来再各留 2px 的预览专用版，落点与立绘对齐。
@@ -93,12 +98,10 @@ const PREVIEW_ART: Dictionary = {
 	6: SNOW_PEA_TEXTURE,
 	# 1-8：醉仙客（大嘴花换皮）进卡池的第一关。
 	7: CHOMPER_TEXTURE,
-	# 1-9：双发射手进卡池的第一关（清完 1-8 才发）。
-	# [br]⏳ **暂缺**：双发射手还没换皮，`assets/image/character/` 下没有它的整图立绘，
-	# 这个表只收 Texture2D，拿不出图就先留空（这一关目前只有按钮、没有缩略图）。
-	# [br]做双发射手那一轮记得同时补三处：这里的 `8: PEA_DOUBLE_TEXTURE`、
-	# 下面的 [constant PREVIEW_ART_HEIGHT]、以及 `all_cards.gd` 的 CARD_ART。
-	# 8: PEA_DOUBLE_TEXTURE,
+	# 1-9：阿双（双发射手换皮）进卡池的第一关（清完 1-8 才发）。
+	# [br]2026-10-29 补齐：原先这里是空的，注释里记着「做双发射手那一轮记得同时补三处」，
+	# 三处（本表、下面的 PREVIEW_ART_HEIGHT、all_cards.gd 的 CARD_ART）此前只补了最后一处。
+	8: PEA_DOUBLE_TEXTURE,
 }
 ## 对应的显示高度；三种立绘原始比例不同，高度要分开给，不能共用一个数。
 ## 朝阳童子是盘腿坐姿，同样高度下视觉上比站姿的豆蔻显小，所以给 52 补回来。
@@ -130,6 +133,10 @@ const PREVIEW_ART_HEIGHT: Dictionary = {
 	# 这是全表最矮的一档不会错：再高到 58，实体 55.8 会明显高出邻框，
 	# 而且 52 时整体宽仅 52 × 264/398 ≈ 34.5，飘带不顶框。
 	6: 52.0,
+	# 阿双（双发射手换皮）：站姿全身，贴图 133×206，实体占 y4..201（96.1%，上下各 4px 留白）。
+	# [br]按实体高度齐平算，不用管画布高度：要 实体 ≈ 50 就取 高度 = 50 / 0.961 ≈ 52，
+	# 与雪清仙子（52 / 96.2%）落在同一条线上；整体宽 52 × 133/206 ≈ 33.6，竹铳不顶框。
+	8: 52.0,
 }
 ## 缩略图底图：借用图鉴里的地面图，按关卡背景挑选
 const GROUND_TEXTURES: Dictionary = {
@@ -431,6 +438,8 @@ func _report_after_layout() -> void:
 		AdventurePlantUnlock.get_highest_cleared_level_no(),
 		AdventurePlantUnlock.debug_unlock_through_level,
 		unlocked_ids.size(), str(unlocked_ids)])
+	# 功能闸门（图鉴/商店/迷你游戏/解谜/生存/花园）是否按进度亮起，主菜单上看到的就是这一行
+	print("主菜单闸门：", AdventureProgress.describe())
 	# 首关存档键，用于核对解锁进度统计与引擎实际写入的键是否一致
 	for page_node: Node in all_pages_array:
 		for node: Node in page_node.get_children():

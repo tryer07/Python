@@ -65,6 +65,31 @@ static func get_cleared_count() -> int:
 	return cleared
 
 
+## 返回「冒险模式当前的有效通关进度」，即已经打穿了多少关。
+## [br]**这是全项目所有解锁判定的唯一进度口径**：植物解锁（[method get_unlocked_plant_ids]）
+## 和功能解锁（[AdventureProgress]）都走这里，两边不会算出不同的数。
+## [br]正常线性推进时它就等于 [method get_cleared_count]；两个调试开关打开时按各自的放宽规则算。
+static func get_progress_count() -> int:
+	var cleared: int = get_highest_cleared_level_no() if debug_unlock_by_highest_level else get_cleared_count()
+	return maxi(cleared, maxi(debug_unlock_through_level - 1, 0))
+
+
+## 从存档键取出「1 起」的关卡序号，用于反查这一关打完发什么。
+## [br]存档键形如 `106_0_0003`（模式_页_四位序号），取末四位即可；
+## [br]键格式不对（长度不足）时返回 0，调用方按「不是冒险关卡」处理。
+static func level_no_from_save_name(save_name: String) -> int:
+	if save_name.length() < 4:
+		return 0
+	return save_name.substr(save_name.length() - 4).to_int()
+
+
+## 打通第 [param level_no] 关会发哪一株植物；这一关不发植物时返回 0。
+## [br]返回 0 的三种情况：1-4（发铲子）、1-9（发「一大波僵尸」便签）、
+## 以及解锁表只写到 1-10、往后的关卡还没登记。掉落演出靠它判断「要不要弹卡」。
+static func get_plant_unlocked_by_cleared_level(level_no: int) -> int:
+	return int(UNLOCK_BY_CLEARED_LEVEL.get(level_no, 0))
+
+
 ## 返回已通关关卡里最大的「1 起关卡序号」；一关都没通关时返回 0。
 ## [br]例：只通了 1-3（哪怕 1-1、1-2 没记录）→ 返回 3。
 static func get_highest_cleared_level_no() -> int:
@@ -124,8 +149,7 @@ static func get_unlocked_plant_ids() -> Array[int]:
 	##   能打通的只有它前面那 N - 1 关 —— 所以进度是 N - 1，不是 N；
 	## [br]· 整页放开 / 正式模式：分别按「已通最高关序号」与「已通关数量」。
 	## [br]两者取大，避免存档里的通关记录被调试开关「撤销」掉。
-	var cleared: int = get_highest_cleared_level_no() if debug_unlock_by_highest_level else get_cleared_count()
-	cleared = maxi(cleared, maxi(debug_unlock_through_level - 1, 0))
+	var cleared: int = get_progress_count()
 
 	# 卡池上限：豆蔻 + 已通关卡里发过的植物数
 	var top: int = 1

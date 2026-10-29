@@ -20,12 +20,14 @@ var bgm_choose_card: AudioStream = preload("res://assets/audio/BGM/choose_card.m
 func _ready() -> void:
 	## 如果没有开放所有关卡
 	if not Global.config_service.open_all_level:
-		## 冒险模式（含 50 关版）默认开放 1-1、1-2：
-		## 1-2 是朝阳童子（向日葵）首次进种子槽的关卡，先放出来让玩家能立刻用到第二株植物，
-		## 之后仍然靠逐关通关推进。
+		## 冒险模式（含 50 关版）**只开放 1-1**，照原版从第一关开始逐关推进：
+		## 打过 1-1 才有 1-2，打过 1-2 才有 1-3 …（名额由 update_lock_level 每关消耗一个）。
+		## [br]⚠️ 2026-10-29 从 2 改成 1：原先为了让玩家开局就能用到朝阳童子（向日葵）
+		## 直接放开了 1-2，那是换皮制作期的方便做法；正式存档要按原版走，所以收回。
+		## 朝阳童子改由「打完 1-1 掉卡」获得，见 AdventureProgress / main_game_manager 的通关演出。
 		if game_mode == MainSceneRegistry.MainScenes.ChooseLevelAdventure \
 				or game_mode == MainSceneRegistry.MainScenes.ChooseLevelAdventure50:
-			open_level_num = 2
+			open_level_num = 1
 		## 自定义关卡全开放
 		elif game_mode == MainSceneRegistry.MainScenes.ChooseLevelCustom:
 			open_level_num = -1
