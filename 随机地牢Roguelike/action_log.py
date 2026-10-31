@@ -23,7 +23,7 @@ class LogEntry:
 
 class ActionLog:
     MAX_KEEP = 400          # 单局日志硬上限，防止无限膨胀（真活到 400 回合算你厉害）
-    SHOW_RECENT = 7         # 界面里滚动显示最近几条
+    SHOW_RECENT = 6         # 界面里滚动显示最近几条（面板高度有限，再多会压到提示行）
     TRANSCRIPT_TAIL = 120   # 喂给 AI 时保留的最后条数（太头部的流水账没价值）
 
     def __init__(self) -> None:

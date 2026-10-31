@@ -126,18 +126,38 @@ class Art:
         # 静态物件与角色
         self.stairs = bake_levels(bake_sprite(SPRITES["stairs"]), LEVELS)
         self.potion = bake_levels(bake_sprite(SPRITES["potion"]), LEVELS)
-        self.surds = bake_levels(bake_sprite(SPRITES["player"]), LEVELS)
+        self.player_surf = bake_levels(bake_sprite(SPRITES["player"]), LEVELS)
         self.monster: dict[str, dict[float, pygame.Surface]] = {
-            name: bake_levels(bake_sprite(grid), LEVELS)
-            for name, grid in SPRITES.items()
-            if name in {*MONSTER_POOL.values().__iter__().__class__ and (), }
-        }
-        # 上面那行是占位，真正的怪物表在下面按名字烘
-        self.monster = {
             name: bake_levels(bake_sprite(SPRITES[name]), LEVELS)
-            for name in ("哥布林", "兽人", "骷髅剑士", "楼梯守卫")
+            for name in MONSTER_NAMES
         }
-#花名占位class Game:
+        self.black = pygame.Surface((TILE, TILE))
+        self.black.fill(BLACK)
+
+    def sprite_for(self, m: Monster) -> dict[float, pygame.Surface]:
+        """精英怪固定用「楼梯守卫」的图，普通怪按名字取"""
+        return self.monster["楼梯守卫" if m.is_boss else m.name]
+
+
+def make_light_table() -> dict[tuple[int, int], float]:
+    """把「相对玩家的偏移 -> 亮度」预先算成一张表，运行时只做一次字典查表"""
+    table: dict[tuple[int, int], float] = {}
+    for dy in range(-TORCH_RADIUS, TORCH_RADIUS + 1):
+        for dx in range(-TORCH_RADIUS, TORCH_RADIUS + 1):
+            dist = abs(dx) + abs(dy)
+            if dist > TORCH_RADIUS:
+                continue
+            for limit, factor in LIGHT_RINGS:
+                if dist <= limit:
+                    table[(dx, dy)] = factor
+                    break
+    return table
+
+
+LIGHT_TABLE = make_light_table()
+
+
+class Game:
     def __init__(self) -> None:
         pygame.init()
         self.screen = pygame.display.set_mode((WIN_W, WIN_H))
@@ -205,12 +225,13 @@ class Art:
     def _build_floor_art(self) -> None:
         """本层的地板纹理号与墙贴边类型固定下来，之后每帧都画成同一个样子，
         否则每帧随机会让地面像抖动"""
-        rng = random.Random(hash(self.dungeon.spawn) ^ (self.depth * 7919))
+        rng = random.Random(self.dungeon.spawn[0] * 73 + self.dungeon.spawn[1] * 31
+                            + self.depth * 7919)
         self.floor_variant = [
             [rng.randrange(FLOOR_VARIANTS) for _ in range(MAP_W)] for _ in range(MAP_H)
         ]
         self.deco_cell = [
-            [rng.choice(self.art.deco) if rng.random() < 0.09 else None
+            [rng.choice(DECO_KINDS) if rng.random() < 0.09 else None
              for _ in range(MAP_W)] for _ in range(MAP_H)
         ]
         d = self.dungeon
@@ -429,33 +450,36 @@ class Art:
         if mob is not None:
             self.screen.blit(self.art.sprite_for(mob)[factor], (cx, cy))
         elif (gx, gy) == (self.player.x, self.player.y):
-            self.screen.blit(self.art.surds[factor], (cx, cy))
+            self.screen.blit(self.art.player_surf[factor], (cx, cy))
 
     # ---------- 面板 ----------
 
     def _draw_panel(self) -> None:
         left = MARGIN + MAP_W * TILE + GUTTER
         top = MARGIN
-        box = (left - 6, top, PANEL_X_END - left, WIN_H - top * 2)
+        box = (left - 6, top, PANEL_RIGHT - left + 6, WIN_H - top * 2)
         pygame.draw.rect(self.screen, COL_PANEL, box)
         pygame.draw.rect(self.screen, COL_FRAME_LIGHT, box, 1)
         x = left + 10
         y = top + 8
         self._text(x, y, "随机地牢", self.big_font, COL_LOG_BOLD)
         y += 34
-        self._divider(x, y)
+        self._divider(x, y, PANEL_INNER)
         y += 12
         self._text(x, y, f"地下第 {min(self.depth, MAX_DEPTH)} 层 · "
                          f"第 {self.log.turn} 回合", self.mid_font, COL_TEXT)
         y += 26
-        self._hp_blocks(x, y)
+        self._hp_blocks(x, y, PANEL_INNER)
         y += 22
         self._text(x, y, f"攻击 {self.player.atk}  击杀 {self.player.kills}"
                          f"  阵亡 {self.deaths} 次", self.font, COL_TEXT_DIM)
         y += 26
-        self._divider(x, y)
+        self._divider(x, y, PANEL_INNER)
         y += 10
+        # 日志只画到提示行为止，多出来的行丢掉（不然会和底部三行叠在一起）
         for line in self.log.recent_lines():
+            if y > WIN_H - 82:
+                break
             self._text(x, y, line, self.font, COL_TEXT)
             y += 21
         self._text(x, WIN_H - 60, "方向键/WASD 移动·撞怪", self.font, COL_TEXT_DIM)
@@ -463,27 +487,38 @@ class Art:
         self._text(x, WIN_H - 24, "火把照不到的只是没看见，不是没有", self.font,
                    PALETTE["t"])
 
-    def _hp_blocks(self, x: int, y: int) -> None:
-        """生命用一格的方块表示，2 点血一块——像素风里不该出现光滑进度条"""
+    def _hp_blocks(self, x: int, y: int, right: int) -> None:
+        """生命用方块表示，两块之间留 1 像素缝——像素风里不该出现光滑进度条。
+        每下多层上限会涨，格子数超过面板宽度时改成整条方块，只保留分格刻度"""
         ratio = self.player.hp / self.player.max_hp
         color = COL_HP_GOOD if ratio > 0.35 else COL_HP_LOW
         self._text(x, y, f"生命 {self.player.hp}/{self.player.max_hp}",
                    self.font, color)
+        bx = x + 100
+        room = max(1, right - bx)
         blocks = (self.player.max_hp + 1) // 2
-        bx = x + 118
+        if blocks * 4 > room:                     # 分格装不下了，退成整条
+            width = room
+            pygame.draw.rect(self.screen, COL_HP_EMPTY, (bx, y + 1, width, 8))
+            pygame.draw.rect(self.screen, color,
+                             (bx, y + 1, round(width * ratio), 8))
+            for tick in range(bx + 8, bx + width, 8):
+                pygame.draw.rect(self.screen, COL_HP_EMPTY, (tick, y + 1, 1, 8))
+            return
+        step = min(9, room // blocks)
+        size = step - 1
         for i in range(blocks):
-            full = self.player.hp >= (i + 1) * 2
-            half = not full and self.player.hp == i * 2 + 1
-            pygame.draw.rect(self.screen, COL_HP_EMPTY,
-                             (bx + i * 9, y + 1, 8, 8))
-            if full:
-                pygame.draw.rect(self.screen, color, (bx + i * 9, y + 1, 8, 8))
-            elif half:
-                pygame.draw.rect(self.screen, color, (bx + i * 9, y + 1, 4, 8))
+            cell = (bx + i * step, y + 1, size, 8)
+            pygame.draw.rect(self.screen, COL_HP_EMPTY, cell)
+            if self.player.hp >= (i + 1) * 2:
+                pygame.draw.rect(self.screen, color, cell)
+            elif self.player.hp == i * 2 + 1:
+                pygame.draw.rect(self.screen, color, (bx + i * step, y + 1,
+                                                      max(1, size // 2), 8))
 
-    def _divider(self, x: int, y: int) -> None:
+    def _divider(self, x: int, y: int, right: int) -> None:
         """方块拼的分隔线，代替一根细线"""
-        for i in range(0, PANEL_X_END - x - 20, 6):
+        for i in range(0, right - x, 6):
             pygame.draw.rect(self.screen, COL_FRAME_LIGHT, (x + i, y, 4, 2))
 
     def _text(self, x: int, y: int, text: str, font: pygame.font.Font,
@@ -546,8 +581,9 @@ class Art:
         return lines
 
 
-# 面板右边界与报告正文宽度，从窗口尺寸推出来，不写死数字
-PANEL_X_END = WIN_W - MARGIN
+# 面板内容右边界：从窗口尺寸推出来，不写死数字
+PANEL_RIGHT = WIN_W - MARGIN
+PANEL_INNER = PANEL_RIGHT - 16
 REPORT_WIDTH = WIN_W - MARGIN * 2 - 120
 
 
